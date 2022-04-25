@@ -11,8 +11,8 @@ struct Net : torch::nn::Module
 	{
 		// Construct and register two Linear submodules.
 		fc1 = register_module("fc1", torch::nn::Linear(50, 30));
-		fc2 = register_module("fc2", torch::nn::Linear(30, 15));
-		fc3 = register_module("fc3", torch::nn::Linear(15, 5));
+		fc2 = register_module("fc2", torch::nn::Linear(30, 10));
+		fc3 = register_module("fc3", torch::nn::Linear(10, 3));
 	}
 
 	torch::Tensor forward(torch::Tensor x)
@@ -37,7 +37,7 @@ void train()
 	EisGeneratorDataset dataset;
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(64).workers(0);
+	options = options.batch_size(2).workers(0);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 	std::cout<<"dataloader "<<typeid(dataLoader).name()<<'\n';
 
@@ -54,9 +54,14 @@ void train()
 			// Reset gradients.
 			optimizer.zero_grad();
 			// Execute the model on the input data.
+			std::cout<<"batch.target: "<<batch.target<<'\n';
 			torch::Tensor prediction = net->forward(batch.data);
+			std::cout<<"prediction: "<<prediction<<'\n';
 			// Compute a loss value to judge the prediction of our model.
- 			torch::Tensor loss = torch::nll_loss(prediction, batch.target);
+ 			torch::Tensor loss = torch::l1_loss(prediction, batch.target);
+			std::cout<<loss<<'\n';
+			if(batch_index > 100)
+				exit(0);
 			// Compute gradients of the loss w.r.t. the parameters of our model.
 			loss.backward();
 			// Update the parameters based on the calculated gradients.
@@ -77,10 +82,6 @@ int main(int argc, char** argv)
 {
 	EisGeneratorDataset dataset;
 	torch::data::Example<torch::Tensor, torch::Tensor> example = dataset.get(0);
-
-	std::cout<<"data: "<<example.data<<'\n'<<"target: "<<example.target<<'\n';
-	std::cout<<"data: "<<example.data.dim()<<'\n'<<"target: "<<example.target.dim()<<'\n';
-
 	train();
 
 	return 0;

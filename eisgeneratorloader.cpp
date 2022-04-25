@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <vector>
 #include <assert.h>
+#include <math.h>
 
 EisGeneratorDataset::EisGeneratorDataset(): omega(0, 1e6, 25)
 {
@@ -50,21 +51,6 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 		}
 	}
 
-	{
-		std::cout<<"Compnants: for index "<<index<<'\n';
-		for(Componant* componant : models[model].getFlatComponants())
-		{
-			std::cout<<Componant::getComponantChar(componant)<<"{";
-			for(size_t i = 0; i < componant->paramCount(); ++i)
-			{
-				std::cout<<componant->getParam()[i];
-				if(i != componant->paramCount()-1)
-					std::cout<<", ";
-			}
-			std::cout<<"}\n";
-		}
-	}
-
 	assert(data.size());
 
 	torch::TensorOptions options;
@@ -74,7 +60,13 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, options);
 
 	for(size_t i = 0; i < data.size()*2; ++i)
-		input[i] = i < data.size() ? data[i].im.real() : data[i - data.size()].im.imag();
+	{
+		float datapoint = i < data.size() ? data[i].im.real() : data[i - data.size()].im.imag();
+		if(isnan(datapoint) || isinf(datapoint))
+			datapoint = 0;
+		input[i] = datapoint;
+
+	}
 
 	torch::Tensor output = torch::zeros({static_cast<long int>(models.size())}, options);
 	output[model] = 1;
