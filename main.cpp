@@ -3,48 +3,25 @@
 #include <eisgenerator/model.h>
 #include <memory>
 
+#include "model.h"
 #include "eisgeneratorloader.h"
-
-struct Net : torch::nn::Module
-{
-	Net()
-	{
-		// Construct and register two Linear submodules.
-		fc1 = register_module("fc1", torch::nn::Linear(50, 30));
-		fc2 = register_module("fc2", torch::nn::Linear(30, 10));
-		fc3 = register_module("fc3", torch::nn::Linear(10, 3));
-	}
-
-	torch::Tensor forward(torch::Tensor x)
-	{
-		// Use one of many tensor manipulation functions.
-		x = torch::relu(fc1->forward(x));
-		x = torch::dropout(x, /*p=*/0.5, /*train=*/is_training());
-		x = torch::relu(fc2->forward(x));
-		x = torch::log_softmax(fc3->forward(x), /*dim=*/1);
-		return x;
-	}
-
-	// Use one of many "standard library" modules.
-	torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
-};
+#include "testgenerator.h"
 
 void train()
 {
 	std::cout<<__func__<<'\n';
 	std::shared_ptr<Net> net(new Net);
 
-	EisGeneratorDataset dataset;
+	TestDataset dataset;
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(2).workers(0);
+	options = options.batch_size(30).workers(16);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	std::cout<<"dataloader "<<typeid(dataLoader).name()<<'\n';
 
 	//Instantiate an SGD optimization algorithm to update our Net's parameters.
 	torch::optim::SGD optimizer(net->parameters(), /*lr=*/0.01);
 
-	for (size_t epoch = 1; epoch <= 10; ++epoch)
+	for (size_t epoch = 1; epoch <= 100; ++epoch)
 	{
 		size_t batch_index = 0;
 		// Iterate the data loader to yield batches from the dataset.
@@ -54,24 +31,17 @@ void train()
 			// Reset gradients.
 			optimizer.zero_grad();
 			// Execute the model on the input data.
-			std::cout<<"batch.target: "<<batch.target<<'\n';
 			torch::Tensor prediction = net->forward(batch.data);
-			std::cout<<"prediction: "<<prediction<<'\n';
 			// Compute a loss value to judge the prediction of our model.
  			torch::Tensor loss = torch::l1_loss(prediction, batch.target);
-			std::cout<<loss<<'\n';
-			if(batch_index > 100)
-				exit(0);
 			// Compute gradients of the loss w.r.t. the parameters of our model.
 			loss.backward();
 			// Update the parameters based on the calculated gradients.
 			optimizer.step();
 			// Output the loss and checkpoint every 100 batches.
-			if (++batch_index % 100 == 0)
+			if (++batch_index % 1000 == 0)
 			{
-				std::cout << "Epoch: " << epoch << " | Batch: " << batch_index
-							<< " | Loss: " << loss.item<float>() << std::endl;
-				// Serialize your model periodically as a checkpoint.
+				std::cout << "Epoch: "<<epoch<<" | Batch: "<< batch_index<<" | Loss: "<<loss.item<float>()<<" | Last Prediction "<<prediction[0]<<'\n';
 				torch::save(net, "net.pt");
 			}
 		}
@@ -80,8 +50,6 @@ void train()
 
 int main(int argc, char** argv)
 {
-	EisGeneratorDataset dataset;
-	torch::data::Example<torch::Tensor, torch::Tensor> example = dataset.get(0);
 	train();
 
 	return 0;

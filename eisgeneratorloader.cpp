@@ -4,31 +4,41 @@
 #include <vector>
 #include <assert.h>
 #include <math.h>
+#include <eisgenerator/normalize.h>
 
-EisGeneratorDataset::EisGeneratorDataset(): omega(0, 1e6, 25)
+using namespace eis;
+
+void printDataVect(const std::vector<eis::DataPoint> in)
 {
-	models.push_back(Model("w{20e3}p{1e-7, 0.9}"));
-	std::vector<Model::Range> modelRange;
-	modelRange.push_back(Model::Range(1e3, 50e3, 100));
-	modelRange.push_back(Model::Range(1e-7, 20e-7, 100));
-	modelRange.push_back(Model::Range(0.7, 1.2, 100));
+	for(const eis::DataPoint& res : in)
+			std::cout<<res.omega<<','<<res.im.real()<<','<<res.im.imag()<<'\n';
+}
+
+EisGeneratorDataset::EisGeneratorDataset(): omega(10, 1e6, OUTPUT_SIZE/2, true)
+{
+	models.push_back(Model("w{20e3}p{1e-7, 0.9}r{1e2}"));
+	std::vector<eis::Range> modelRange;
+	modelRange.push_back(eis::Range(1e3, 50e3, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(1e-7, 20e-7, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(0.7, 1.2, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(1e1, 1e3, 1));
 	modelRanges.push_back(modelRange);
 	modelSweepSizes.push_back(
 		Model::getRequiredStepsForSweeps(modelRange));
 
 	models.push_back(Model("c{20e-9}r{1e6}"));
 	modelRange.clear();
-	modelRange.push_back(Model::Range(1e-6, 1e-5, 100));
-	modelRange.push_back(Model::Range(1e3, 20e3, 100));
+	modelRange.push_back(eis::Range(1e-6, 1e-5, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
 	modelRanges.push_back(modelRange);
 	modelSweepSizes.push_back(
 		Model::getRequiredStepsForSweeps(modelRange));
 
 	models.push_back(Model("r{1e6}-c{20e-9}r{1e6}"));
 	modelRange.clear();
-	modelRange.push_back(Model::Range(1e3, 20e3, 100));
-	modelRange.push_back(Model::Range(1e-6, 1e-5, 100));
-	modelRange.push_back(Model::Range(1e3, 20e3, 100));
+	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(1e-6, 1e-5, SWEEP_DEPTH, true));
+	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
 	modelRanges.push_back(modelRange);
 	modelSweepSizes.push_back(
 	Model::getRequiredStepsForSweeps(modelRange));
@@ -36,9 +46,9 @@ EisGeneratorDataset::EisGeneratorDataset(): omega(0, 1e6, 25)
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
 {
-	std::vector<Model::DataPoint> data;
+	std::vector<eis::DataPoint> data;
 	size_t model = 0;
-	for(; models.size(); ++model)
+	for(; model < models.size(); ++model)
 	{
 		if(index < modelSweepSizes[model])
 		{
@@ -53,27 +63,54 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 
 	assert(data.size());
 
+	if constexpr(PRINT)
+	{
+		std::cout<<"Data as reported by lib size: "<<data.size()<<" data:\n";
+		printDataVect(data);
+	}
+
+	data = eis::reduceRegion(data);
+
+	if constexpr(PRINT)
+	{
+		std::cout<<"Data reduced size "<<data.size()<<" data:\n";
+		printDataVect(data);
+	}
+
+	if(data.size() < OUTPUT_SIZE/8)
+	{
+		if constexpr(PRINT)
+			std::cout<<__func__<<' '<<index<<" rejected as uninteresting\n";
+		return get(index+1);
+	}
+	data = eis::rescale(data, OUTPUT_SIZE/2);
+
+	if constexpr(PRINT)
+	{
+		std::cout<<"Data rescaled size "<<data.size()<<" data:\n";
+		printDataVect(data);
+		assert(data.size()*2 == OUTPUT_SIZE);
+	}
+
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, options);
+	torch::Tensor input = torch::empty({static_cast<long int>(OUTPUT_SIZE)}, options);
 
-	for(size_t i = 0; i < data.size()*2; ++i)
+	for(size_t i = 0; i < OUTPUT_SIZE; ++i)
 	{
 		float datapoint = i < data.size() ? data[i].im.real() : data[i - data.size()].im.imag();
 		if(isnan(datapoint) || isinf(datapoint))
 			datapoint = 0;
 		input[i] = datapoint;
-
 	}
 
-	torch::Tensor output = torch::zeros({static_cast<long int>(models.size())}, options);
-	output[model] = 1;
+	//torch::Tensor output = torch::zeros({static_cast<long int>(models.size())}, options);
+	//output[model] = 1;
 
-
-	//torch::Tensor output = torch::Scalar(0);
-	//output[0] = static_cast<float>(model);
+	torch::Tensor output = torch::zeros({1}, options);;
+	output[0] = static_cast<float>(model);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }

@@ -13,11 +13,15 @@
 class EisGeneratorDataset :
 public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
 {
+public:
+	static constexpr int OUTPUT_SIZE = 50;
+	static constexpr int SWEEP_DEPTH = 100;
+	static constexpr bool PRINT = false;
 private:
-	std::vector<Model> models;
-	std::vector< std::vector<Model::Range> > modelRanges;
+	std::vector<eis::Model> models;
+	std::vector< std::vector<eis::Range> > modelRanges;
 	std::vector<size_t> modelSweepSizes;
-	Model::Range omega;
+	eis::Range omega;
 
 public:
 	explicit EisGeneratorDataset();
