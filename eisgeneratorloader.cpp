@@ -109,6 +109,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	//torch::Tensor output = torch::zeros({static_cast<long int>(models.size())}, options);
 	//output[model] = 1;
 
+	options = options.dtype(torch::kInt64);
 	torch::Tensor output = torch::zeros({1}, options);;
 	output[0] = static_cast<float>(model);
 

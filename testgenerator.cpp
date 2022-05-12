@@ -24,6 +24,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> TestDataset::get(size_t index
 		input[i] = 1/(std::pow(x , 2)+1);
 	}
 
+	options = options.dtype(torch::kInt64);
 	torch::Tensor output = torch::empty({1}, options);;
 	output[0] = static_cast<float>(classNum);
 

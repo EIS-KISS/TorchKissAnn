@@ -7,50 +7,90 @@
 #include "eisgeneratorloader.h"
 #include "testgenerator.h"
 
-void train()
+static constexpr int batch_size = 10;
+static constexpr auto DataLocation = torch::kCPU;
+
+template <typename DataLoader>
+void train(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer, size_t epoch, size_t data_size)
 {
 	std::cout<<__func__<<'\n';
-	std::shared_ptr<Net> net(new Net);
+	size_t index = 0;
+	network->train();
+	float Loss = 0, Acc = 0;
 
-	TestDataset dataset;
-
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(30).workers(16);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-
-	//Instantiate an SGD optimization algorithm to update our Net's parameters.
-	torch::optim::SGD optimizer(net->parameters(), /*lr=*/0.01);
-
-	for (size_t epoch = 1; epoch <= 100; ++epoch)
+	for (auto& batch : loader)
 	{
-		size_t batch_index = 0;
-		// Iterate the data loader to yield batches from the dataset.
-		for (auto& batch : *dataLoader)
+		auto data = batch.data.to(DataLocation);
+		auto targets = batch.target.to(DataLocation).view({-1});
+
+		auto prediction = network->forward(data);
+		auto loss = torch::nll_loss(prediction, targets);
+		assert(!std::isnan(loss.template item<float>()));
+		auto acc = prediction.argmax(1).eq(targets).sum();
+
+		optimizer.zero_grad();
+		loss.backward();
+		optimizer.step();
+
+		Loss += loss.template item<float>();
+		Acc += acc.template item<float>();
+
+		if (index++ % 1000 == 0)
 		{
-			//std::cout<<"batch "<<typeid(batch).name()<<'\n';
-			// Reset gradients.
-			optimizer.zero_grad();
-			// Execute the model on the input data.
-			torch::Tensor prediction = net->forward(batch.data);
-			// Compute a loss value to judge the prediction of our model.
- 			torch::Tensor loss = torch::l1_loss(prediction, batch.target);
-			// Compute gradients of the loss w.r.t. the parameters of our model.
-			loss.backward();
-			// Update the parameters based on the calculated gradients.
-			optimizer.step();
-			// Output the loss and checkpoint every 100 batches.
-			if (++batch_index % 1000 == 0)
-			{
-				std::cout << "Epoch: "<<epoch<<" | Batch: "<< batch_index<<" | Loss: "<<loss.item<float>()<<" | Last Prediction "<<prediction[0]<<'\n';
-				torch::save(net, "net.pt");
-			}
+			auto end = std::min(data_size, (index + 1) * batch_size);
+
+			std::cout<< "Train Epoch: " << epoch << " " << end << "/" << data_size
+				<< "\tLoss: " << Loss / end << "\tAcc: " << Acc / end
+				<< std::endl;
 		}
 	}
 }
 
+
+template <typename DataLoader>
+void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
+{
+	size_t index = 0;
+	network->eval();
+	torch::NoGradGuard no_grad;
+	float Loss = 0, Acc = 0;
+
+	for (const auto& batch : loader)
+	{
+		auto data = batch.data.to(DataLocation);
+		auto targets = batch.target.to(DataLocation).view({-1});
+
+		auto output = network->forward(data);
+		auto loss = torch::nll_loss(output, targets);
+		assert(!std::isnan(loss.template item<float>()));
+		auto acc = output.argmax(1).eq(targets).sum();
+
+		Loss += loss.template item<float>();
+		Acc += acc.template item<float>();
+	}
+
+	std::cout<<"Test Loss: "<<Loss / data_size<< "\tAcc: " <<Acc / data_size<< std::endl;
+}
+
 int main(int argc, char** argv)
 {
-	train();
+	std::shared_ptr<Net> net(new Net);
+
+	EisGeneratorDataset trainDataset;
+	EisGeneratorDataset testDataset;
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(16);
+	auto trainDataLoader = torch::data::make_data_loader(trainDataset.map(torch::data::transforms::Stack<>()), options);
+	auto testDataLoader = torch::data::make_data_loader(testDataset.map(torch::data::transforms::Stack<>()), options);
+
+	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
+
+	for (size_t i = 0; i < 2; ++i)
+	{
+		train(net, *trainDataLoader, optimizer, i+1, trainDataset.size().value());
+		test(net, *testDataLoader, trainDataset.size().value());
+	}
 
 	return 0;
 }
