@@ -6,7 +6,7 @@ Net::Net()
 	// Construct and register two Linear submodules.
 	fc1 = register_module("fc1", torch::nn::Linear(50, 30));
 	fc2 = register_module("fc2", torch::nn::Linear(30, 10));
-	fc3 = register_module("fc3", torch::nn::Linear(10, 5));
+	fc3 = register_module("fc3", torch::nn::Linear(10, 6));
 }
 
 torch::Tensor Net::forward(torch::Tensor x)

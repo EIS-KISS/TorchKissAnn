@@ -16,32 +16,13 @@ void printDataVect(const std::vector<eis::DataPoint> in)
 
 EisGeneratorDataset::EisGeneratorDataset(): omega(10, 1e6, OUTPUT_SIZE/2, true)
 {
-	models.push_back(Model("w{20e3}p{1e-7, 0.9}r{1e2}"));
-	std::vector<eis::Range> modelRange;
-	modelRange.push_back(eis::Range(1e3, 50e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-7, 20e-7, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(0.7, 1.2, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e3, 1));
-	modelRanges.push_back(modelRange);
-	modelSweepSizes.push_back(
-		Model::getRequiredStepsForSweeps(modelRange));
+}
 
-	models.push_back(Model("c{20e-9}r{1e6}"));
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e-6, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
+void EisGeneratorDataset::addModel(const eis::Model& model, std::vector<eis::Range> modelRange)
+{
+	models.push_back(model);
 	modelRanges.push_back(modelRange);
-	modelSweepSizes.push_back(
-		Model::getRequiredStepsForSweeps(modelRange));
-
-	models.push_back(Model("r{1e6}-c{20e-9}r{1e6}"));
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-6, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e3, 20e3, SWEEP_DEPTH, true));
-	modelRanges.push_back(modelRange);
-	modelSweepSizes.push_back(
-	Model::getRequiredStepsForSweeps(modelRange));
+	modelSweepSizes.push_back(eis::Model::getRequiredStepsForSweeps(modelRange));
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
@@ -105,9 +86,6 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 			datapoint = 0;
 		input[i] = datapoint;
 	}
-
-	//torch::Tensor output = torch::zeros({static_cast<long int>(models.size())}, options);
-	//output[model] = 1;
 
 	options = options.dtype(torch::kInt64);
 	torch::Tensor output = torch::zeros({1}, options);;

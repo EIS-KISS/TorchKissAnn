@@ -15,7 +15,6 @@ public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<
 {
 public:
 	static constexpr int OUTPUT_SIZE = 50;
-	static constexpr int SWEEP_DEPTH = 100;
 	static constexpr bool PRINT = false;
 private:
 	std::vector<eis::Model> models;
@@ -27,6 +26,10 @@ public:
 	explicit EisGeneratorDataset();
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+
+	inline void setOmegaRange(eis::Range range){omega = range;}
+
+	void addModel(const eis::Model& model, std::vector<eis::Range> modelRange);
 
 	size_t modelCount();
 	size_t frequencies();
