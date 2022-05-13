@@ -227,5 +227,7 @@ int main(int argc, char** argv)
 	delete trainDataset;
 	delete testDataset;
 
+	torch::save(net, "net.pt");
+
 	return 0;
 }
