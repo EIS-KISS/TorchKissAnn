@@ -6,9 +6,17 @@ set(SRC_FILES
 	eisgeneratorloader.cpp
 	testgenerator.cpp
 	model.cpp
+	log.cpp
+	tokenize.cpp
+	eistotorch.cpp
 )
 
 find_package(Torch REQUIRED)
+
+add_executable(${PROJECT_NAME}_train ${SRC_FILES} train.cpp)
+target_link_libraries(${PROJECT_NAME}_train ${TORCH_LIBRARIES} -leisgenerator)
+target_include_directories(${PROJECT_NAME}_train PUBLIC ${TORCH_INCLUDE_DIRS} .)
+set_target_properties(${PROJECT_NAME}_train PROPERTIES COMPILE_FLAGS "-std=c++20 -Wall -O3 -march=native -g" LINK_FLAGS "-flto")
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} main.cpp)
 target_link_libraries(${PROJECT_NAME} ${TORCH_LIBRARIES} -leisgenerator)

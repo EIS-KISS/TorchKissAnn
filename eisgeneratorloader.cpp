@@ -5,6 +5,9 @@
 #include <assert.h>
 #include <math.h>
 #include <eisgenerator/normalize.h>
+#include <eisgenerator/basicmath.h>
+
+#include "eistotorch.h"
 
 using namespace eis;
 
@@ -73,22 +76,14 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 		assert(data.size()*2 == OUTPUT_SIZE);
 	}
 
+	torch::Tensor input = eisToTorch(data);
+
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor input = torch::empty({static_cast<long int>(OUTPUT_SIZE)}, options);
-
-	for(size_t i = 0; i < OUTPUT_SIZE; ++i)
-	{
-		float datapoint = i < data.size() ? data[i].im.real() : data[i - data.size()].im.imag();
-		if(isnan(datapoint) || isinf(datapoint))
-			datapoint = 0;
-		input[i] = datapoint;
-	}
-
 	options = options.dtype(torch::kInt64);
-	torch::Tensor output = torch::zeros({1}, options);;
+	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(model);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);

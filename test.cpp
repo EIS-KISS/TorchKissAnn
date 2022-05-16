@@ -1,5 +1,6 @@
 #include <iostream>
 #include <torch/torch.h>
+#include <eisgenerator/model.h>
 
 #include "eisgeneratorloader.h"
 
