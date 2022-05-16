@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <eisgenerator/eistype.h>
 #include <eisgenerator/basicmath.h>
 #include <eisgenerator/normalize.h>
@@ -17,6 +18,7 @@
 
 void printDataVect(const std::vector<eis::DataPoint>& in)
 {
+	std::cout<<"omega, real, imag\n";
 	for(const eis::DataPoint& res : in)
 			std::cout<<res.omega<<','<<res.im.real()<<','<<res.im.imag()<<'\n';
 }
@@ -63,6 +65,9 @@ std::vector<eis::DataPoint> parsEisSpectraFromMpt(std::string fileName)
 			point.im.imag(0-imag);
 			data.push_back(point);
 		}
+
+		if(data.size() > 1 && data.begin()->omega > (data.end()-1)->omega)
+			std::reverse(data.begin(), data.end());
 		return data;
 	}
 	catch(io::error::base& error)
@@ -139,6 +144,12 @@ int main(int argc, char** argv)
 	EisGeneratorDataset::filterData(data, net->getInputSize());
 
 	torch::Tensor input = eisToTorch(data);
+
+	if(config.show)
+	{
+		printDataVect(data);
+		return 0;
+	}
 
 	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
 

@@ -872,7 +872,7 @@ namespace io{
                 ){
                         for (int i : col_order) {
                                 if(line == nullptr)
-                                        throw ::io::error::too_few_columns();
+                                        break;//throw ::io::error::too_few_columns();
                                 char*col_begin, *col_end;
                                 chop_next_column<quote_policy>(line, col_begin, col_end);
 
