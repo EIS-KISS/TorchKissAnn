@@ -17,7 +17,7 @@ void printDataVect(const std::vector<eis::DataPoint> in)
 			std::cout<<res.omega<<','<<res.im.real()<<','<<res.im.imag()<<'\n';
 }
 
-EisGeneratorDataset::EisGeneratorDataset(): omega(10, 1e6, OUTPUT_SIZE/2, true)
+EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize): omega(10, 1e6, outputSize/2, true)
 {
 }
 
@@ -53,27 +53,13 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 		printDataVect(data);
 	}
 
-	data = eis::reduceRegion(data);
+	filterData(data, omega.count*2);
 
-	if constexpr(PRINT)
-	{
-		std::cout<<"Data reduced size "<<data.size()<<" data:\n";
-		printDataVect(data);
-	}
-
-	if(data.size() < OUTPUT_SIZE/8)
+	if(data.size() != omega.count)
 	{
 		if constexpr(PRINT)
 			std::cout<<__func__<<' '<<index<<" rejected as uninteresting\n";
 		return get(index+1);
-	}
-	data = eis::rescale(data, OUTPUT_SIZE/2);
-
-	if constexpr(PRINT)
-	{
-		std::cout<<"Data rescaled size "<<data.size()<<" data:\n";
-		printDataVect(data);
-		assert(data.size()*2 == OUTPUT_SIZE);
 	}
 
 	torch::Tensor input = eisToTorch(data);
@@ -105,4 +91,29 @@ c10::optional<size_t> EisGeneratorDataset::size() const
 	for(size_t i = 0; i < models.size(); ++i)
 		size += modelSweepSizes[i];
 	return size;
+}
+
+void EisGeneratorDataset::filterData(std::vector<eis::DataPoint>& data, size_t outputSize)
+{
+	data = eis::reduceRegion(data);
+
+	if constexpr(PRINT)
+	{
+		std::cout<<"Data reduced size "<<data.size()<<" data:\n";
+		printDataVect(data);
+	}
+
+	if(data.size() < outputSize/8)
+	{
+		data = std::vector<eis::DataPoint>();
+		return;
+	}
+	data = eis::rescale(data, outputSize/2);
+
+	if constexpr(PRINT)
+	{
+		std::cout<<"Data rescaled size "<<data.size()<<" data:\n";
+		printDataVect(data);
+		assert(data.size() == outputSize/2);
+	}
 }

@@ -39,10 +39,8 @@ void train(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optim
 		if (index++ % 1000 == 0)
 		{
 			auto end = std::min(data_size, (index + 1) * batch_size);
-
-			std::cout<< "Train Epoch: " << epoch << " " << end << "/" << data_size
-				<< "\tLoss: " << Loss / end << "\tAcc: " << Acc / end
-				<< std::endl;
+			std::cout<<"Train Epoch: "<< epoch <<' '<<end<<'/'<< data_size<<"\tLoss: "<<Loss/end<<"\tAcc: "<<Acc/end<<'\n';
+			torch::save(network, "net.pt");
 		}
 	}
 }

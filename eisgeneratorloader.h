@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <torch/data/datasets/base.h>
 #include <torch/data/example.h>
 #include <torch/types.h>
@@ -14,7 +16,6 @@ class EisGeneratorDataset :
 public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
 {
 public:
-	static constexpr int OUTPUT_SIZE = 50;
 	static constexpr bool PRINT = false;
 private:
 	std::vector<eis::Model> models;
@@ -23,13 +24,15 @@ private:
 	eis::Range omega;
 
 public:
-	explicit EisGeneratorDataset();
+	explicit EisGeneratorDataset(int64_t outputSize = 100);
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
 	inline void setOmegaRange(eis::Range range){omega = range;}
 
 	void addModel(const eis::Model& model, std::vector<eis::Range> modelRange);
+
+	static void filterData(std::vector<eis::DataPoint>& data, size_t outputSize);
 
 	size_t modelCount();
 	size_t frequencies();

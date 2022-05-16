@@ -5,6 +5,7 @@
 #include <string>
 #include <eisgenerator/eistype.h>
 #include <eisgenerator/basicmath.h>
+#include <eisgenerator/normalize.h>
 
 #include "model.h"
 #include "log.h"
@@ -12,6 +13,7 @@
 #include "csv.h"
 #include "tokenize.h"
 #include "eistotorch.h"
+#include "eisgeneratorloader.h"
 
 void printDataVect(const std::vector<eis::DataPoint>& in)
 {
@@ -75,7 +77,7 @@ std::vector<eis::DataPoint> parsEisSpectraFromCsv(std::string fileName)
 	try
 	{
 		io::CSVReader<3, io::trim_chars<' ', '\t'>, io::no_quote_escape<','>> spectrumCsv(fileName);
-		spectrumCsv.read_header(io::ignore_extra_column, "freqency", "real", "im");
+		spectrumCsv.read_header(io::ignore_extra_column, "omega", "real", "im");
 		std::vector<eis::DataPoint> data;
 
 		double omega, real, imag;
@@ -134,16 +136,13 @@ int main(int argc, char** argv)
 	if(data.empty())
 		return -1;
 
-	data = rescale(data, net->getInputSize()/2);
+	EisGeneratorDataset::filterData(data, net->getInputSize());
 
 	torch::Tensor input = eisToTorch(data);
 
-	std::cout<<input;
-	return 0;
+	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
 
-	torch::Tensor output = net->forward(input);
-
-	std::cout<<output;
+	std::cout<<output.argmax(1)[0];
 
 	return 0;
 }
