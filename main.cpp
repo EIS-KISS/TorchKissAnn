@@ -1,5 +1,4 @@
 #include <iostream>
-#include <torch/torch.h>
 #include <memory>
 #include <vector>
 #include <string>
@@ -14,7 +13,7 @@
 #include "csv.h"
 #include "tokenize.h"
 #include "eistotorch.h"
-#include "eisgeneratorloader.h"
+#include "eisgendata.h"
 
 void printDataVect(const std::vector<eis::DataPoint>& in)
 {
@@ -153,7 +152,11 @@ int main(int argc, char** argv)
 
 	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
 	std::cout<<output<<'\n';
-	std::cout<<output.argmax(1)[0]<<'\n';
+	size_t classNum = output.argmax(1)[0].item().to<float>();
+	std::cout<<classNum<<'\n';
+
+	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset());
+	std::cout<<dataset->getModelStrFromClass(classNum)<<'\n';
 
 	return 0;
 }

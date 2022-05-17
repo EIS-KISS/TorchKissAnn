@@ -1,5 +1,4 @@
 #include "net.h"
-#include "eisgeneratorloader.h"
 
 Net::Net()
 {

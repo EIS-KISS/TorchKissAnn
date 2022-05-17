@@ -1,15 +1,14 @@
 #include <iostream>
-#include <torch/torch.h>
 #include <eisgenerator/model.h>
 #include <memory>
+#include <torch/optim.h>
 
 #include "net.h"
-#include "eisgeneratorloader.h"
+#include "eisgendata.h"
 #include "testgenerator.h"
 
 static constexpr int batch_size = 100;
 static constexpr auto DataLocation = torch::kCPU;
-static constexpr int SWEEP_DEPTH = 15;
 
 template <typename DataLoader>
 void train(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer, size_t epoch, size_t data_size)
@@ -70,144 +69,12 @@ void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
 	std::cout<<"Test Loss: "<<Loss / data_size<< "\tAcc: " <<Acc / data_size<< std::endl;
 }
 
-inline EisGeneratorDataset* getNeisGeneratedDataset()
-{
-	EisGeneratorDataset* dataset = new EisGeneratorDataset();
-
-	std::vector<eis::Range> modelRange;
-
-	eis::Model bord1_1("(c{1e-6}-r{47})(c{1e-6}-r{1e3})(c{1e-6}-r{22e3})");
-
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH, true));
-	dataset->addModel(bord1_1, modelRange);
-
-	eis::Model bord1_2("r{1e9}-c{1e-6}r{1e9}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH, true));
-	dataset->addModel(bord1_2, modelRange);
-
-	eis::Model bord1_4("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH, true));
-	dataset->addModel(bord1_4, modelRange);
-
-	eis::Model bord1_5("r{47}l{100e-6}-r{47}c{1e-6}-r{47}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-6, 1e-3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-9, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH, true));
-	dataset->addModel(bord1_5, modelRange);
-
-	eis::Model bord2("r{1e3}c{1e-6}-r{1e3}c{1e-9}-r{47}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH, true));
-	dataset->addModel(bord2, modelRange);
-
-	eis::Model bord4("r{100}-r{470}c{100e-12}-r{1e3}c{1e-9}-r{100}c{1e-6}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH, true));
-	dataset->addModel(bord4, modelRange);
-
-	std::cout<<__func__<<" with "<<dataset->size().value()<<" examples\n";
-	return dataset;
-}
-
-
-inline EisGeneratorDataset* getNeisGeneratedDatasetAlt()
-{
-	EisGeneratorDataset* dataset = new EisGeneratorDataset();
-
-	std::vector<eis::Range> modelRange;
-
-	eis::Model bord1_1("(c{1e-6}-r{47})(c{1e-6}-r{1e3})(c{1e-6}-r{22e3})");
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 100e3, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord1_1, modelRange);
-
-	eis::Model bord1_2("r{1e9}-c{1e-6}r{1e9}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord1_2, modelRange);
-
-	eis::Model bord1_4("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord1_4, modelRange);
-
-	eis::Model bord1_5("r{47}l{100e-6}-r{47}c{1e-6}-r{47}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-6, 1e-3, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-9, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e3, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord1_5, modelRange);
-
-	eis::Model bord2("r{1e3}c{1e-6}-r{1e3}c{1e-9}-r{47}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e1, 1e4, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord2, modelRange);
-
-	eis::Model bord4("r{100}-r{470}c{100e-12}-r{1e3}c{1e-9}-r{100}c{1e-6}");
-	modelRange.clear();
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(10, 1e4, SWEEP_DEPTH/2, true));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, SWEEP_DEPTH/2, true));
-	dataset->addModel(bord4, modelRange);
-
-	std::cout<<__func__<<" with "<<dataset->size().value()<<" examples\n";
-	return dataset;
-}
-
 int main(int argc, char** argv)
 {
 	std::shared_ptr<Net> net(new Net);
 
-	EisGeneratorDataset* trainDataset = getNeisGeneratedDataset();
-	EisGeneratorDataset* testDataset = getNeisGeneratedDatasetAlt();
+	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDataset();
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDatasetAlt();
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);

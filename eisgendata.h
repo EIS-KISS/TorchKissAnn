@@ -2,21 +2,18 @@
 
 #include <cstdint>
 
-#include <torch/data/datasets/base.h>
-#include <torch/data/example.h>
-#include <torch/types.h>
-
 #include <cstddef>
 #include <vector>
 #include <optional>
-
 #include <eisgenerator/model.h>
+#include <string>
 
 class EisGeneratorDataset :
 public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
 {
 public:
 	static constexpr bool PRINT = false;
+	static constexpr int SWEEP_DEPTH = 15;
 private:
 	std::vector<eis::Model> models;
 	std::vector< std::vector<eis::Range> > modelRanges;
@@ -36,6 +33,11 @@ public:
 
 	size_t modelCount();
 	size_t frequencies();
+
+	std::string getModelStrFromClass(size_t classNum);
+
+	static EisGeneratorDataset* getNeisGeneratedDataset();
+	static EisGeneratorDataset* getNeisGeneratedDatasetAlt();
 
 	c10::optional<size_t> size() const override;
 };
