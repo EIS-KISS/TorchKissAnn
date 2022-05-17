@@ -3,13 +3,13 @@
 #include <eisgenerator/model.h>
 #include <memory>
 
-#include "model.h"
+#include "net.h"
 #include "eisgeneratorloader.h"
 #include "testgenerator.h"
 
-static constexpr int batch_size = 10;
+static constexpr int batch_size = 100;
 static constexpr auto DataLocation = torch::kCPU;
-static constexpr int SWEEP_DEPTH = 10;
+static constexpr int SWEEP_DEPTH = 15;
 
 template <typename DataLoader>
 void train(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer, size_t epoch, size_t data_size)
@@ -210,13 +210,13 @@ int main(int argc, char** argv)
 	EisGeneratorDataset* testDataset = getNeisGeneratedDatasetAlt();
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(1);
+	options = options.batch_size(batch_size).workers(16);
 	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
 
 	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
 
-	for (size_t i = 0; i < 2; ++i)
+	for (size_t i = 0; i < 4; ++i)
 	{
 		train(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value());
 		test(net, *testDataLoader, trainDataset->size().value());

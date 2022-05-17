@@ -8,7 +8,7 @@
 #include <eisgenerator/basicmath.h>
 #include <eisgenerator/normalize.h>
 
-#include "model.h"
+#include "net.h"
 #include "log.h"
 #include "options.h"
 #include "csv.h"
@@ -152,8 +152,8 @@ int main(int argc, char** argv)
 	}
 
 	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
-
-	std::cout<<output.argmax(1)[0];
+	std::cout<<output<<'\n';
+	std::cout<<output.argmax(1)[0]<<'\n';
 
 	return 0;
 }
