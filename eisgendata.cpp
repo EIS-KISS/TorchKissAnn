@@ -140,7 +140,7 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset()
 	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH, true));
 	modelRange.push_back(eis::Range(1e-7, 1e-5, SWEEP_DEPTH, true));
 	modelRange.push_back(eis::Range(1e3, 1e10, SWEEP_DEPTH, true));
-	dataset->addModel(bord1_2, modelRange);
+	dataset->addModel(bord1_3, modelRange);
 
 	eis::Model bord1_4("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
 	modelRange.clear();
