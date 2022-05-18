@@ -17,8 +17,17 @@ static struct argp_option options[] =
   {"input",		'i', "[STRING]",		0,	"Input file name" },
   {"type",		't', "[STRING]",		0,	"String identifying the file type of the file type valid options are: csv, mpt" },
   {"show",	's', 0,						0,	"Show filtered input"},
+  {"nn",			'b', 0,						0,	"Use Nearest Neighbor prediction method"},
+  {"knn",		'k', 0,						0,	"Use k-Nearest Nieghbor prediction method"},
   { 0 }
 };
+
+typedef enum
+{
+	MODE_ANN = 0,
+	MODE_NN,
+	MODE_KNN
+} PredictionMode;
 
 struct Config
 {
@@ -26,6 +35,7 @@ struct Config
 	std::string spectraFileName;
 	std::string fileType = "csv";
 	bool show = false;
+	PredictionMode mode = MODE_ANN;
 };
 
 static error_t
@@ -52,6 +62,12 @@ parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 's':
 		config->show = true;
+		break;
+	case 'b':
+		config->mode = MODE_NN;
+		break;
+	case 'k':
+		config->mode = MODE_KNN;
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;

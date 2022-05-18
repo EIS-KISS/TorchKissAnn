@@ -20,6 +20,7 @@ void printDataVect(const std::vector<eis::DataPoint> in)
 
 EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize): omega(10, 1e6, outputSize/2, true)
 {
+	Log(Log::DEBUG)<<"init: "<<__func__;
 }
 
 void EisGeneratorDataset::addModel(const eis::Model& model, std::vector<eis::Range> modelRange)

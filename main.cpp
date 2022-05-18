@@ -14,6 +14,7 @@
 #include "tokenize.h"
 #include "eistotorch.h"
 #include "eisgendata.h"
+#include "nearest.h"
 
 void printDataVect(const std::vector<eis::DataPoint>& in)
 {
@@ -102,12 +103,36 @@ std::vector<eis::DataPoint> parsEisSpectraFromCsv(std::string fileName)
 	return std::vector<eis::DataPoint>();
 }
 
+size_t useAnn(torch::Tensor input, std::string fileName)
+{
+	std::shared_ptr<Net> net(new Net);
+	torch::load(net, fileName);
+	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
+	Log(Log::INFO)<<output;
+	size_t classNum = output.argmax(1)[0].item().to<float>();
+	Log(Log::INFO)<<classNum;
+	return classNum;
+}
+
+size_t useNn(torch::Tensor input, EisGeneratorDataset* dataset)
+{
+	input = input.reshape({1, input.size(0)});
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(dataset->size().value()).workers(16);
+	auto dataLoader = torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(dataset->map(torch::data::transforms::Stack<>()), options);
+	torch::data::Example<torch::Tensor, torch::Tensor> grandBatch = *dataLoader->begin();
+	NearestNeighbor nearest(grandBatch.data, grandBatch.target);
+	size_t classNum = nearest.predict(input)[0].item().to<float>();
+	Log(Log::INFO)<<classNum;
+	return classNum;
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
-	if(config.networkFileName.empty())
+	if(config.networkFileName.empty() && config.mode == MODE_ANN)
 	{
 		Log(Log::ERROR)<<"A network file name must be specified";
 		return -1;
@@ -134,13 +159,10 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	std::shared_ptr<Net> net(new Net);
-	torch::load(net, config.networkFileName);
-
 	if(data.empty())
 		return -1;
 
-	EisGeneratorDataset::filterData(data, net->getInputSize());
+	EisGeneratorDataset::filterData(data, 100);
 
 	torch::Tensor input = eisToTorch(data);
 
@@ -150,12 +172,24 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
-	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
-	std::cout<<output<<'\n';
-	size_t classNum = output.argmax(1)[0].item().to<float>();
-	std::cout<<classNum<<'\n';
-
 	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset());
+
+	size_t classNum;
+
+	switch(config.mode)
+	{
+		case MODE_ANN:
+			classNum = useAnn(input, config.networkFileName);
+			break;
+		case MODE_NN:
+			classNum = useNn(input, dataset.get());
+			break;
+		case MODE_KNN:
+		default:
+			Log(Log::ERROR)<<"Not implemented";
+			return -1;
+	}
+
 	std::cout<<dataset->getModelStrFromClass(classNum)<<'\n';
 
 	return 0;

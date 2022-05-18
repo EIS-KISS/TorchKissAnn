@@ -6,6 +6,7 @@
 #include "net.h"
 #include "eisgendata.h"
 #include "testgenerator.h"
+#include "log.h"
 
 static constexpr int batch_size = 100;
 static constexpr auto DataLocation = torch::kCPU;
@@ -71,6 +72,7 @@ void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
 
 int main(int argc, char** argv)
 {
+	Log::level = Log::DEBUG;
 	std::shared_ptr<Net> net(new Net);
 
 	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDataset();
