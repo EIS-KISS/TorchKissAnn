@@ -38,6 +38,7 @@ public:
 	std::string getModelStrFromClass(size_t classNum);
 
 	static EisGeneratorDataset* getNeisGeneratedDataset();
+	static EisGeneratorDataset* getNeisGeneratedDatasetWithBLl();
 	static EisGeneratorDataset* getNeisGeneratedDatasetAlt();
 
 	c10::optional<size_t> size() const override;

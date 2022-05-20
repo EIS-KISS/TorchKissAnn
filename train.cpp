@@ -75,7 +75,7 @@ int main(int argc, char** argv)
 	Log::level = Log::DEBUG;
 	std::shared_ptr<Net> net(new Net);
 
-	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDataset();
+	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl();
 	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDatasetAlt();
 
 	torch::data::DataLoaderOptions options;
@@ -88,7 +88,7 @@ int main(int argc, char** argv)
 	for (size_t i = 0; i < 4; ++i)
 	{
 		train(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value());
-		test(net, *testDataLoader, trainDataset->size().value());
+		test(net, *testDataLoader, testDataset->size().value());
 	}
 
 	delete trainDataset;

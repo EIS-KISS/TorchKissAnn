@@ -5,9 +5,27 @@
 #include "nearest.h"
 #include "log.h"
 
+void testLoader()
+{
+	EisGeneratorDataset* data = EisGeneratorDataset::getNeisGeneratedDataset();
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(100);
+	options = options.workers(16);
+	options = options.max_jobs(32);
+
+	std::cout<<options.batch_size()<<' '<<options.workers()<<' '<<options.max_jobs().value()<<' '<<data->is_stateful<<'\n';
+	auto dataLoader = torch::data::make_data_loader(data->map(torch::data::transforms::Stack<>()), options);
+	size_t i = 0;
+	for(auto& batch : *dataLoader)
+	{
+		std::cout<<"batchnum: "<<++i<<" size "<<batch.data.numel()<<std::endl;
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
+	testLoader();
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
