@@ -19,6 +19,8 @@ static struct argp_option options[] =
   {"show",	's', 0,						0,	"Show filtered input"},
   {"nn",			'b', 0,						0,	"Use Nearest Neighbor prediction method"},
   {"knn",		'k', 0,						0,	"Use k-Nearest Nieghbor prediction method"},
+  {"svm",		'm', 0,						0,	"Use support vector machine prediction method"},
+  {"pre-svm",	'p', "[STRING]",			0,	"Use support vector machine as pre-ann input filter"},
   { 0 }
 };
 
@@ -26,7 +28,8 @@ typedef enum
 {
 	MODE_ANN = 0,
 	MODE_NN,
-	MODE_KNN
+	MODE_KNN,
+	MODE_SVM
 } PredictionMode;
 
 struct Config
@@ -34,6 +37,7 @@ struct Config
 	std::string networkFileName;
 	std::string spectraFileName;
 	std::string fileType = "csv";
+	std::string svmPre;
 	bool show = false;
 	PredictionMode mode = MODE_ANN;
 };
@@ -60,6 +64,9 @@ parse_opt (int key, char *arg, struct argp_state *state)
 	case 't':
 		config->fileType.assign(arg);
 		break;
+	case 'p':
+		config->svmPre.assign(arg);
+		break;
 	case 's':
 		config->show = true;
 		break;
@@ -68,6 +75,9 @@ parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 'k':
 		config->mode = MODE_KNN;
+		break;
+	case 'm':
+		config->mode = MODE_SVM;
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;

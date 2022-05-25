@@ -1,13 +1,15 @@
 #include <iostream>
 #include <eisgenerator/model.h>
+#include <libsvm/svm.h>
+#include <random>
 
 #include "eisgendata.h"
 #include "nearest.h"
 #include "log.h"
+#include "svmloader.h"
 
-void testLoader()
+void testLoader(EisGeneratorDataset* data)
 {
-	EisGeneratorDataset* data = EisGeneratorDataset::getNeisGeneratedDataset();
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(100);
 	options = options.workers(16);
@@ -25,7 +27,14 @@ void testLoader()
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
-	testLoader();
+
+	std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
+
+	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(100);
+
+	return 0;
+
+	testLoader(eisData);
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);

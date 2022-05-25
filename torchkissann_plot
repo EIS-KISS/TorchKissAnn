@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if ! command -v eisgenerator_export &> /dev/null
+then
+	echo "eisgenerator_export is required in \$PATH"
+	exit
+elif ! command -v gnuplot &> /dev/null
+then
+	echo "gnuplot is required in \$PATH"
+	exit
+fi
+
+torchkissann -s -q $@ | gnuplot -p -e "set datafile separator ','; plot '-' using 2:3 w l"

@@ -1,4 +1,6 @@
+#include <cstddef>
 #include <iostream>
+#include <libsvm/svm.h>
 #include <memory>
 #include <vector>
 #include <string>
@@ -15,6 +17,9 @@
 #include "eistotorch.h"
 #include "eisgendata.h"
 #include "nearest.h"
+#include "svmloader.h"
+
+#include "constants.h"
 
 void printDataVect(const std::vector<eis::DataPoint>& in)
 {
@@ -103,18 +108,41 @@ std::vector<eis::DataPoint> parsEisSpectraFromCsv(std::string fileName)
 	return std::vector<eis::DataPoint>();
 }
 
-size_t useAnn(torch::Tensor input, std::string fileName)
+torch::Tensor useSvm(torch::Tensor input, std::string filenName)
 {
-	std::shared_ptr<Net> net(new Net);
-	torch::load(net, fileName);
-	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
-	Log(Log::INFO)<<output;
-	size_t classNum = output.argmax(1)[0].item().to<float>();
-	Log(Log::INFO)<<classNum;
-	return classNum;
+	svm_model* model = svm_load_model(filenName.c_str());
+	if(!model)
+	{
+		Log(Log::ERROR)<<"could not load SVM model from "<<filenName;
+		exit(-1);
+	}
+
+	svm_node* data = SvmLoader<EisGeneratorDataset>::tensorToNewSvmNodeArray(input);
+
+	double* estimates = new double[svm_get_nr_class(model)];
+	svm_predict_probability(model, data, estimates);
+
+	torch::Tensor output = torch::empty(svm_get_nr_class(model));
+
+	for(int64_t i = 0; i < output.size(0); ++i)
+		output[i] = estimates[i];
+
+	svm_free_and_destroy_model(&model);
+	delete[] data;
+	delete[] estimates;
+	return output;
 }
 
-size_t useNn(torch::Tensor input, EisGeneratorDataset* dataset)
+torch::Tensor useAnn(torch::Tensor input, std::string fileName)
+{
+	std::shared_ptr<Net> net(new Net);
+	net->eval();
+	torch::load(net, fileName);
+	torch::Tensor output = torch::exp(net->forward(input.reshape({1, net->getInputSize()})));
+	return output;
+}
+
+torch::Tensor useNn(torch::Tensor input, EisGeneratorDataset* dataset)
 {
 	input = input.reshape({1, input.size(0)});
 	torch::data::DataLoaderOptions options;
@@ -123,8 +151,9 @@ size_t useNn(torch::Tensor input, EisGeneratorDataset* dataset)
 	torch::data::Example<torch::Tensor, torch::Tensor> grandBatch = *dataLoader->begin();
 	NearestNeighbor nearest(grandBatch.data, grandBatch.target);
 	size_t classNum = nearest.predict(input)[0].item().to<float>();
-	Log(Log::INFO)<<classNum;
-	return classNum;
+	torch::Tensor output = torch::zeros(dataset->modelCount());
+	output[classNum] = 1.0;
+	return output;
 }
 
 int main(int argc, char** argv)
@@ -132,7 +161,7 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
-	if(config.networkFileName.empty() && config.mode == MODE_ANN)
+	if(config.networkFileName.empty() && (config.mode == MODE_ANN || config.mode == MODE_SVM) && !config.show)
 	{
 		Log(Log::ERROR)<<"A network file name must be specified";
 		return -1;
@@ -162,7 +191,7 @@ int main(int argc, char** argv)
 	if(data.empty())
 		return -1;
 
-	EisGeneratorDataset::filterData(data, 100);
+	EisGeneratorDataset::filterData(data, DATA_WIDTH);
 
 	torch::Tensor input = eisToTorch(data);
 
@@ -172,17 +201,20 @@ int main(int argc, char** argv)
 		return 0;
 	}
 
-	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset());
+	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
 
-	size_t classNum;
+	torch::Tensor output;
 
 	switch(config.mode)
 	{
 		case MODE_ANN:
-			classNum = useAnn(input, config.networkFileName);
+			output = useAnn(input, config.networkFileName);
 			break;
 		case MODE_NN:
-			classNum = useNn(input, dataset.get());
+			output = useNn(input, dataset.get());
+			break;
+		case MODE_SVM:
+			output = useSvm(input, config.networkFileName);
 			break;
 		case MODE_KNN:
 		default:
@@ -190,7 +222,20 @@ int main(int argc, char** argv)
 			return -1;
 	}
 
-	std::cout<<dataset->getModelStrFromClass(classNum)<<'\n';
+	output = output.reshape({output.numel()});
+
+	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
+	for(size_t i = 0; i < dataset->modelCount(); ++i)
+	{
+		std::string model = dataset->getModelStrFromClass(i);
+		Log(Log::INFO)<<i<<'\t'<<model<<(model.size() >= 8 ? "\t" : "\t\t")<<output[i].item().to<float>();
+	}
+
+	for(int64_t i = 0; i < output.size(0); ++i)
+	{
+		if(output[i].item().to<float>() > 0.25)
+			std::cout<<"Could be: "<<dataset->getModelStrFromClass(i)<<" confidence "<<output[i].item().to<float>()<<std::endl;
+	}
 
 	return 0;
 }
