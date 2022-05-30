@@ -12,6 +12,7 @@ set(SRC_FILES
 	nearest.cpp
 	svmloader.cpp
 	trashgenerator.cpp
+	classextractordataset.cpp
 )
 
 find_package(Torch REQUIRED)
