@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <random>
+#include <iostream>
 #include <libsvm/svm.h>
 #include "log.h"
 
@@ -17,10 +18,8 @@ public:
 
 	}
 
-	svm_problem getSvmProblem(size_t maximum = SIZE_MAX)
+	svm_problem getSvmProblem(size_t maximum = SIZE_MAX, bool oneClass = false)
 	{
-		Log(Log::INFO)<<"Construting svm problem:";
-
 		std::random_device rd;
 		std::default_random_engine rande(rd());
 
@@ -29,31 +28,32 @@ public:
 		problem.l = maximum < dataSetSize ? maximum : dataSetSize;
 		problem.y = new double[problem.l];
 		problem.x = new svm_node*[problem.l];
-		torch::Tensor exampleZero = _dataset->get(0).data;
-		size_t exampleElements = exampleZero.numel();
+
+		Log(Log::INFO)<<"Construting svm problem of size "<<problem.l<<":";
+
 		for(int i = 0; i < problem.l; ++i)
 		{
 			torch::data::Example<torch::Tensor, torch::Tensor> example =
 				maximum < dataSetSize ? _dataset->get(rande() % dataSetSize) : _dataset->get(i);
-			problem.x[i] = new svm_node[exampleElements+1];
+			problem.x[i] = tensorToNewSvmNodeArray(example.data);
 
-			torch::Tensor data = example.data.reshape({static_cast<int64_t>(exampleElements)});
-			float* dataPtr = data.contiguous().data_ptr<float>();
-			for(size_t j = 0; j < exampleElements; ++j)
-			{
-				problem.x[i][j].index = j+1;
-				problem.x[i][j].value = dataPtr[j];
-			}
-
-			problem.x[i][exampleElements].index=-1;//state the end of data vector
-			problem.x[i][exampleElements].value=0;
-
-			problem.y[i] = example.target[0].item().to<double>()+1;
+			problem.y[i] = oneClass ? 0 : example.target[0].item().to<double>();
 			if(i % 100 == 0)
 			{
-				Log(Log::INFO)<<i<<" of "<<problem.l;
+				if(Log::level == Log::DEBUG)
+				{
+					Log(Log::INFO)<<i<<" of "<<problem.l;
+					std::cout<<std::flush;
+				}
+				else
+				{
+					Log(Log::INFO, false)<<'.';
+					std::cout<<std::flush;
+				}
 			}
 		}
+		if(Log::level != Log::DEBUG)
+			std::cout<<std::endl;
 		return problem;
 	}
 
@@ -82,3 +82,8 @@ public:
 		return nodeArray;
 	}
 };
+
+void printSvmNode(const svm_node* nodeArray);
+void printSvmProblem(svm_problem problem);
+void svmPrintFunction(const char* str);
+void setSvmWeights(svm_parameter* params, const torch::Tensor& weigts);

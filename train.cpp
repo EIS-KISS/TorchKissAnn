@@ -13,6 +13,7 @@
 #include "svmloader.h"
 
 #include "constants.h"
+#include "trashgenerator.h"
 
 template <typename DataLoader>
 void train(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
@@ -106,15 +107,15 @@ svm_parameter getSvmParameters()
 	svmParam.svm_type = C_SVC;
 	svmParam.kernel_type = RBF;
 	svmParam.degree = 3;
-	svmParam.gamma = 0.5;	// 1/num_features if zero
+	svmParam.gamma = 0.000977;	// 1/num_features if zero
 	svmParam.coef0 = 0;
 	svmParam.nu = 0.5;
 	svmParam.cache_size = 10;
-	svmParam.C = 32;
+	svmParam.C = 4.1e3;
 	svmParam.eps = 1e-3;
 	svmParam.p = 0.1;
-	svmParam.shrinking = 1;
-	svmParam.probability = 0;
+	svmParam.shrinking = 0;
+	svmParam.probability = 1;
 	svmParam.nr_weight = 0;
 	svmParam.weight_label = NULL;
 	svmParam.weight = NULL;
@@ -129,7 +130,7 @@ void discardStr(const char* str)
 void svmCross()
 {
 	svm_set_print_string_function(&discardStr);
-	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH);
+	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
 	svm_problem problem = svmloader.getSvmProblem(2000);
 	svm_parameter params = getSvmParameters();
@@ -179,43 +180,111 @@ void svmCross()
 	Log(Log::INFO)<<"Reccomended param values:\nGamma: "<<bestGamma<<" C: "<<bestC<<" ACC: "<<bestAcc;
 }
 
-void trainSvm()
+template <typename DatasetSelf>
+double testSvm(svm_model* model,
+			   torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset,
+			   bool oneClass = false)
+{
+	SvmLoader<DatasetSelf> svmloader(dataset);
+	struct svm_problem problem = svmloader.getSvmProblem(SIZE_MAX, oneClass);
+	int correct = 0;
+	double acc;
+	for(int i = 0; i < problem.l; ++i)
+	{
+		double prediction = svm_predict(model, problem.x[i]);
+		if(prediction == problem.y[i] || (oneClass && prediction == -1))
+			correct++;
+		else
+			Log(Log::DEBUG)<<"should be "<<problem.y[i]<<" is "<<svm_predict(model, problem.x[i]);
+	}
+
+	if(oneClass)
+	{
+		TrashDataset trashData;
+		SvmLoader<TrashDataset> trashSvmloader(&trashData);
+		struct svm_problem trashProblem = trashSvmloader.getSvmProblem(SIZE_MAX, oneClass);
+		for(int i = 0; i < trashProblem.l; ++i)
+		{
+			double prediction = svm_predict(model, problem.x[i]);
+			if(prediction == 1)
+				correct++;
+		}
+		acc = static_cast<double>(correct)/(problem.l+trashProblem.l);
+	}
+	else
+	{
+		acc = static_cast<double>(correct)/problem.l;
+	}
+
+	Log(Log::INFO)<<"Svm accuracy: "<<acc;
+	SvmLoader<DatasetSelf>::distroySvmProblem(problem);
+	return acc;
+}
+
+void trainSvm(bool oneClass = false)
 {
 	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH);
 
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
-	struct svm_problem problem = svmloader.getSvmProblem(100000);
+	struct svm_problem problem = svmloader.getSvmProblem(10000, oneClass);
 
 	svm_parameter svmParam = getSvmParameters();
+	if(!oneClass)
+	{
+		svmParam.probability = true;
+		svmParam.svm_type = C_SVC;
+		setSvmWeights(&svmParam, eisData->modelWeights());
+	}
+	else
+	{
+		svmParam.svm_type = ONE_CLASS;
+		svmParam.probability = false;
+	}
+
 
 	svm_model* model = svm_train(&problem, &svmParam);
 
 	SvmLoader<EisGeneratorDataset>::distroySvmProblem(problem);
 
+	Log(Log::DEBUG)<<"svm type: "<<svm_get_svm_type(model);
+
+	EisGeneratorDataset* eisDataAlt = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	testSvm<EisGeneratorDataset>(model, eisDataAlt, oneClass);
+
 	constexpr char fileName[] = "./svm.vos";
-	svm_save_model(fileName, model);
+	constexpr char fileNameOneClass[] = "./svmFilter.vos";
+	svm_save_model(oneClass ? fileNameOneClass : fileName, model);
 	svm_free_and_destroy_model(&model);
-	Log(Log::INFO)<<"Saved svm model as "<<fileName;
+	Log(Log::INFO)<<"Saved svm model as "<<(oneClass ? fileNameOneClass : fileName);
 }
 
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
-	Log::level = Log::DEBUG;
+	Log::level = Log::INFO;
 	if(argc < 2)
 	{
 		Log(Log::ERROR)<<"You must specify what to train: ann, svm or svmcross";
 		return -1;
 	}
 
-	if(std::string(argv[1]) == "ann")
-		trainAnn();
-	else if(std::string(argv[1]) == "svm")
-		trainSvm();
-	else if(std::string(argv[1]) == "svmcross")
-		svmCross();
-	else
-		Log(Log::ERROR)<<argv[1]<<" is not a support trainable model";
+	svm_set_print_string_function(&svmPrintFunction);
+
+	for(int i = 1; i < argc; ++i)
+	{
+		if(std::string(argv[i]) == "-v")
+			Log::level = Log::DEBUG;
+		else if(std::string(argv[i]) == "ann")
+			trainAnn();
+		else if(std::string(argv[i]) == "svm")
+			trainSvm(false);
+		else if(std::string(argv[i]) == "svmfilter")
+			trainSvm(true);
+		else if(std::string(argv[i]) == "svmcross")
+			svmCross();
+		else
+			Log(Log::ERROR)<<argv[i]<<" is not a supported trainable model";
+	}
 
 	return 0;
 }
