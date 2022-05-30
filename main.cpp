@@ -18,6 +18,7 @@
 #include "eisgendata.h"
 #include "nearest.h"
 #include "svmloader.h"
+#include "trashgenerator.h"
 
 #include "constants.h"
 
@@ -119,6 +120,13 @@ torch::Tensor useSvm(torch::Tensor input, std::string filenName)
 
 	svm_node* data = SvmLoader<EisGeneratorDataset>::tensorToNewSvmNodeArray(input);
 
+	Log(Log::DEBUG)<<"svm type: "<<svm_get_svm_type(model);
+	if(svm_get_svm_type(model) != C_SVC)
+	{
+		Log(Log::ERROR)<<"Svm model "<<filenName<<" must be of type "<<C_SVC<<" but is of type "<<svm_get_svm_type(model);
+		exit(-1);
+	}
+
 	double* estimates = new double[svm_get_nr_class(model)];
 	svm_predict_probability(model, data, estimates);
 
@@ -131,6 +139,32 @@ torch::Tensor useSvm(torch::Tensor input, std::string filenName)
 	delete[] data;
 	delete[] estimates;
 	return output;
+}
+
+
+bool svmFilter(torch::Tensor input, std::string filenName)
+{
+	svm_model* model = svm_load_model(filenName.c_str());
+	if(!model)
+	{
+		Log(Log::ERROR)<<"could not load SVM model from "<<filenName;
+		exit(-1);
+	}
+
+	svm_node* data = SvmLoader<EisGeneratorDataset>::tensorToNewSvmNodeArray(input);
+
+	Log(Log::DEBUG)<<"svm type: "<<svm_get_svm_type(model);
+	if(svm_get_svm_type(model) != ONE_CLASS)
+	{
+		Log(Log::ERROR)<<"Svm model "<<filenName<<" must be of type "<<ONE_CLASS<<" but is of type "<<svm_get_svm_type(model);
+		exit(-1);
+	}
+
+	double prediction = svm_predict(model, data);
+	Log(Log::DEBUG)<<"filter prediction: "<<prediction;
+	svm_free_and_destroy_model(&model);
+	delete[] data;
+	return prediction;
 }
 
 torch::Tensor useAnn(torch::Tensor input, std::string fileName)
@@ -156,10 +190,27 @@ torch::Tensor useNn(torch::Tensor input, EisGeneratorDataset* dataset)
 	return output;
 }
 
+bool yesNowPrompt(std::string msg)
+{
+	while(true)
+	{
+		std::cout<<msg<<" [y/N]\n";
+		std::string resp;
+		std::cin>>resp;
+		if(resp == "y" || resp == "Y")
+			return true;
+		else if(resp == "n" || resp == "N" || resp.empty())
+			return false;
+		std::cout<<"Please awnser with either \"y\" or \"n\"";
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	svm_set_print_string_function(&svmPrintFunction);
 
 	if(config.networkFileName.empty() && (config.mode == MODE_ANN || config.mode == MODE_SVM) && !config.show)
 	{
@@ -167,11 +218,13 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	if(config.spectraFileName.empty())
+	if(config.spectraFileName.empty() && config.fileType != "trash")
 	{
 		Log(Log::ERROR)<<"A spectrum must be supplied";
 		return -1;
 	}
+
+	torch::Tensor input;
 
 	std::vector<eis::DataPoint> data;
 	if(config.fileType == "csv")
@@ -182,28 +235,57 @@ int main(int argc, char** argv)
 	{
 		data = parsEisSpectraFromMpt(config.spectraFileName);
 	}
+	else if(config.fileType == "trash")
+	{
+		TrashDataset trashSet;
+		int seed;
+		try
+		{
+			seed = config.spectraFileName.empty() ? 0 : std::stoi(config.spectraFileName.c_str());
+		}
+		catch(std::invalid_argument& ex)
+		{
+			seed = 0;
+		}
+		torch::data::Example<torch::Tensor, torch::Tensor> example = trashSet.get(seed);
+		input = example.data;
+	}
 	else
 	{
 		Log(Log::ERROR)<<config.fileType<<" is not a valid file type";
 		return -1;
 	}
 
-	if(data.empty())
+	if(data.empty() && !input.numel())
 		return -1;
 
 	EisGeneratorDataset::filterData(data, DATA_WIDTH);
 
-	torch::Tensor input = eisToTorch(data);
+	if(!input.numel())
+		input = eisToTorch(data);
 
 	if(config.show)
 	{
-		printDataVect(data);
+		if(!data.empty())
+			printDataVect(data);
+		else
+			std::cout<<input<<'\n';
 		return 0;
 	}
 
 	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
 
 	torch::Tensor output;
+
+	if(!config.svmPre.empty())
+	{
+		if(!svmFilter(input, config.svmPre))
+		{
+			Log(Log::WARN)<<"input not recognized as EIS spectra";
+			if(!yesNowPrompt("Try and classify anyways?"))
+				return 0;
+		}
+	}
 
 	switch(config.mode)
 	{

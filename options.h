@@ -15,7 +15,7 @@ static struct argp_option options[] =
   {"quiet", 		'q',	0,					0,	"only output data" },
   {"network",	'n', "[STRING]",	0,	"Network file name" },
   {"input",		'i', "[STRING]",		0,	"Input file name" },
-  {"type",		't', "[STRING]",		0,	"String identifying the file type of the file type valid options are: csv, mpt" },
+  {"type",		't', "[STRING]",		0,	"String identifying the file type of the file type valid options are: csv, mpt, trash" },
   {"show",	's', 0,						0,	"Show filtered input"},
   {"nn",			'b', 0,						0,	"Use Nearest Neighbor prediction method"},
   {"knn",		'k', 0,						0,	"Use k-Nearest Nieghbor prediction method"},
@@ -39,6 +39,7 @@ struct Config
 	std::string fileType = "csv";
 	std::string svmPre;
 	bool show = false;
+	bool trash = false;
 	PredictionMode mode = MODE_ANN;
 };
 

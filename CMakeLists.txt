@@ -10,6 +10,8 @@ set(SRC_FILES
 	tokenize.cpp
 	eistotorch.cpp
 	nearest.cpp
+	svmloader.cpp
+	trashgenerator.cpp
 )
 
 find_package(Torch REQUIRED)
