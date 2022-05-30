@@ -266,10 +266,9 @@ int main(int argc, char** argv)
 
 	if(config.show)
 	{
-		if(!data.empty())
-			printDataVect(data);
-		else
-			std::cout<<input<<'\n';
+		if(data.empty())
+			data = torchToEis(input);
+		printDataVect(data);
 		return 0;
 	}
 

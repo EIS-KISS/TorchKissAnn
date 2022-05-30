@@ -1,5 +1,7 @@
 #include "eistotorch.h"
+#include <cassert>
 #include <cmath>
+#include <cstdint>
 
 torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data)
 {
@@ -20,4 +22,23 @@ torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data)
 	}
 
 	return input;
+}
+
+std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input)
+{
+	assert(input.numel() % 2 == 0);
+	input.reshape({1, input.numel()});
+
+	std::vector<eis::DataPoint> output(input.numel()/2);
+
+	float* tensorDataPtr = input.contiguous().data_ptr<float>();
+
+	for(int64_t i = 0; i < input.numel()/2; ++i)
+	{
+		output[i].omega = i;
+		output[i].im.real(tensorDataPtr[i]);
+		output[i].im.imag(tensorDataPtr[i+input.numel()/2]);
+	}
+
+	return output;
 }
