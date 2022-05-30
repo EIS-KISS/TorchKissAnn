@@ -21,10 +21,10 @@
 #include <iostream>
 #include <string>
 
-class Log 
+class Log
 {
 public:
-	
+
 	enum Level
 	{
 		DEBUG,
@@ -36,22 +36,22 @@ public:
 private:
 	bool opened = false;
 	Level msglevel = DEBUG;
+	bool endline = true;
 
 	std::string getLabel(Level level);
-	
+
 public:
 
 	static bool headers;
 	static Level level;
-	static bool endline;
 
 	Log() {}
-	Log(Level type);
+	Log(Level type, bool endlineI = true);
 	~Log();
-	
-	template<class T> Log &operator<<(const T &msg) 
+
+	template<class T> Log &operator<<(const T &msg)
 	{
-		if(msglevel >= level) 
+		if(msglevel >= level)
 		{
 			std::cout<<msg;
 			opened = true;

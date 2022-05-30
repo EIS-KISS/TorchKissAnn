@@ -19,40 +19,41 @@
 
 #include "log.h"
 
-Log::Log(Level type)
+Log::Log(Level type, bool endlineI): endline(endlineI)
 {
 	msglevel = type;
-	if(headers) 
+	if(headers)
 	{
 		operator << ("["+getLabel(type)+"] ");
 	}
 }
 
-Log::~Log() 
+Log::~Log()
 {
-	if(opened && endline) 
+	if(opened && endline)
 	{
 		std::cout<<'\n';
 	}
 	opened = false;
 }
 
-std::string Log::getLabel(Level level) 
+
+std::string Log::getLabel(Level level)
 {
 	std::string label;
-	switch(level) 
+	switch(level)
 	{
-		case DEBUG: 
-			label = "DEBUG"; 
+		case DEBUG:
+			label = "DEBUG";
 			break;
-		case INFO:  
-			label = "INFO "; 
+		case INFO:
+			label = "INFO ";
 			break;
-		case WARN:  
-			label = "WARN "; 
+		case WARN:
+			label = "WARN ";
 			break;
-		case ERROR: 
-			label = "ERROR"; 
+		case ERROR:
+			label = "ERROR";
 			break;
 	}
 	return label;
@@ -60,4 +61,3 @@ std::string Log::getLabel(Level level)
 
 bool Log::headers = false;
 Log::Level Log::level = WARN;
-bool Log::endline = true;
