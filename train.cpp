@@ -109,7 +109,7 @@ svm_parameter getSvmParameters()
 	svmParam.degree = 3;
 	svmParam.gamma = 0.000977;	// 1/num_features if zero
 	svmParam.coef0 = 0;
-	svmParam.nu = 0.5;
+	svmParam.nu = 0.9;
 	svmParam.cache_size = 10;
 	svmParam.C = 4.1e3;
 	svmParam.eps = 1e-3;
@@ -192,28 +192,35 @@ double testSvm(svm_model* model,
 	for(int i = 0; i < problem.l; ++i)
 	{
 		double prediction = svm_predict(model, problem.x[i]);
-		if(prediction == problem.y[i] || (oneClass && prediction == -1))
+		if(prediction == problem.y[i] || (oneClass && prediction < 0))
 			correct++;
 		else
-			Log(Log::DEBUG)<<"should be "<<problem.y[i]<<" is "<<svm_predict(model, problem.x[i]);
+			Log(Log::DEBUG)<<"should be "<<(oneClass ? -1.0 : problem.y[i])<<" is "<<svm_predict(model, problem.x[i]);
 	}
+
+	acc = static_cast<double>(correct)/problem.l;
 
 	if(oneClass)
 	{
+		int trashCorrect = 0;
 		TrashDataset trashData;
 		SvmLoader<TrashDataset> trashSvmloader(&trashData);
-		struct svm_problem trashProblem = trashSvmloader.getSvmProblem(SIZE_MAX, oneClass);
+		struct svm_problem trashProblem = trashSvmloader.getSvmProblem(1000, oneClass);
 		for(int i = 0; i < trashProblem.l; ++i)
 		{
-			double prediction = svm_predict(model, problem.x[i]);
-			if(prediction == 1)
-				correct++;
+			double prediction = svm_predict(model, trashProblem.x[i]);
+			if(prediction > 0)
+				trashCorrect++;
+			else
+			{
+				Log(Log::DEBUG)<<"trashSvmloader should be "<<1.0<<" is "<<svm_predict(model, problem.x[i]);
+			}
 		}
-		acc = static_cast<double>(correct)/(problem.l+trashProblem.l);
-	}
-	else
-	{
-		acc = static_cast<double>(correct)/problem.l;
+		double trashAcc = static_cast<double>(trashCorrect)/trashProblem.l;
+
+		Log(Log::INFO)<<"Svm trash accuracy: "<<trashAcc;
+		Log(Log::INFO)<<"Svm train accuracy: "<<acc;
+		acc = (acc + trashAcc)/2;
 	}
 
 	Log(Log::INFO)<<"Svm accuracy: "<<acc;
@@ -226,7 +233,7 @@ void trainSvm(bool oneClass = false)
 	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH);
 
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
-	struct svm_problem problem = svmloader.getSvmProblem(10000, oneClass);
+	struct svm_problem problem = svmloader.getSvmProblem(1000, oneClass);
 
 	svm_parameter svmParam = getSvmParameters();
 	if(!oneClass)
@@ -240,7 +247,6 @@ void trainSvm(bool oneClass = false)
 		svmParam.svm_type = ONE_CLASS;
 		svmParam.probability = false;
 	}
-
 
 	svm_model* model = svm_train(&problem, &svmParam);
 

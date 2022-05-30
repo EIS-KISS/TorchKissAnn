@@ -47,7 +47,20 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 			index -= modelSweepSizes[model];
 		}
 	}
-
+/*
+	if(model == 5)
+	{
+		static int grand = 0;
+		grand++;
+		if(grand == 100 || grand == 1000)
+		{
+			Log(Log::ERROR)<<models[model].getModelStr()<<" i: "<<grand<<"\nomega,real,imag";
+			printDataVect(data);
+			if(grand == 1000)
+				exit(1);
+		}
+	}
+*/
 	assert(data.size());
 
 	if constexpr(PRINT)
@@ -134,7 +147,7 @@ torch::Tensor EisGeneratorDataset::modelWeights()
 		output[i] = count/static_cast<float>(Model::getRequiredStepsForSweeps(modelRanges[i]));
 	}
 
-	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
+	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	Log(Log::DEBUG)<<"Weights:";
 	Log(Log::DEBUG)<<output;
 	return output;
@@ -298,12 +311,12 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t
 //	assert(bord4.checkParameterRanges(modelRange));
 //	dataset->addModel(bord4, modelRange);
 
-	eis::Model bordTl("l{1e-7}-t{1e3, 1e-7, 3}");
+	eis::Model bordTl("l{1e-7}-t{1e3, 1e-7, 5}");
 	modelRange.clear();
 	modelRange.push_back(eis::Range(5e-7, 5e-7, 1, true, 'l'));
 	modelRange.push_back(eis::Range(1e2, 1e4, SWEEP_DEPTH*10, true, 't'));
 	modelRange.push_back(eis::Range(1e-9, 1e-5, SWEEP_DEPTH*10, true, 't'));
-	modelRange.push_back(eis::Range(3, 3, 1, true, 't'));
+	modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
 

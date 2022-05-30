@@ -35,12 +35,11 @@ torch::data::Example<torch::Tensor, torch::Tensor> TrashDataset::get(size_t inde
 		{
 			sectionSize = (rande() % (outputSize/6)) + outputSize/6;
 			sloap = (static_cast<int>(rande() % 800)-400)/10000.0f;
-			std::cout<<sectionSize<<"  "<<sloap<<std::endl;
 		}
 	}
 
 	options = options.dtype(torch::kInt64);
-	torch::Tensor output = torch::empty({1}, options);;
+	torch::Tensor output = torch::empty({1}, options);
 	output[0] = static_cast<float>(classNum);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
