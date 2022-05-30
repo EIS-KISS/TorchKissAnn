@@ -221,7 +221,7 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
 
-	std::cout<<__func__<<" with "<<dataset->size().value()<<" examples\n";
+	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;
 }
 
@@ -307,7 +307,7 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
 
-	std::cout<<__func__<<" with "<<dataset->size().value()<<" examples\n";
+	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples\n";
 	return dataset;
 }
 
@@ -386,7 +386,7 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetAlt(int64_t out
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
 
-	std::cout<<__func__<<" with "<<dataset->size().value()<<" examples\n";
+	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples\n";
 	return dataset;
 }
 
