@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <argp.h>
-#include "log.h"
+#include "utils/log.h"
 
 const char *argp_program_version = "TorchKissAnn";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";

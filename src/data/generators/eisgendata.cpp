@@ -9,7 +9,7 @@
 #include <eisgenerator/normalize.h>
 #include <eisgenerator/basicmath.h>
 
-#include "eistotorch.h"
+#include "../eistotorch.h"
 #include "log.h"
 
 using namespace eis;

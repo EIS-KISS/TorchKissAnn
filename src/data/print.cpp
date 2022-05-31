@@ -1,4 +1,13 @@
-#include "svmloader.h"
+#include "print.h"
+
+#include "log.h"
+
+void printDataVect(const std::vector<eis::DataPoint>& in)
+{
+	std::cout<<"omega, real, imag\n";
+	for(const eis::DataPoint& res : in)
+			std::cout<<res.omega<<','<<res.im.real()<<','<<res.im.imag()<<'\n';
+}
 
 void printSvmNode(const svm_node* nodeArray)
 {
@@ -28,17 +37,4 @@ void printSvmProblem(svm_problem problem)
 void svmPrintFunction(const char* str)
 {
 	Log(Log::DEBUG, false)<<str;
-}
-
-void setSvmWeights(svm_parameter* params, const torch::Tensor& weigts)
-{
-	params->nr_weight = weigts.numel();
-	params->weight_label = new int[params->nr_weight];
-	params->weight = new double[params->nr_weight];
-	//weigts = weigts.reshape({1, weigts.numel()});
-	for(int i = 0; i < params->nr_weight; ++i)
-	{
-		params->weight_label[i] = i;
-		params->weight[i] = 1/weigts[i].item().to<float>();
-	}
 }

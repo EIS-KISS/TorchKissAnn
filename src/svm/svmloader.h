@@ -83,7 +83,4 @@ public:
 	}
 };
 
-void printSvmNode(const svm_node* nodeArray);
-void printSvmProblem(svm_problem problem);
-void svmPrintFunction(const char* str);
 void setSvmWeights(svm_parameter* params, const torch::Tensor& weigts);
