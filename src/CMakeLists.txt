@@ -11,6 +11,7 @@ set(SRC_FILES
 	svm/svm.cpp
 	utils/tokenize.cpp
 	utils/log.cpp
+	gan/networks.cpp
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp
@@ -32,10 +33,10 @@ target_include_directories(${PROJECT_NAME}_train PUBLIC ${TORCH_INCLUDE_DIRS} .)
 set_target_properties(${PROJECT_NAME}_train PROPERTIES COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g" LINK_FLAGS "")
 target_precompile_headers(${PROJECT_NAME}_train  REUSE_FROM ${PROJECT_NAME})
 
-#add_executable(${PROJECT_NAME}_test ${SRC_FILES} test.cpp)
-#target_link_libraries(${PROJECT_NAME}_test ${TORCH_LIBRARIES} -leisgenerator -lsvm)
-#target_include_directories(${PROJECT_NAME}_test PUBLIC ${TORCH_INCLUDE_DIRS} .)
-#set_target_properties(${PROJECT_NAME}_test PROPERTIES COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g" LINK_FLAGS "")
-#target_precompile_headers(${PROJECT_NAME}_test  REUSE_FROM ${PROJECT_NAME})
+add_executable(${PROJECT_NAME}_test ${SRC_FILES} test.cpp)
+target_link_libraries(${PROJECT_NAME}_test ${TORCH_LIBRARIES} -leisgenerator -lsvm)
+target_include_directories(${PROJECT_NAME}_test PUBLIC ${TORCH_INCLUDE_DIRS} .)
+set_target_properties(${PROJECT_NAME}_test PROPERTIES COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g" LINK_FLAGS "")
+target_precompile_headers(${PROJECT_NAME}_test  REUSE_FROM ${PROJECT_NAME})
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)

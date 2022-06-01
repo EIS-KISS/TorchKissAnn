@@ -16,7 +16,7 @@ void printHelp(char* argo)
 	std::cout<<argo<<" training utility for torchkissann\n\n";
 	std::cout<<"Options:\n";
 	std::cout<<"-h, --help\tPrint this help\n";
-	std::cout<<"-v, --verbose\tPrint training ifomation verbosly\n\n";
+	std::cout<<"-v, --verbose\tPrint training information verbosly\n\n";
 	std::cout<<"Targets, one or more of of:\n";
 	std::cout<<"ann\n";
 	std::cout<<"svm\n";
