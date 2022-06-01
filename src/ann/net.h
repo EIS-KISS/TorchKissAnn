@@ -5,8 +5,9 @@ struct Net : torch::nn::Module
 {
 	const int64_t inputSize;
 	const int64_t outputSize;
+	const bool leak = false;
 
-	Net(int64_t inputSizeI = 100, int64_t outputSizeI = 6);
+	Net(int64_t inputSizeI = 100, int64_t outputSizeI = 6, bool leakI = false);
 	torch::Tensor forward(torch::Tensor x);
 	// Use one of many "standard library" modules.
 	torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr}, fc4{nullptr};

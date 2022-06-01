@@ -6,7 +6,7 @@
 
 namespace nn = torch::nn;
 
-GANGeneratorImpl::GANGeneratorImpl(size_t feature, size_t inputSize, size_t latSize)
+GANGeneratorConvImpl::GANGeneratorConvImpl(size_t feature, size_t inputSize, size_t latSize)
 {
     upSampling(model, latSize, feature*8, /*BN=*/true, /*ReLU=*/true);  // {Z,1,1}     ===> {8F,2,2}
     for (size_t i = 0; i < inputSize - 5; i++)
@@ -20,14 +20,14 @@ GANGeneratorImpl::GANGeneratorImpl(size_t feature, size_t inputSize, size_t latS
 }
 
 
-torch::Tensor GANGeneratorImpl::forward(torch::Tensor z)
+torch::Tensor GANGeneratorConvImpl::forward(torch::Tensor z)
 {
     z = z.view({z.size(0), z.size(1), 1, 1});     // {Z} ===> {Z,1,1}
     torch::Tensor out = model->forward(z);  // {Z,1,1} ===> {C,256,256}
     return out;
 }
 
-GANDiscriminatorImpl::GANDiscriminatorImpl(size_t feature, size_t inputSize)
+GANDiscriminatorConvImpl::GANDiscriminatorConvImpl(size_t feature, size_t inputSize)
 {
     downSampling(down, 1, feature, /*BN=*/false, /*LReLU=*/true);  // {C,256,256} ===> {F,128,128}
     downSampling(down, feature, feature*2, /*BN=*/true, /*LReLU=*/true);               // {F,128,128} ===> {2F,64,64}
@@ -49,7 +49,7 @@ GANDiscriminatorImpl::GANDiscriminatorImpl(size_t feature, size_t inputSize)
     register_module("classifier", classifier);
 }
 
-std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorImpl::forward(torch::Tensor x)
+std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorConvImpl::forward(torch::Tensor x)
 {
     torch::Tensor mid, feature, out;
     std::pair<torch::Tensor, torch::Tensor> out_with_feature;

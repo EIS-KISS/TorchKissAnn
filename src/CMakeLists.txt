@@ -12,6 +12,7 @@ set(SRC_FILES
 	utils/tokenize.cpp
 	utils/log.cpp
 	gan/networks.cpp
+	gan/simplenet.cpp
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp
