@@ -47,7 +47,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 			index -= modelSweepSizes[model];
 		}
 	}
-/*
+
 	if(model == 5)
 	{
 		static int grand = 0;
@@ -60,7 +60,8 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 				exit(1);
 		}
 	}
-*/
+
+
 	assert(data.size());
 
 	if constexpr(PRINT)

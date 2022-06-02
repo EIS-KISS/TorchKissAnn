@@ -13,7 +13,7 @@ public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<
 {
 public:
 	static constexpr bool PRINT = false;
-	static constexpr int SWEEP_DEPTH = 15;
+	static constexpr int SWEEP_DEPTH = 20;
 
 private:
 	std::vector<eis::Model> models;
