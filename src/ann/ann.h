@@ -56,13 +56,15 @@ void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
 
 	for (const auto& batch : loader)
 	{
-		auto data = batch.data.to(DATA_LOCATION);
-		auto targets = batch.target.to(DATA_LOCATION).view({-1});
+		torch::Tensor data = batch.data.to(DATA_LOCATION);
+		torch::Tensor targets = batch.target.to(DATA_LOCATION).view({-1});
 
-		auto output = network->forward(data);
-		auto loss = torch::nll_loss(output, targets);
+		torch::Tensor output = network->forward(data);
+		torch::Tensor loss = torch::nll_loss(output, targets);
 		assert(!std::isnan(loss.template item<float>()));
-		auto acc = output.argmax(1).eq(targets).sum();
+
+		torch::Tensor hits = output.argmax(1).eq(targets);
+		torch::Tensor acc = hits.sum();
 
 		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();

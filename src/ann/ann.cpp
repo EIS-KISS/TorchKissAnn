@@ -27,7 +27,7 @@ void ann::train(std::string fileName)
 
 	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
 
-	for (size_t i = 0; i < 10; ++i)
+	for (size_t i = 0; i < 30; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->modelWeights());
 		test(net, *testDataLoader, testDataset->size().value());
