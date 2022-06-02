@@ -26,7 +26,7 @@ void printHelp(char* argo)
 
 int main(int argc, char** argv)
 {
-	std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
+	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
 	Log::level = Log::INFO;
 	if(argc < 2)
 	{

@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <cstdio>
+#include <eisgenerator/eistype.h>
 #include <iostream>
 #include <libsvm/svm.h>
 #include <memory>
@@ -36,6 +38,108 @@ bool yesNoPrompt(std::string msg)
 	}
 }
 
+std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
+{
+	if(fileName.empty() && type != FILE_TYPE_TRASH)
+	{
+		Log(Log::ERROR)<<"A spectrum must be supplied";
+		return std::vector<eis::DataPoint>();
+	}
+
+	switch(type)
+	{
+		case FILE_TYPE_CSV:
+			return loaders::csv(fileName);
+		case FILE_TYPE_MPT:
+			return loaders::mpt(fileName);
+		case FILE_TYPE_TRASH:
+		{
+			TrashDataset trashSet;
+			int seed;
+			try
+			{
+				seed = fileName.empty() ? 0 : std::stoi(fileName.c_str());
+			}
+			catch(std::invalid_argument& ex)
+			{
+				seed = 0;
+			}
+			torch::data::Example<torch::Tensor, torch::Tensor> example = trashSet.get(seed);
+			return torchToEis(example.data);
+		}
+		case FILE_TYPE_RELAXIS:
+		case FILE_TYPE_INVALID:
+		default:
+			Log(Log::ERROR)<<type<<" is not a valid file type";
+			return std::vector<eis::DataPoint>();
+	}
+}
+
+bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterMode)
+{
+	if(filterMode != FILTER_NONE && fileName.empty())
+	{
+		Log(Log::ERROR)<<"A filter network file is required for this filter method";
+		return false;
+	}
+
+	bool pass;
+	switch(filterMode)
+	{
+		case FILTER_NONE:
+			return true;
+		case FILTER_SVM:
+			pass = svm::filter(data, fileName);
+		case FILTER_INVALID:
+		default:
+			Log(Log::ERROR)<<"no valid filter";
+			return false;
+	}
+
+	if(!pass)
+	{
+		Log(Log::WARN)<<"input not recognized as EIS spectra";
+		pass = yesNoPrompt("Try and classify anyways?");
+		if(pass)
+			Log(Log::WARN)<<"Classification will be unreliable!!!";
+	}
+
+	return pass;
+}
+
+torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName)
+{
+	torch::Tensor output;
+
+	if(networkFileName.empty() && (mode == MODE_ANN || mode == MODE_SVM))
+	{
+		Log(Log::ERROR)<<"A network file name must be specified";
+		return torch::Tensor();
+	}
+
+	switch(mode)
+	{
+		case MODE_ANN:
+			output = ann::use(input, networkFileName);
+			break;
+		case MODE_NN:
+		{
+			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
+			output = NearestNeighbor::use(input, dataset.get());
+			break;
+		}
+		case MODE_SVM:
+			output = svm::use(input, networkFileName);
+			break;
+		case MODE_KNN:
+		default:
+			Log(Log::ERROR)<<"Not implemented";
+			return torch::Tensor();
+	}
+	output = output.reshape({output.numel()});
+	return output;
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
@@ -43,98 +147,33 @@ int main(int argc, char** argv)
 
 	svm_set_print_string_function(&svmPrintFunction);
 
-	if(config.networkFileName.empty() && (config.mode == MODE_ANN || config.mode == MODE_SVM) && !config.show)
-	{
-		Log(Log::ERROR)<<"A network file name must be specified";
-		return -1;
-	}
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
 
-	if(config.spectraFileName.empty() && config.fileType != "trash")
+	if(data.empty())
 	{
-		Log(Log::ERROR)<<"A spectrum must be supplied";
-		return -1;
+		Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
+		return 3;
 	}
-
-	torch::Tensor input;
-
-	std::vector<eis::DataPoint> data;
-	if(config.fileType == "csv")
-	{
-		data = loaders::csv(config.spectraFileName);
-	}
-	else if(config.fileType == "mpt")
-	{
-		data = loaders::mpt(config.spectraFileName);
-	}
-	else if(config.fileType == "trash")
-	{
-		TrashDataset trashSet;
-		int seed;
-		try
-		{
-			seed = config.spectraFileName.empty() ? 0 : std::stoi(config.spectraFileName.c_str());
-		}
-		catch(std::invalid_argument& ex)
-		{
-			seed = 0;
-		}
-		torch::data::Example<torch::Tensor, torch::Tensor> example = trashSet.get(seed);
-		input = example.data;
-	}
-	else
-	{
-		Log(Log::ERROR)<<config.fileType<<" is not a valid file type";
-		return -1;
-	}
-
-	if(data.empty() && !input.numel())
-		return -1;
 
 	EisGeneratorDataset::filterData(data, DATA_WIDTH);
 
-	if(!input.numel())
-		input = eisToTorch(data);
-
 	if(config.show)
 	{
-		if(data.empty())
-			data = torchToEis(input);
 		printDataVect(data);
 		return 0;
 	}
 
+	torch::Tensor input = eisToTorch(data);
+
+	if(!filter(input, config.filterFileName, config.filterMode))
+		return 4;
+
+	torch::Tensor output = classify(input, config.mode, config.networkFileName);
+
+	if(output.numel() == 0)
+		return 5;
+
 	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
-
-	torch::Tensor output;
-
-	if(!config.svmPre.empty())
-	{
-		if(!svm::filter(input, config.svmPre))
-		{
-			Log(Log::WARN)<<"input not recognized as EIS spectra";
-			if(!yesNoPrompt("Try and classify anyways?"))
-				return 0;
-		}
-	}
-
-	switch(config.mode)
-	{
-		case MODE_ANN:
-			output = ann::use(input, config.networkFileName);
-			break;
-		case MODE_NN:
-			output = NearestNeighbor::use(input, dataset.get());
-			break;
-		case MODE_SVM:
-			output = svm::use(input, config.networkFileName);
-			break;
-		case MODE_KNN:
-		default:
-			Log(Log::ERROR)<<"Not implemented";
-			return -1;
-	}
-
-	output = output.reshape({output.numel()});
 
 	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
 	for(size_t i = 0; i < dataset->modelCount(); ++i)
@@ -145,7 +184,7 @@ int main(int argc, char** argv)
 
 	for(int64_t i = 0; i < output.size(0); ++i)
 	{
-		if(output[i].item().to<float>() > 0.25)
+		if(output[i].item().to<float>() > 0.15)
 			std::cout<<"Could be: "<<dataset->getModelStrFromClass(i)<<" confidence "<<output[i].item().to<float>()<<std::endl;
 	}
 
