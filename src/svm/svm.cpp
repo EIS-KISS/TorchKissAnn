@@ -144,7 +144,7 @@ bool svm::filter(torch::Tensor input, std::string filenName)
 	Log(Log::DEBUG)<<"filter prediction: "<<prediction;
 	svm_free_and_destroy_model(&model);
 	delete[] data;
-	return prediction;
+	return prediction > 0;
 }
 
 
