@@ -27,14 +27,14 @@ bool yesNoPrompt(std::string msg)
 {
 	while(true)
 	{
-		std::cout<<msg<<" [y/N]\n";
+		std::cout<<msg<<" [y/n] ";
 		std::string resp;
 		std::cin>>resp;
 		if(resp == "y" || resp == "Y")
 			return true;
 		else if(resp == "n" || resp == "N" || resp.empty())
 			return false;
-		std::cout<<"Please awnser with either \"y\" or \"n\"";
+		std::cout<<"Please awnser with either \"y\" or \"n\"\n";
 	}
 }
 
@@ -90,6 +90,7 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 			return true;
 		case FILTER_SVM:
 			pass = svm::filter(data, fileName);
+			break;
 		case FILTER_INVALID:
 		default:
 			Log(Log::ERROR)<<"no valid filter";
@@ -122,6 +123,9 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 		case MODE_ANN:
 			output = ann::use(input, networkFileName);
 			break;
+		case MODE_ANN_TEST:
+			output = ann::testOnGenNeis(networkFileName);
+			break;
 		case MODE_NN:
 		{
 			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
@@ -147,20 +151,25 @@ int main(int argc, char** argv)
 
 	svm_set_print_string_function(&svmPrintFunction);
 
-	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	std::vector<eis::DataPoint> data;
 
-	if(data.empty())
+	if(config.mode != MODE_ANN_TEST)
 	{
-		Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
-		return 3;
-	}
+		data = grabData(config.spectraFileName, config.fileType);
 
-	EisGeneratorDataset::filterData(data, DATA_WIDTH);
+		if(data.empty())
+		{
+			Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
+			return 3;
+		}
 
-	if(config.show)
-	{
-		printDataVect(data);
-		return 0;
+		EisGeneratorDataset::filterData(data, DATA_WIDTH);
+
+		if(config.show)
+		{
+			printDataVect(data);
+			return 0;
+		}
 	}
 
 	torch::Tensor input = eisToTorch(data);

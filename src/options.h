@@ -18,7 +18,7 @@ static struct argp_option options[] =
   {"input",			'i', "[FILE]",		0,	"Input file name" },
   {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the file type valid options are: csv, mpt, trash" },
   {"show",			's', 0,				0,	"Show filtered input"},
-  {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, svm, knn"},
+  {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, svm, knn, anntest"},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, svm"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
   { 0 }
@@ -28,6 +28,7 @@ typedef enum
 {
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
+	MODE_ANN_TEST,
 	MODE_NN,
 	MODE_KNN,
 	MODE_SVM
@@ -65,6 +66,8 @@ static PredictionMode parseMode(const std::string& in)
 {
 	if(in.empty() || in == "ann")
 		return MODE_ANN;
+	else if(in == "anntest")
+		return MODE_ANN_TEST;
 	else if(in == "svm")
 		return MODE_SVM;
 	else if(in == "nn")
@@ -139,6 +142,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			std::cout<<arg<<" is not a vaild classifier method.\n";
 			 argp_usage(state);
 		}
+		break;
+	case 'f':
+		config->filterFileName.assign(arg);
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;

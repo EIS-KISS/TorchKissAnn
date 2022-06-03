@@ -48,6 +48,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 		}
 	}
 
+#if 0
 	if(model == 5)
 	{
 		static int grand = 0;
@@ -60,6 +61,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 				exit(1);
 		}
 	}
+#endif
 
 
 	assert(data.size());
@@ -82,7 +84,6 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	torch::Tensor input = eisToTorch(data);
 
 	torch::TensorOptions options;
-	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt64);

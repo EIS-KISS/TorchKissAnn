@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <torch/optim.h>
 #include <string>
 
@@ -11,6 +13,8 @@ namespace ann
 torch::Tensor use(torch::Tensor input, std::string fileName);
 
 void train(std::string fileName = "net.vos");
+
+torch::Tensor testOnGenNeis(std::string fileName = "net.vos");
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
@@ -48,11 +52,14 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 
 template <typename DataLoader>
-void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
+torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size, int64_t classesCount)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
 	float Loss = 0, Acc = 0;
+
+	torch::Tensor classAcc = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor classCount = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
 
 	for (const auto& batch : loader)
 	{
@@ -64,13 +71,21 @@ void test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size)
 		assert(!std::isnan(loss.template item<float>()));
 
 		torch::Tensor hits = output.argmax(1).eq(targets);
+		for(int i = 0; i < hits.size(0); ++i)
+		{
+			if(hits[i].template item<int>() > 0)
+				classAcc[targets[i].template item<int>()] += 1;
+			classCount[targets[i].template item<int>()] += 1;
+		}
 		torch::Tensor acc = hits.sum();
 
 		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();
 	}
-
+	classAcc = classAcc/classCount;
+	std::cout<<"Test class acc:\n"<<classAcc<<'\n';
 	std::cout<<"Test Loss: "<<Loss / data_size<< "\tAcc: " <<Acc / data_size<< std::endl;
+	return classAcc;
 }
 
 }

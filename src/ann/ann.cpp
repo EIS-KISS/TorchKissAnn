@@ -13,6 +13,19 @@ torch::Tensor ann::use(torch::Tensor input, std::string fileName)
 	return output;
 }
 
+torch::Tensor ann::testOnGenNeis(std::string fileName)
+{
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()),
+														torch::data::DataLoaderOptions().batch_size(BATCH_SIZE).workers(16));
+
+	std::shared_ptr<Net> net(new Net);
+	net->eval();
+	torch::load(net, fileName);
+
+	return test(net, *testDataLoader, testDataset->size().value(), testDataset->modelCount());
+}
+
 void ann::train(std::string fileName)
 {
 	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(DATA_WIDTH);
@@ -30,7 +43,7 @@ void ann::train(std::string fileName)
 	for (size_t i = 0; i < 30; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->modelWeights());
-		test(net, *testDataLoader, testDataset->size().value());
+		test(net, *testDataLoader, testDataset->size().value(), trainDataset->modelCount());
 		torch::save(net, fileName + ".uf");
 	}
 
