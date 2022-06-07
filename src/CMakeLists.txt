@@ -11,6 +11,7 @@ set(SRC_FILES
 	svm/svm.cpp
 	utils/tokenize.cpp
 	utils/log.cpp
+	utils/randomgen.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	ann/net.cpp
