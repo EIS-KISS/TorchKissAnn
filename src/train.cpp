@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <ios>
 #include <iostream>
 #include <eisgenerator/model.h>
@@ -9,6 +10,7 @@
 #include "svm/svm.h"
 #include "log.h"
 #include "data/print.h"
+#include "trainoptions.h"
 
 void printHelp(char* argo)
 {
@@ -28,9 +30,13 @@ int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
 	Log::level = Log::INFO;
-	if(argc < 2)
+
+	Config config;
+	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	if(config.mode == MODE_INVALID)
 	{
-		Log(Log::ERROR)<<"You must specify what to train: ann, svm or svmcross";
+		Log(Log::ERROR)<<"You must specify what to train: -m ann, svm or svmcross";
 		return -1;
 	}
 
@@ -38,34 +44,23 @@ int main(int argc, char** argv)
 
 	std::vector<size_t> skiparg;
 
-	for(int i = 1; i < argc; ++i)
+	switch(config.mode)
 	{
-		if(std::string(argv[i]) == "--verbose" || std::string(argv[i]) == "-v" )
-		{
-			skiparg.push_back(i);
-			Log::level = Log::DEBUG;
-		}
-		else if(std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h")
-		{
-			printHelp(argv[0]);
-			return 0;
-		}
-	}
-
-	for(int i = 1; i < argc; ++i)
-	{
-		if(std::string(argv[i]) == "-v")
-			Log::level = Log::DEBUG;
-		else if(std::string(argv[i]) == "ann")
+		case MODE_ANN:
 			ann::train();
-		else if(std::string(argv[i]) == "svm")
+			break;
+		case MODE_SVM:
 			svm::train(false);
-		else if(std::string(argv[i]) == "svmfilter")
+			break;
+		case MODE_SVM_FILTER:
 			svm::train(true);
-		else if(std::string(argv[i]) == "svmcross")
+			break;
+		case MODE_SVM_CROSS:
 			svm::cross();
-		else if(std::find(skiparg.begin(), skiparg.end(), i) != skiparg.end())
-			Log(Log::ERROR)<<argv[i]<<" is not a supported trainable model";
+		case MODE_INVALID:
+		default:
+			Log(Log::ERROR)<<"invalid model";
+			break;
 	}
 
 	return 0;
