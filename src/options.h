@@ -21,6 +21,8 @@ static struct argp_option options[] =
   {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, svm, knn, anntest"},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, svm"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
+  {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
+  {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   { 0 }
 };
 
@@ -55,6 +57,8 @@ struct Config
 	std::string networkFileName;
 	std::string spectraFileName;
 	std::string filterFileName;
+	std::string exportDir;
+	double outputProb = 0.001;
 	bool show = false;
 	bool trash = false;
 	PredictionMode mode = MODE_ANN;
@@ -121,7 +125,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		if(config->fileType == FILE_TYPE_INVALID)
 		{
 			std::cout<<arg<<" is not a vaild file type.\n";
-			 argp_usage(state);
+			argp_usage(state);
 		}
 		break;
 	case 'p':
@@ -129,7 +133,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		if(config->filterMode == FILTER_INVALID)
 		{
 			std::cout<<arg<<" is not a vaild filter method.\n";
-			 argp_usage(state);
+			argp_usage(state);
 		}
 		break;
 	case 's':
@@ -145,6 +149,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 'f':
 		config->filterFileName.assign(arg);
+		break;
+	case 'e':
+		config->exportDir.assign(arg);
+		break;
+	case 'o':
+		config->outputProb = std::stod(std::string(arg));
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;

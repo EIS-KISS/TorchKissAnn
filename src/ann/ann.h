@@ -6,15 +6,18 @@
 
 #include "net.h"
 #include "constants.h"
+#include "../data/generators/eisgendata.h"
+#include "../utils/randomgen.h"
+#include "../data/eistotorch.h"
 
 namespace ann
 {
 
 torch::Tensor use(torch::Tensor input, std::string fileName);
 
-void train(std::string fileName = "net.vos");
+void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH);
 
-torch::Tensor testOnGenNeis(std::string fileName = "net.vos");
+torch::Tensor testOnGenNeis(std::string fileName = "net.vos", std::string outputDir = "", double exportProb = 0);
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
@@ -50,9 +53,15 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 	}
 }
 
+static const std::string getSampleOutputFileName(const std::string& dir, bool succ, int classNum)
+{
+	return dir + (succ ? std::string("/succ_") : std::string("/fail_")) +
+			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid());
+}
 
 template <typename DataLoader>
-torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size, int64_t classesCount)
+torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
+				   int64_t classesCount, const std::string& outputDir = "", double outputProb = 0)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
@@ -73,9 +82,17 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		torch::Tensor hits = output.argmax(1).eq(targets);
 		for(int i = 0; i < hits.size(0); ++i)
 		{
+			int classNum = targets[i].template item<int>();
+
 			if(hits[i].template item<int>() > 0)
-				classAcc[targets[i].template item<int>()] += 1;
-			classCount[targets[i].template item<int>()] += 1;
+			{
+				classAcc[classNum] += 1;
+			}
+			else if(outputProb > 0 && rd::rand() < outputProb && !outputDir.empty())
+			{
+				eis::saveToDisk(torchToEis(data.select(1, i)), getSampleOutputFileName(outputDir, false, classNum));
+			}
+			classCount[classNum] += 1;
 		}
 		torch::Tensor acc = hits.sum();
 

@@ -36,7 +36,7 @@ static svm_parameter getSvmParameters()
 void svm::cross()
 {
 	svm_set_print_string_function(&discardStr);
-	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/2+1);
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
 	svm_problem problem = svmloader.getSvmProblem(2000);
 	svm_parameter params = getSvmParameters();
@@ -88,7 +88,7 @@ void svm::cross()
 
 void svm::train(bool oneClass)
 {
-	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH);
+	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH);
 
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
 	struct svm_problem problem = svmloader.getSvmProblem(1000, oneClass);
@@ -112,7 +112,7 @@ void svm::train(bool oneClass)
 
 	Log(Log::DEBUG)<<"svm type: "<<svm_get_svm_type(model);
 
-	EisGeneratorDataset* eisDataAlt = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	EisGeneratorDataset* eisDataAlt = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/2+1);
 	test<EisGeneratorDataset>(model, eisDataAlt, oneClass);
 
 	constexpr char fileName[] = "./svm.vos";

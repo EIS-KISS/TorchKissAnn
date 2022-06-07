@@ -1,5 +1,4 @@
 #include "ann.h"
-#include "../data/generators/eisgendata.h"
 #include "log.h"
 
 using namespace ann;
@@ -13,9 +12,9 @@ torch::Tensor ann::use(torch::Tensor input, std::string fileName)
 	return output;
 }
 
-torch::Tensor ann::testOnGenNeis(std::string fileName)
+torch::Tensor ann::testOnGenNeis(std::string fileName, std::string outputDir, double exportProb)
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/2+2);
 	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()),
 														torch::data::DataLoaderOptions().batch_size(BATCH_SIZE).workers(16));
 
@@ -23,13 +22,13 @@ torch::Tensor ann::testOnGenNeis(std::string fileName)
 	net->eval();
 	torch::load(net, fileName);
 
-	return test(net, *testDataLoader, testDataset->size().value(), testDataset->modelCount());
+	return test(net, *testDataLoader, testDataset->size().value(), testDataset->modelCount(), outputDir, exportProb);
 }
 
-void ann::train(std::string fileName)
+void ann::train(std::string fileName, int sweepDepth)
 {
-	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(DATA_WIDTH);
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDatasetAlt(DATA_WIDTH);
+	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(DATA_WIDTH, sweepDepth);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, sweepDepth/2+2);
 
 	std::shared_ptr<Net> net(new Net(DATA_WIDTH, trainDataset->modelCount()));
 
