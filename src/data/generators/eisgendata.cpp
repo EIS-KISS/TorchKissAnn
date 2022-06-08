@@ -12,6 +12,7 @@
 #include "../eistotorch.h"
 #include "log.h"
 #include "../print.h"
+#include "../filterdata.h"
 
 using namespace eis;
 
@@ -107,31 +108,6 @@ c10::optional<size_t> EisGeneratorDataset::size() const
 	for(size_t i = 0; i < models.size(); ++i)
 		size += modelSweepSizes[i];
 	return size;
-}
-
-void EisGeneratorDataset::filterData(std::vector<eis::DataPoint>& data, size_t outputSize)
-{
-	data = eis::reduceRegion(data);
-
-	if constexpr(PRINT)
-	{
-		std::cout<<"Data reduced size "<<data.size()<<" data:\n";
-		printDataVect(data);
-	}
-
-	if(data.size() < outputSize/8)
-	{
-		data = std::vector<eis::DataPoint>();
-		return;
-	}
-	data = eis::rescale(data, outputSize/2);
-
-	if constexpr(PRINT)
-	{
-		std::cout<<"Data rescaled size "<<data.size()<<" data:\n";
-		printDataVect(data);
-		assert(data.size() == outputSize/2);
-	}
 }
 
 torch::Tensor EisGeneratorDataset::modelWeights()

@@ -6,11 +6,13 @@
 #include <libsvm/svm.h>
 #include <random>
 #include <torch/optim.h>
+#include <filesystem>
 
 #include "data/generators/eisgendata.h"
 #include "log.h"
 #include "gan/simplenet.h"
 #include "constants.h"
+#include "utils/tokenize.h"
 
 void testLoader(EisGeneratorDataset* data)
 {
@@ -40,12 +42,35 @@ void printDataset(EisGeneratorDataset* eisData)
 	}
 }
 
+void testfs(const std::string& str, const std::string& prefix)
+{
+	const std::filesystem::path directoryPath{str};
+	for(const std::filesystem::directory_entry& dirent : std::filesystem::directory_iterator{directoryPath})
+	{
+		std::string fileName = dirent.path().filename();
+		std::cout<<fileName;
+		if(dirent.is_regular_file() && fileName.size() > prefix.size() && fileName.find(prefix) == 0)
+		{
+			fileName.erase(fileName.begin(), fileName.begin()+prefix.size());
+			std::vector<std::string> tokens = tokenize(fileName, '_');
+			size_t classNum = std::stoul(tokens[0]);
+
+			std::cout<<" is "<<classNum<<'\n';
+		}
+		else
+		{
+			std::cout<<" is nothing\n";
+		}
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
 
 	std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
+	//printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
+	testfs("./export", "fail_");
 
 }

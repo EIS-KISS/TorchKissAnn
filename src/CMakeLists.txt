@@ -5,6 +5,7 @@ set(SRC_FILES
 	data/generators/trashgenerator.cpp
 	data/loaders/csv.cpp
 	data/loaders/mpt.cpp
+	data/loaders/dirloader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
 	svm/svmloader.cpp

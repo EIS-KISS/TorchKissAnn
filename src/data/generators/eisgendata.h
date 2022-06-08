@@ -35,8 +35,6 @@ public:
 
 	void addModel(const eis::Model& model, std::vector<eis::Range> modelRange);
 
-	static void filterData(std::vector<eis::DataPoint>& data, size_t outputSize);
-
 	EisGeneratorDataset* getTestDataset();
 
 	size_t modelCount();

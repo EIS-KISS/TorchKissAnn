@@ -21,7 +21,7 @@
 #include "ann/ann.h"
 #include "gan/gan.h"
 #include "data/print.h"
-
+#include "data/filterdata.h"
 #include "constants.h"
 
 bool yesNoPrompt(std::string msg)
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
 			return 3;
 		}
 
-		EisGeneratorDataset::filterData(data, DATA_WIDTH);
+		filterData(data, DATA_WIDTH);
 
 		if(config.show)
 		{
