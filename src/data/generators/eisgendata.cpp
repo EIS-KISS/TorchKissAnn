@@ -11,14 +11,9 @@
 
 #include "../eistotorch.h"
 #include "log.h"
+#include "../print.h"
 
 using namespace eis;
-
-void printDataVect(const std::vector<eis::DataPoint> in)
-{
-	for(const eis::DataPoint& res : in)
-			std::cout<<res.omega<<','<<res.im.real()<<','<<res.im.imag()<<'\n';
-}
 
 EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI): omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
