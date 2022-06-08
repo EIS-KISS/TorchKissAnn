@@ -19,6 +19,7 @@
 #include "utils/log.h"
 #include "svm/svm.h"
 #include "ann/ann.h"
+#include "gan/gan.h"
 #include "data/print.h"
 
 #include "constants.h"
@@ -67,6 +68,11 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 			torch::data::Example<torch::Tensor, torch::Tensor> example = trashSet.get(seed);
 			return torchToEis(example.data);
 		}
+		case FILE_TYPE_GAN:
+		{
+			torch::Tensor data = gan::generate(fileName);
+			return torchToEis(data);
+		}
 		case FILE_TYPE_RELAXIS:
 		case FILE_TYPE_INVALID:
 		default:
@@ -91,6 +97,9 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 		case FILTER_SVM:
 			pass = svm::filter(data, fileName);
 			break;
+		case FILTER_GAN:
+			pass = gan::filter(data, fileName);
+			break;
 		case FILTER_INVALID:
 		default:
 			Log(Log::ERROR)<<"no valid filter";
@@ -108,7 +117,7 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	return pass;
 }
 
-torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName)
+torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName, const std::string exportDir, double exportProb)
 {
 	torch::Tensor output;
 
@@ -124,7 +133,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 			output = ann::use(input, networkFileName);
 			break;
 		case MODE_ANN_TEST:
-			output = ann::testOnGenNeis(networkFileName);
+			output = ann::testOnGenNeis(networkFileName, exportDir, exportProb);
 			break;
 		case MODE_NN:
 		{
@@ -170,6 +179,13 @@ int main(int argc, char** argv)
 			printDataVect(data);
 			return 0;
 		}
+
+		if(config.reexport)
+		{
+			torch::Tensor input = eisToTorch(data);
+			eis::saveToDisk(torchToEis(input), "export.txt");
+			return 0;
+		}
 	}
 
 	torch::Tensor input = eisToTorch(data);
@@ -177,7 +193,7 @@ int main(int argc, char** argv)
 	if(!filter(input, config.filterFileName, config.filterMode))
 		return 4;
 
-	torch::Tensor output = classify(input, config.mode, config.networkFileName);
+	torch::Tensor output = classify(input, config.mode, config.networkFileName, config.exportDir, config.outputProb);
 
 	if(output.numel() == 0)
 		return 5;

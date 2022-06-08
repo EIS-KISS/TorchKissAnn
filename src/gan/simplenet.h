@@ -15,10 +15,11 @@ public:
 struct GANDiscriminatorImpl : public torch::nn::Module
 {
 private:
+    torch::nn::Sequential feature;
     torch::nn::Sequential classifier;
 public:
     GANDiscriminatorImpl(size_t inputSize = 100);
-    torch::Tensor forward(torch::Tensor x);
+    std::pair<torch::Tensor, torch::Tensor> forward(torch::Tensor x);
 };
 
 TORCH_MODULE(GANGenerator);

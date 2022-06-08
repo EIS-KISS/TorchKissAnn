@@ -8,6 +8,7 @@
 
 #include "ann/ann.h"
 #include "svm/svm.h"
+#include "gan/gan.h"
 #include "log.h"
 #include "data/print.h"
 #include "trainoptions.h"
@@ -47,7 +48,7 @@ int main(int argc, char** argv)
 	switch(config.mode)
 	{
 		case MODE_ANN:
-			ann::train();
+			ann::train("net.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise);
 			break;
 		case MODE_SVM:
 			svm::train(false);
@@ -57,6 +58,10 @@ int main(int argc, char** argv)
 			break;
 		case MODE_SVM_CROSS:
 			svm::cross();
+			break;
+		case MODE_GAN:
+			gan::train("ganNet", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise);
+			break;
 		case MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"invalid model";

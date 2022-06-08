@@ -14,10 +14,10 @@ static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
   {"quiet", 		'q', 0,				0,	"only output data" },
-  {"model", 		'm', "[STRING]",	0,	"model to train: ann, svm, svmcross or svmfilter"},
+  {"model", 		'm', "[STRING]",	0,	"model to train: ann, gan, svm, svmcross or svmfilter"},
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
-  {"export-prob",	'o', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
-  {"noise",			'x', "[AMPLITUDE]",	OPTION_ARG_OPTIONAL,	"directory to save diagonistic data too"},
+  {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
+  {"noise",			'x', "[AMPLITUDE]",	0,	"directory to save diagonistic data too"},
   { 0 }
 };
 
@@ -27,7 +27,8 @@ typedef enum
 	MODE_ANN = 0,
 	MODE_SVM,
 	MODE_SVM_FILTER,
-	MODE_SVM_CROSS
+	MODE_SVM_CROSS,
+	MODE_GAN
 } TrainMode;
 
 static TrainMode parseTrainMode(const std::string& in)
@@ -40,6 +41,8 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_SVM_CROSS;
 	else if(in == "svmfilter")
 		return MODE_SVM_FILTER;
+	else if(in == "gan")
+		return MODE_GAN;
 
 	return MODE_INVALID;
 }

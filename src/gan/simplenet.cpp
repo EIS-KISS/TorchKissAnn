@@ -34,21 +34,22 @@ torch::Tensor GANGeneratorImpl::forward(torch::Tensor x)
 GANDiscriminatorImpl::GANDiscriminatorImpl(size_t inputSize)
 {
 	std::pair<size_t, size_t> layerSizes = layerWidthFunction(0, 4, inputSize, 1);
-	classifier->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
-	classifier->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	feature->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
+	feature->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 	layerSizes = layerWidthFunction(1, 4, inputSize, 1);
-	classifier->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
-	classifier->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	feature->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
+	feature->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 	layerSizes = layerWidthFunction(2, 4, inputSize, 1);
-	classifier->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
-	classifier->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	feature->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
+	feature->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 	layerSizes = layerWidthFunction(3, 4, inputSize, 1);
 	classifier->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
-	classifier->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 }
 
-torch::Tensor GANDiscriminatorImpl::forward(torch::Tensor x)
+std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorImpl::forward(torch::Tensor x)
 {
-	return classifier->forward(x);
+	torch::Tensor features = feature->forward(x);
+	torch::Tensor out = classifier->forward(features);
+	return std::pair<torch::Tensor, torch::Tensor>(out, features);
 }
 

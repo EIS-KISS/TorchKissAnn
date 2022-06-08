@@ -14,6 +14,7 @@ set(SRC_FILES
 	utils/randomgen.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
+	gan/gan.cpp
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp

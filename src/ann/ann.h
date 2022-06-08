@@ -15,7 +15,7 @@ namespace ann
 
 torch::Tensor use(torch::Tensor input, std::string fileName);
 
-void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH);
+void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, double noise = 0);
 
 torch::Tensor testOnGenNeis(std::string fileName = "net.vos", std::string outputDir = "", double exportProb = 0);
 
@@ -56,7 +56,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 static const std::string getSampleOutputFileName(const std::string& dir, bool succ, int classNum)
 {
 	return dir + (succ ? std::string("/succ_") : std::string("/fail_")) +
-			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid());
+			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid()) + ".spc";
 }
 
 template <typename DataLoader>
@@ -87,10 +87,12 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 			if(hits[i].template item<int>() > 0)
 			{
 				classAcc[classNum] += 1;
+				if(outputProb > 0 && rd::rand() < (outputProb/10) && !outputDir.empty())
+					eis::saveToDisk(torchToEis(data.select(0, i)), getSampleOutputFileName(outputDir, true, classNum));
 			}
 			else if(outputProb > 0 && rd::rand() < outputProb && !outputDir.empty())
 			{
-				eis::saveToDisk(torchToEis(data.select(1, i)), getSampleOutputFileName(outputDir, false, classNum));
+				eis::saveToDisk(torchToEis(data.select(0, i)), getSampleOutputFileName(outputDir, false, classNum));
 			}
 			classCount[classNum] += 1;
 		}
