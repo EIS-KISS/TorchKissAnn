@@ -164,9 +164,9 @@ EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 	//EisGeneratorDataset* testDataset =
 }
 
-EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, int sweepDepth)
+EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, int sweepDepth, double noise)
 {
-	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize);
+	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize, noise);
 
 	std::vector<eis::Range> modelRange;
 
@@ -182,20 +182,20 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 
 	eis::Model bord1_3("r{0.5}-c{10e-6}r{0.5}");
 	modelRange.clear();
-	modelRange.push_back(eis::Range(0.1, 10, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-6, 1e-4, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(0.1, 10, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(0.1, 10, sweepDepth*2, true, 'r'));
+	modelRange.push_back(eis::Range(1e-6, 1e-4, sweepDepth*2, true, 'c'));
+	modelRange.push_back(eis::Range(0.1, 10, sweepDepth*2, true, 'r'));
 	assert(bord1_3.checkParameterRanges(modelRange));
 	dataset->addModel(bord1_3, modelRange);
 
 	eis::Model bord1_4("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
 	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
 	assert(bord1_4.checkParameterRanges(modelRange));
 	dataset->addModel(bord1_4, modelRange);
 
@@ -211,11 +211,11 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 
 	eis::Model bord2("r{1e3}c{1e-6}-r{1e3}c{1e-9}-r{47}");
 	modelRange.clear();
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
 	assert(bord2.checkParameterRanges(modelRange));
 	dataset->addModel(bord2, modelRange);
 
@@ -233,9 +233,9 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 
 	eis::Model bordTl("t{1e3, 1e-7, 3}");
 	modelRange.clear();
-	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth*10, true, 't'));
-	modelRange.push_back(eis::Range(1e-9, 1e-5, sweepDepth*10, true, 't'));
-	modelRange.push_back(eis::Range(3, 3, 1, true, 't'));
+	modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*10, true, 't'));
+	modelRange.push_back(eis::Range(1e-6, 1e-5, sweepDepth*10, true, 't'));
+	modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
 
@@ -243,9 +243,9 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 	return dataset;
 }
 
-EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t outputSize, int sweepDepth)
+EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t outputSize, int sweepDepth, double noise)
 {
-	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize);
+	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize, noise);
 
 	std::vector<eis::Range> modelRange;
 
@@ -272,12 +272,12 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t
 	eis::Model bord1_4("l{1e-7}-r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
 	modelRange.clear();
 	modelRange.push_back(eis::Range(5e-7, 5e-7, 1, true, 'l'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-6, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
 	assert(bord1_4.checkParameterRanges(modelRange));
 	dataset->addModel(bord1_4, modelRange);
 
@@ -296,10 +296,10 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t
 	modelRange.clear();
 	modelRange.push_back(eis::Range(5e-7, 5e-7, 1, true, 'l'));
 	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
-	modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-	modelRange.push_back(eis::Range(1e1, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+	modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
 	assert(bord2.checkParameterRanges(modelRange));
 	dataset->addModel(bord2, modelRange);
 
@@ -319,8 +319,8 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(int64_t
 	eis::Model bordTl("l{1e-7}-t{1e3, 1e-7, 5}");
 	modelRange.clear();
 	modelRange.push_back(eis::Range(5e-7, 5e-7, 1, true, 'l'));
-	modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth*10, true, 't'));
-	modelRange.push_back(eis::Range(1e-9, 1e-5, sweepDepth*10, true, 't'));
+	modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*10, true, 't'));
+	modelRange.push_back(eis::Range(1e-6, 1e-5, sweepDepth*10, true, 't'));
 	modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
 	assert(bordTl.checkParameterRanges(modelRange));
 	dataset->addModel(bordTl, modelRange);
