@@ -32,6 +32,8 @@ void ann::train(std::string fileName, int sweepDepth, double noise)
 
 	std::shared_ptr<Net> net(new Net(DATA_WIDTH, trainDataset->modelCount()));
 
+	LossLog log("annLoss.csv");
+
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(BATCH_SIZE).workers(16);
 	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);

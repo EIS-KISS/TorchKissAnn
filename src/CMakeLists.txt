@@ -13,6 +13,7 @@ set(SRC_FILES
 	utils/tokenize.cpp
 	utils/log.cpp
 	utils/randomgen.cpp
+	utils/losslog.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
@@ -44,3 +45,4 @@ set_target_properties(${PROJECT_NAME}_test PROPERTIES COMPILE_FLAGS "-std=c++20 
 target_precompile_headers(${PROJECT_NAME}_test  REUSE_FROM ${PROJECT_NAME})
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME}_train RUNTIME DESTINATION bin)

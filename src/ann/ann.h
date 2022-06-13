@@ -9,6 +9,7 @@
 #include "../data/generators/eisgendata.h"
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
+#include "losslog.h"
 
 namespace ann
 {
@@ -21,11 +22,12 @@ torch::Tensor testOnGenNeis(std::string fileName = "net.vos", std::string output
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
-		   size_t epoch, size_t data_size, torch::Tensor classWeights)
+		   size_t epoch, size_t data_size, torch::Tensor classWeights, LossLog* log = nullptr)
 {
 	size_t index = 0;
 	network->train();
-	float Loss = 0, Acc = 0;
+	float loss = 0
+	float acc = 0;
 
 	for(auto& batch : loader)
 	{
@@ -41,13 +43,15 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		loss.backward();
 		optimizer.step();
 
-		Loss += loss.template item<float>();
-		Acc += acc.template item<float>();
+		loss += loss.template item<float>();
+		acc += acc.template item<float>();
 
 		if (index++ % 1000 == 0)
 		{
 			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
-			std::cout<<"Train Epoch: "<< epoch <<' '<<end<<'/'<< data_size<<"\tLoss: "<<Loss/end<<"\tAcc: "<<Acc/end<<'\n';
+			std::cout<<"Train Epoch: "<< epoch <<' '<<end<<'/'<< data_size<<"\tLoss: "<<loss/end<<"\tAcc: "<<acc/end<<'\n';
+			if(log)
+				log->log(epoch, end, loss/end, acc/end);
 		}
 	}
 }

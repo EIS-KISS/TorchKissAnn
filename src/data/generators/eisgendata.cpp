@@ -25,12 +25,6 @@ void EisGeneratorDataset::addModel(const eis::Model& model, std::vector<eis::Ran
 	models.push_back(model);
 	modelRanges.push_back(modelRange);
 	modelSweepSizes.push_back(eis::Model::getRequiredStepsForSweeps(modelRange));
-
-	Log(Log::DEBUG)<<"EisGeneratorDataset "<<__func__<<" for "<<model.getModelStr()<<" with "<<modelSweepSizes[models.size()-1]<<" sweeps";
-	for(size_t i = 0; i < modelRange.size(); ++i)
-	{
-		modelRange[i].print(Log::ERROR);
-	}
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
