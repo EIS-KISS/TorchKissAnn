@@ -191,6 +191,8 @@ static std::vector<eis::Range> getRange(size_t index, size_t sweepDepth, bool in
 			modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*10, true, 't'));
 			modelRange.push_back(eis::Range(1e-7, 1e-6, sweepDepth*10, true, 't'));
 			modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
+		case 7:
+			modelRange.push_back(eis::Range(10, 100, sweepDepth*100, true, 'w'));
 			break;
 	}
 	return modelRange;
@@ -252,6 +254,13 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 	eis::Model bordTl(modelStr);
 	assert(bordTl.checkParameterRanges(getRange(6, sweepDepth, inductivity)));
 	dataset->addModel(bordTl, getRange(6, sweepDepth, inductivity));
+
+	modelStr.assign("w{1000}");
+	if(inductivity)
+		modelStr.insert(0, probeModelString);
+	eis::Model bordW(modelStr);
+	assert(bordW.checkParameterRanges(getRange(7, sweepDepth, inductivity)));
+	dataset->addModel(bordW, getRange(7, sweepDepth, inductivity));
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;
