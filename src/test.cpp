@@ -13,6 +13,9 @@
 #include "gan/simplenet.h"
 #include "constants.h"
 #include "utils/tokenize.h"
+#include "data/dataexport.h"
+#include "data/generators/classextractordataset.h"
+#include "data/filterdata.h"
 
 void testLoader(EisGeneratorDataset* data)
 {
@@ -42,6 +45,76 @@ void printDataset(EisGeneratorDataset* eisData)
 	}
 }
 
+bool cmpDouble(double a, double b)
+{
+	double diff = std::fabs(a-b);
+	return diff < 0.0001;
+}
+
+std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
+{
+	eis::Model model("t{1,2,3}");
+	std::vector<eis::Range> modelRange;
+	modelRange.push_back(eis::Range(1e3, 1e4, 40, true, 't'));
+	modelRange.push_back(eis::Range(1e-6, 1e-5, 40, true, 't'));
+	modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
+	eis::Range omega(10, 1e6, 100/2, true);
+	std::vector<eis::DataPoint> data = model.executeParamByIndex(modelRange, omega, i);
+	filterData(data, 100);
+	data = torchToEis(eisToTorch(data));
+	if(size)
+		*size = eis::Model::getRequiredStepsForSweeps(modelRange);
+	return data;
+}
+
+void diff()
+{
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	ClassExtractorDataset<EisGeneratorDataset> extractor(testDataset, 5);
+
+	size_t rangeSteps = extractor.size().value();
+	for(size_t i = 0; i < rangeSteps; ++i)
+	{
+		std::vector<eis::DataPoint> controll = getControll(i);
+
+		eis::saveToDisk(controll, std::string("./controll")+std::string("/")+std::to_string(++i)+".csv");
+		eis::saveToDisk(controll, std::string("./controll2")+std::string("/")+std::to_string(++i)+".csv");
+
+		torch::Tensor tmp = extractor.get(i).data;
+		std::vector<eis::DataPoint> testSweep = torchToEis(tmp);
+
+		eis::saveToDisk(std::vector<eis::DataPoint>(testSweep), std::string("./testSweep")+std::string("/")+std::to_string(++i)+".csv");
+
+		if(controll.size() != testSweep.size())
+		{
+			Log(Log::ERROR)<<"Sweeps not the same size!";
+			return;
+		}
+
+		for(size_t j = 0; j < controll.size(); ++j)
+		{
+			if(!cmpDouble(controll[j].im.real(), testSweep[j].im.real()) || !cmpDouble(controll[j].im.imag(), testSweep[j].im.imag()))
+			{
+				if(!cmpDouble(controll[j].im.real(), testSweep[j].im.real()))
+					Log(Log::ERROR)<<"no real match! at "<<i<<','<<j<<' '<<controll[j].im.real()<<" != "<<testSweep[j].im.real();
+				else
+					Log(Log::ERROR)<<"no imag match! at "<<i<<','<<j<<' '<<controll[j].im.imag()<<" != "<<testSweep[j].im.imag();
+				//return;
+			}
+		}
+		Log(Log::INFO,false)<<'.';
+
+	}
+	std::cout<<std::endl;
+}
+
+void saveDataset()
+{
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	ClassExtractorDataset<EisGeneratorDataset> extractor(testDataset, 5);
+	saveDataset<ClassExtractorDataset<EisGeneratorDataset>>("./testdatasetexport", &extractor);
+}
+
 void testfs(const std::string& str, const std::string& prefix)
 {
 	const std::filesystem::path directoryPath{str};
@@ -68,9 +141,11 @@ int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
 
-	std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
+	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
+	//saveDataset();
+	diff();
 	//printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
-	testfs("./export", "fail_");
+	//testfs("./export", "fail_");
 
 }

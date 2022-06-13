@@ -2,4 +2,4 @@
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
 
-gnuplot -p -e "dir='$1'; num=$2" $SCRIPT_DIR/density.p
+gnuplot -p -e "dir='$1'; num=$2" $SCRIPT_DIR/accumplot.p

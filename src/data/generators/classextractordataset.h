@@ -22,8 +22,8 @@ public:
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
-			torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset.get(i);
-			if(example.target[0].item().to<size_t>() == classNum)
+			torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(i);
+			if(example.target.item<int64_t>() == classNum)
 			{
 				indexList.push_back(i);
 			}
@@ -34,7 +34,7 @@ public:
 	{
 		assert(index < indexList.size());
 
-		return _dataset.get(indexList[index]);
+		return _dataset->get(indexList[index]);
 	}
 
 	c10::optional<size_t> size() const override

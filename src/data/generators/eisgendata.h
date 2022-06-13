@@ -15,7 +15,7 @@ public:
 	static constexpr bool PRINT = false;
 	static constexpr int DEFAULT_SWEEP_DEPTH = 20;
 
-private:
+public:
 	std::vector<eis::Model> models;
 	std::vector< std::vector<eis::Range> > modelRanges;
 	std::vector<size_t> modelSweepSizes;
