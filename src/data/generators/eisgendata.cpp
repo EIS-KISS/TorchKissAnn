@@ -185,6 +185,7 @@ static std::vector<eis::Range> getRange(size_t index, size_t sweepDepth, bool in
 			modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*10, true, 't'));
 			modelRange.push_back(eis::Range(1e-7, 1e-6, sweepDepth*10, true, 't'));
 			modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
+			break;
 		case 7:
 			modelRange.push_back(eis::Range(10, 100, sweepDepth*100, true, 'w'));
 			break;

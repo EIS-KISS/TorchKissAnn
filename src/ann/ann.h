@@ -26,8 +26,8 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 {
 	size_t index = 0;
 	network->train();
-	float loss = 0
-	float acc = 0;
+	float lossF = 0;
+	float accF = 0;
 
 	for(auto& batch : loader)
 	{
@@ -43,15 +43,14 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		loss.backward();
 		optimizer.step();
 
-		loss += loss.template item<float>();
-		acc += acc.template item<float>();
+		lossF += loss.template item<float>();
+		accF += acc.template item<float>();
 
 		if (index++ % 1000 == 0)
 		{
 			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
-			std::cout<<"Train Epoch: "<< epoch <<' '<<end<<'/'<< data_size<<"\tLoss: "<<loss/end<<"\tAcc: "<<acc/end<<'\n';
 			if(log)
-				log->log(epoch, end, loss/end, acc/end);
+				log->log(epoch, end, lossF/end, accF/end, data_size);
 		}
 	}
 }

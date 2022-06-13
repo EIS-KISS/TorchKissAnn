@@ -41,9 +41,9 @@ void ann::train(std::string fileName, int sweepDepth, double noise)
 
 	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
 
-	for (size_t i = 0; i < 30; ++i)
+	for (size_t i = 0; i < 3; ++i)
 	{
-		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->modelWeights());
+		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->modelWeights(), &log);
 		test(net, *testDataLoader, testDataset->size().value(), trainDataset->modelCount());
 		torch::save(net, fileName + ".uf");
 	}
