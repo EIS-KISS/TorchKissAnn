@@ -23,12 +23,11 @@ template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
 		   size_t epoch, size_t data_size, torch::Tensor classWeights)
 {
-	std::cout<<__func__<<'\n';
 	size_t index = 0;
 	network->train();
 	float Loss = 0, Acc = 0;
 
-	for (auto& batch : loader)
+	for(auto& batch : loader)
 	{
 		auto data = batch.data.to(DATA_LOCATION);
 		auto targets = batch.target.to(DATA_LOCATION).view({-1});
