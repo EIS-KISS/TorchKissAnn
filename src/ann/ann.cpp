@@ -27,7 +27,7 @@ torch::Tensor ann::testOnGenNeis(std::string fileName, std::string outputDir, do
 
 void ann::train(std::string fileName, int sweepDepth, double noise)
 {
-	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(DATA_WIDTH, sweepDepth, noise);
+	EisGeneratorDataset* trainDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, sweepDepth, noise, true);
 	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, sweepDepth/2+2, noise);
 
 	std::shared_ptr<Net> net(new Net(DATA_WIDTH, trainDataset->modelCount()));

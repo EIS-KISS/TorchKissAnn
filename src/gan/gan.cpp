@@ -14,7 +14,7 @@ using namespace gan;
 void gan::train(std::string fileName, int sweepDepth, double noise)
 {
 	std::cout<<std::setprecision(10)<<std::fixed<<std::setw(5);
-	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDatasetWithBLl(DATA_WIDTH, sweepDepth, noise);
+	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, sweepDepth, noise, true);
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(100);
