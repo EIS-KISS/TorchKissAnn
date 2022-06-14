@@ -42,7 +42,8 @@ public:
 
 	std::string getModelStrFromClass(size_t classNum);
 
-	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, int sweepDepth = DEFAULT_SWEEP_DEPTH, double noise = 0, bool inductivity = false);
+	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, int sweepDepth = DEFAULT_SWEEP_DEPTH,
+														double noise = 0, bool inductivity = false, bool log = true);
 
 	c10::optional<size_t> size() const override;
 };

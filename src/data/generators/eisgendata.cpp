@@ -116,7 +116,7 @@ torch::Tensor EisGeneratorDataset::modelWeights()
 		output[i] = count/static_cast<float>(Model::getRequiredStepsForSweeps(modelRanges[i]));
 	}
 
-	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
+	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	Log(Log::DEBUG)<<"Weights:";
 	Log(Log::DEBUG)<<output;
 	return output;
@@ -128,76 +128,77 @@ EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 	//EisGeneratorDataset* testDataset =
 }
 
-static std::vector<eis::Range> getRange(size_t index, size_t sweepDepth, bool inductivity)
+static std::vector<eis::Range> getRange(size_t index, size_t sweepDepth, bool inductivity, bool log)
 {
 	std::vector<eis::Range> modelRange;
 
 	if(inductivity)
-		modelRange.push_back(eis::Range(5e-7, 5e-7, 1, true, 'l'));
+		modelRange.push_back(eis::Range(5e-7, 5e-7, 1, log, 'l'));
 
 	switch(index)
 	{
 		case 0:
-			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(10, 100e3, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(10, 100e3, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(10, 100e3, sweepDepth, true, 'r'));
+			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(10, 1e3, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(10, 1e3, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(10, 1e3, sweepDepth, log, 'r'));
 			break;
 		case 1:
-			modelRange.push_back(eis::Range(0.1, 10, sweepDepth*2, true, 'r'));
-			modelRange.push_back(eis::Range(1e-6, 1e-4, sweepDepth*2, true, 'c'));
-			modelRange.push_back(eis::Range(0.1, 10, sweepDepth*2, true, 'r'));
+			modelRange.push_back(eis::Range(0.1, 10, sweepDepth*3, log, 'r'));
+			modelRange.push_back(eis::Range(1e-6, 1e-4, sweepDepth*3, log, 'c'));
+			modelRange.push_back(eis::Range(0.1, 10, sweepDepth*3, log, 'r'));
 			break;
 		case 2:
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-9, 1e-4, sweepDepth, true, 'c'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-13, 1e-10, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-10, 1e-7, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-7, 1e-4, sweepDepth, log, 'c'));
 			break;
 		case 3:
-			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-5, 1e-3, sweepDepth, true, 'l'));
-			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-9, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, true, 'r'));
+			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-5, 1e-3, sweepDepth, log, 'l'));
+			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-9, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(1e1, 1e3, sweepDepth, log, 'r'));
 			break;
 		case 4:
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-10, 1e-7, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, true, 'r'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-7, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-10, 1e-7, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(1e2, 1e4, sweepDepth, log, 'r'));
 			break;
 		case 5:
-			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
-			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, true, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, true, 'c'));
+			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, log, 'c'));
+			modelRange.push_back(eis::Range(10, 1e4, sweepDepth, log, 'r'));
+			modelRange.push_back(eis::Range(1e-12, 1e-5, sweepDepth, log, 'c'));
 			break;
 		case 6:
-			modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*10, true, 't'));
-			modelRange.push_back(eis::Range(1e-7, 1e-6, sweepDepth*10, true, 't'));
-			modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
+			modelRange.push_back(eis::Range(1e3, 1e4, sweepDepth*20, log, 't'));
+			modelRange.push_back(eis::Range(1e-7, 1e-6, sweepDepth*20, log, 't'));
+			modelRange.push_back(eis::Range(5, 5, 1, log, 't'));
 			break;
 		case 7:
-			modelRange.push_back(eis::Range(10, 100, sweepDepth*100, true, 'w'));
+			modelRange.push_back(eis::Range(10, 100, sweepDepth*10000, log, 'w'));
 			break;
 	}
 	return modelRange;
 }
 
-EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, int sweepDepth, double noise, bool inductivity)
+EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, int sweepDepth, double noise, bool inductivity, bool log)
 {
 	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize, noise);
 
 	std::string modelStr;
+	std::vector<eis::Range> parameters;
 
 	const std::string probeModelString("l{5e-7}-");
 
@@ -205,57 +206,65 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bord1_1(modelStr);
-	assert(bord1_1.checkParameterRanges(getRange(0, sweepDepth, inductivity)));
-	dataset->addModel(bord1_1, getRange(0, sweepDepth, inductivity));
+	parameters = getRange(0, sweepDepth, inductivity, log);
+	assert(bord1_1.checkParameterRanges(parameters));
+	dataset->addModel(bord1_1, parameters);
 
 	modelStr.assign("r{0.5}-c{10e-6}r{0.5}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bord1_3(modelStr);
-	assert(bord1_3.checkParameterRanges(getRange(1, sweepDepth, inductivity)));
-	dataset->addModel(bord1_3, getRange(1, sweepDepth, inductivity));
+	parameters = getRange(1, sweepDepth, inductivity, log);
+	assert(bord1_3.checkParameterRanges(parameters));
+	dataset->addModel(bord1_3, parameters);
 
 	modelStr.assign("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bord1_4(modelStr);
-	assert(bord1_4.checkParameterRanges(getRange(2, sweepDepth, inductivity)));
-	dataset->addModel(bord1_4, getRange(2, sweepDepth, inductivity));
+	parameters = getRange(2, sweepDepth, inductivity, log);
+	assert(bord1_4.checkParameterRanges(parameters));
+	dataset->addModel(bord1_4, parameters);
 
 	modelStr.assign("r{47}l{100e-6}-r{47}c{1e-6}-r{47}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bord1_5(modelStr);
-	assert(bord1_5.checkParameterRanges(getRange(3, sweepDepth, inductivity)));
-	dataset->addModel(bord1_5, getRange(3, sweepDepth, inductivity));
+	parameters = getRange(3, sweepDepth, inductivity, log);
+	assert(bord1_5.checkParameterRanges(parameters));
+	dataset->addModel(bord1_5, parameters);
 
 	modelStr.assign("r{1e3}c{1e-6}-r{1e3}c{1e-9}-r{47}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bord2(modelStr);
-	assert(bord2.checkParameterRanges(getRange(4, sweepDepth, inductivity)));
-	dataset->addModel(bord2, getRange(4, sweepDepth, inductivity));
+	parameters = getRange(4, sweepDepth, inductivity, log);
+	assert(bord2.checkParameterRanges(parameters));
+	dataset->addModel(bord2, parameters);
 
 //	modelStr.assign("r{100}-r{470}c{100e-12}-r{1e3}c{1e-9}-r{100}c{1e-6}");
 //	if(inductivity)
 //		modelStr.insert(0, probeModelString);
 //	eis::Model bord4(modelStr);
-//	assert(bord4.checkParameterRanges(getRange(5, sweepDepth, inductivity)));
-//	dataset->addModel(bord4, getRange(5, sweepDepth, inductivity));
+//	parameters = getRange(5, sweepDepth, inductivity, log);
+//	assert(bord4.checkParameterRanges(parameters));
+//	dataset->addModel(bord4, parameters);
 
 	modelStr.assign("t{1e3, 1e-7, 3}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bordTl(modelStr);
-	assert(bordTl.checkParameterRanges(getRange(6, sweepDepth, inductivity)));
-	dataset->addModel(bordTl, getRange(6, sweepDepth, inductivity));
+	parameters = getRange(6, sweepDepth, inductivity, log);
+	assert(bordTl.checkParameterRanges(parameters));
+	dataset->addModel(bordTl, parameters);
 
 	modelStr.assign("w{1000}");
 	if(inductivity)
 		modelStr.insert(0, probeModelString);
 	eis::Model bordW(modelStr);
-	assert(bordW.checkParameterRanges(getRange(7, sweepDepth, inductivity)));
-	dataset->addModel(bordW, getRange(7, sweepDepth, inductivity));
+	parameters = getRange(7, sweepDepth, inductivity, log);
+	assert(bordW.checkParameterRanges(parameters));
+	dataset->addModel(bordW, parameters);
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;
