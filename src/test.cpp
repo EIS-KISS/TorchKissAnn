@@ -154,8 +154,9 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
+	testDeduplicator();
 	//saveDataset();
-	diff();
+	//diff();
 	//printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
 	//testfs("./export", "fail_");
 
