@@ -16,6 +16,7 @@
 #include "data/dataexport.h"
 #include "data/generators/classextractordataset.h"
 #include "data/filterdata.h"
+#include "data/generators/deduplicator.h"
 
 void testLoader(EisGeneratorDataset* data)
 {
@@ -135,6 +136,16 @@ void testfs(const std::string& str, const std::string& prefix)
 			std::cout<<" is nothing\n";
 		}
 	}
+}
+
+void testDeduplicator()
+{
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	DeduplatorDataset dataset(testDataset, testDataset->modelCount());
+
+	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
+
+	delete testDataset;
 }
 
 int main(int argc, char** argv)
