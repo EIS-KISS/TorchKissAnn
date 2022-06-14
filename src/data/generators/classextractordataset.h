@@ -23,7 +23,7 @@ public:
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
 			torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(i);
-			if(example.target.item<int64_t>() == classNum)
+			if(example.target.item<int64_t>() == static_cast<int64_t>(classNum))
 			{
 				indexList.push_back(i);
 			}
