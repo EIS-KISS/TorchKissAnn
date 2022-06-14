@@ -46,7 +46,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		lossF += loss.template item<float>();
 		accF += acc.template item<float>();
 
-		if (index++ % 1000 == 0)
+		if (index++ % 1000 == 0 && index / 1000 > 1)
 		{
 			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
 			if(log)

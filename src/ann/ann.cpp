@@ -35,7 +35,7 @@ void ann::train(std::string fileName, int sweepDepth, double noise)
 	LossLog log("annLoss.csv");
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(BATCH_SIZE).workers(16);
+	options = options.batch_size(BATCH_SIZE).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
 
