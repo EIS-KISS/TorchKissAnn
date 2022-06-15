@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <optional>
+#include <mutex>
 
 template <typename DatasetSelf>
 class ClassExtractorDataset :
@@ -11,6 +12,7 @@ public torch::data::datasets::Dataset<ClassExtractorDataset<DatasetSelf>, torch:
 {
 private:
 	torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* _dataset;
+	std::mutex* datasetMutex;
 
 	std::vector<size_t> indexList;
 
@@ -19,6 +21,7 @@ public:
 	ClassExtractorDataset(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset, size_t classNum):
 	_dataset(dataset)
 	{
+		datasetMutex = new std::mutex;
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
@@ -41,7 +44,10 @@ public:
 	{
 		assert(index < indexList.size());
 
-		return _dataset->get(indexList[index]);
+		datasetMutex->lock();
+		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(indexList[index]);
+		datasetMutex->unlock();
+		return example;
 	}
 
 	c10::optional<size_t> size() const override

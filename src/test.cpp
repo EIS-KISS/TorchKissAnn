@@ -18,7 +18,8 @@
 #include "data/filterdata.h"
 #include "data/generators/deduplicator.h"
 
-void testLoader(EisGeneratorDataset* data)
+template<typename Dataset>
+void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
 {
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(100);
@@ -140,7 +141,7 @@ void testfs(const std::string& str, const std::string& prefix)
 
 void testDeduplicator()
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10);
 	DeduplatorDataset dataset(testDataset, testDataset->modelCount());
 
 	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
@@ -153,6 +154,10 @@ int main(int argc, char** argv)
 	Log::level = Log::DEBUG;
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
+
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10);
+	ClassExtractorDataset<EisGeneratorDataset> classExtract(testDataset, 5);
+	testLoader<ClassExtractorDataset<EisGeneratorDataset>>(&classExtract);
 
 	testDeduplicator();
 	//saveDataset();

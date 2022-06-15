@@ -18,6 +18,7 @@ using namespace eis;
 
 EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI): omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
+	std::cout<<__func__<<std::endl;
 }
 
 void EisGeneratorDataset::addModel(const eis::Model& model, std::vector<eis::Range> modelRange)
