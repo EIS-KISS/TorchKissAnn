@@ -141,7 +141,7 @@ void testfs(const std::string& str, const std::string& prefix)
 
 void testDeduplicator()
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/2);
 	DeduplatorDataset dataset(testDataset, testDataset->modelCount());
 
 	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
@@ -155,9 +155,8 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10);
-	ClassExtractorDataset<EisGeneratorDataset> classExtract(testDataset, 5);
-	testLoader<ClassExtractorDataset<EisGeneratorDataset>>(&classExtract);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/5);
+	testLoader<EisGeneratorDataset>(testDataset);
 
 	testDeduplicator();
 	//saveDataset();

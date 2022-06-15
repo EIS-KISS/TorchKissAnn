@@ -8,13 +8,13 @@
 #include <memory>
 
 #include "constants.h"
-#include "classextractordataset.h"
+#include "classextractordatasethighspeed.h"
 
 template <typename DatasetSelf>
 class DeduplatorDataset :
 public torch::data::datasets::Dataset<DeduplatorDataset<DatasetSelf>, torch::data::Example<torch::Tensor, torch::Tensor>>
 {
-	static constexpr size_t BATCH_SIZE = 1000;
+	static constexpr size_t BATCH_SIZE = 100000;
 	static constexpr float epsilon = 0.05;
 private:
 	torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* _dataset;
@@ -28,20 +28,20 @@ public:
 		size_t dataSetSize = dataset->size().value();
 		targets.resize(dataSetSize);
 
-		std::vector<std::unique_ptr<ClassExtractorDataset<DatasetSelf>>> classExtractorDatasets;
+		std::vector<std::unique_ptr<ClassExtractorDatasetHighSpeed<DatasetSelf>>> classExtractorDatasets;
 
 		for(size_t i = 0; i < classCount; ++i)
 		{
 			classExtractorDatasets.push_back(
-				std::unique_ptr<ClassExtractorDataset<DatasetSelf>>(new ClassExtractorDataset<DatasetSelf>(dataset, i)));
+				std::unique_ptr<ClassExtractorDatasetHighSpeed<DatasetSelf>>(new ClassExtractorDatasetHighSpeed<DatasetSelf>(dataset, i)));
 		}
 
 		torch::data::DataLoaderOptions loaderOptions;
 		loaderOptions = loaderOptions.batch_size(BATCH_SIZE);
-		loaderOptions = loaderOptions.workers(0);
-		loaderOptions = loaderOptions.max_jobs(0);
+		loaderOptions = loaderOptions.workers(JOBS);
+		loaderOptions = loaderOptions.max_jobs(JOBS*2);
 
-		std::vector<std::unique_ptr<torch::data::StatelessDataLoader<torch::data::datasets::MapDataset<ClassExtractorDataset<DatasetSelf>,
+		std::vector<std::unique_ptr<torch::data::StatelessDataLoader<torch::data::datasets::MapDataset<ClassExtractorDatasetHighSpeed<DatasetSelf>,
 		torch::data::transforms::Stack<torch::data::Example<>> >,
 		torch::data::samplers::SequentialSampler> > > classLoaders;
 		//yes i know wtf
