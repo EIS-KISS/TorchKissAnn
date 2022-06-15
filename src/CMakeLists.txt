@@ -24,6 +24,8 @@ set(SRC_FILES
 
 include_directories(utils .)
 
+set(ENV{TORCH_INSTALL_PREFIX} "/usr")
+
 find_package(Torch REQUIRED)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} main.cpp)
