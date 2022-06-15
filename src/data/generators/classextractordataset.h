@@ -30,6 +30,13 @@ public:
 		}
 	}
 
+	size_t getParentIndex(size_t index)
+	{
+		assert(index < indexList.size());
+
+		return indexList[index];
+	}
+
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
 	{
 		assert(index < indexList.size());
