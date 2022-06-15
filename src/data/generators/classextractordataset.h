@@ -5,6 +5,7 @@
 #include <vector>
 #include <optional>
 #include <mutex>
+#include <memory>
 
 template <typename DatasetSelf>
 class ClassExtractorDataset :
@@ -12,16 +13,16 @@ public torch::data::datasets::Dataset<ClassExtractorDataset<DatasetSelf>, torch:
 {
 private:
 	torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* _dataset;
-	std::mutex* datasetMutex;
+	std::shared_ptr<std::mutex> datasetMutex;
 
 	std::vector<size_t> indexList;
 
 public:
 
 	ClassExtractorDataset(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset, size_t classNum):
-	_dataset(dataset)
+	_dataset(dataset),
+	datasetMutex(new std::mutex)
 	{
-		datasetMutex = new std::mutex;
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
