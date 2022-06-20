@@ -25,10 +25,7 @@ public:
 
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
-	EisGeneratorDataset(const EisGeneratorDataset& in)
-	{
-		std::cout<<__func__<<std::endl;
-	}
+	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
