@@ -17,6 +17,7 @@
 #include "data/generators/classextractordataset.h"
 #include "data/filterdata.h"
 #include "data/generators/deduplicator.h"
+#include "ann/net.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -155,13 +156,18 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/5);
-	testLoader<EisGeneratorDataset>(testDataset);
+	torch::Tensor x = torch::randn({1, 100});
+	std::cout<<"begin dim "<<x.dim()<<" with "<<x<<std::endl;
+	ann::ConvNet net(100, 2);
+	x = net.forward(x);
+	std::cout<<"end with "<<x<<std::endl;
 
-	testDeduplicator();
+	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/5);
+	//testLoader<EisGeneratorDataset>(testDataset);
+
+	//testDeduplicator();
 	//saveDataset();
 	//diff();
 	//printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
 	//testfs("./export", "fail_");
-
 }

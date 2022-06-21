@@ -5,6 +5,8 @@
 #include <iostream>
 #include "utils/log.h"
 
+#define MODE_LIST "ann, conv, gan, svm, svmcross"
+
 const char *argp_program_version = "TorchKissAnnTrain";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that trains models for TorchKissAnn";
@@ -14,7 +16,7 @@ static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
   {"quiet", 		'q', 0,				0,	"only output data" },
-  {"model", 		'm', "[STRING]",	0,	"model to train: ann, gan, svm, svmcross or svmfilter"},
+  {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST " or svmfilter"},
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   {"noise",			'x', "[AMPLITUDE]",	0,	"directory to save diagonistic data too"},
@@ -25,6 +27,7 @@ typedef enum
 {
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
+	MODE_ANN_CONV,
 	MODE_SVM,
 	MODE_SVM_FILTER,
 	MODE_SVM_CROSS,
@@ -35,6 +38,8 @@ static TrainMode parseTrainMode(const std::string& in)
 {
 	if(in.empty() || in == "ann")
 		return MODE_ANN;
+	else if(in == "conv")
+		return MODE_ANN_CONV;
 	else if(in == "svm")
 		return MODE_SVM;
 	else if(in == "svmcross")
@@ -70,7 +75,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		config->mode = parseTrainMode(arg);
 		if(config->mode == MODE_INVALID)
 		{
-			Log(Log::ERROR)<<"mode has to be one of: ann, svm, svmcross, svmfilter";
+			Log(Log::ERROR)<<"mode has to be one of: " MODE_LIST;
 			argp_usage(state);
 		}
 		break;

@@ -1,15 +1,36 @@
 #include "net.h"
+#include "../utils/seqprint.h"
+#include "log.h"
 
-Net::Net(int64_t inputSizeI, int64_t outputSizeI, bool leakI): inputSize(inputSizeI), outputSize(outputSizeI), leak(leakI)
+using namespace ann;
+
+int64_t ann::Net::getInputSize()
 {
-	// Construct and register two Linear submodules.
+	return inputSize;
+}
+
+int64_t ann::Net::getOutputSize()
+{
+	return outputSize;
+}
+
+static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers, size_t input, size_t output)
+{
+	size_t layerIn = (input*(leyers-layer)/leyers)+output*(layer)/leyers;
+	size_t layerOut = (input*(leyers-layer-1)/leyers)+output*(layer+1)/leyers;
+	return std::pair<size_t, size_t>(layerIn, layerOut);
+}
+
+ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI):
+Net(inputSizeI, outputSizeI, leakI)
+{
 	fc1 = register_module("fc1", torch::nn::Linear(inputSize, inputSize/2));
 	fc2 = register_module("fc2", torch::nn::Linear(inputSize/2, inputSize/4));
 	fc3 = register_module("fc3", torch::nn::Linear(inputSize/4, outputSize*4));
 	fc4 = register_module("fc4", torch::nn::Linear(outputSize*4, outputSize));
 }
 
-torch::Tensor Net::forward(torch::Tensor x)
+torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 {
 	torch::nn::functional::LeakyReLUFuncOptions leakyOptions;
 	leakyOptions = leakyOptions.negative_slope(0.42).inplace(true);
@@ -29,12 +50,56 @@ torch::Tensor Net::forward(torch::Tensor x)
 	return x;
 }
 
-int64_t Net::getInputSize()
+ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI):
+Net(inputSizeI, outputSizeI, leakI)
 {
-	return inputSize;
+	int64_t size = inputSize;
+	const int conv1Kernel = inputSize/5;
+	const int maxPool1Devisor = 2;
+	const int conv2Kernel = inputSize/10;
+	const int maxPool2Devisor = 2;
+
+	//conv part
+	//model->push_back(SeqPrint());
+	model->push_back(torch::nn::Conv1d(torch::nn::Conv1dOptions(1, 3, conv1Kernel).stride(1).bias(false)));
+	size = size-conv1Kernel+1;
+	//model->push_back(SeqPrint());
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	model->push_back(torch::nn::MaxPool1d(torch::nn::MaxPool1dOptions(maxPool1Devisor)));
+	size = size/maxPool1Devisor;
+	//model->push_back(SeqPrint());
+	model->push_back(torch::nn::Conv1d(torch::nn::Conv1dOptions(3, 6, conv2Kernel).stride(1).bias(false)));
+	size = size-conv2Kernel+1;
+	//model->push_back(SeqPrint());
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	model->push_back(torch::nn::MaxPool1d(torch::nn::MaxPool1dOptions(maxPool2Devisor)));
+	size = size/2;
+	//model->push_back(SeqPrint());
+	model->push_back(torch::nn::Flatten());
+	size = size*6;
+	//model->push_back(SeqPrint());
+
+	//3 fully connected layers
+	std::pair<size_t, size_t> sizes = layerWidthFunction(0, 3, size, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+
+	sizes = layerWidthFunction(1, 3, size, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+
+	sizes = layerWidthFunction(2, 3, size, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
 }
 
-int64_t Net::getOutputSize()
+torch::Tensor ann::ConvNet::forward(torch::Tensor x)
 {
-	return outputSize;
+	assert(x.dim() < 3);
+	if(x.dim() == 2)
+		x = x.reshape({x.size(0), 1, x.size(1)});
+	else
+		x = x.reshape({x.size(0), 1});
+
+	return model->forward(x);
 }

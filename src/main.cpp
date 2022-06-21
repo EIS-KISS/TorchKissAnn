@@ -130,10 +130,10 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 	switch(mode)
 	{
 		case MODE_ANN:
-			output = ann::use(input, networkFileName);
+			output = ann::use(input, ann::load(networkFileName));
 			break;
 		case MODE_ANN_TEST:
-			output = ann::testOnGenNeis(networkFileName, exportDir, exportProb);
+			output = ann::testOnGenNeis(ann::load(networkFileName), exportDir, exportProb);
 			break;
 		case MODE_NN:
 		{
@@ -201,16 +201,28 @@ int main(int argc, char** argv)
 	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
 
 	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
-	for(size_t i = 0; i < dataset->modelCount(); ++i)
+
+	for(int64_t i = 0; i < std::min(static_cast<int64_t>(dataset->modelCount()), output.size(0)); ++i)
 	{
-		std::string model = dataset->getModelStrFromClass(i);
+		std::string model;
+		if(static_cast<int64_t>(dataset->modelCount()) == output.size(0))
+			model = dataset->getModelStrFromClass(i);
+		else
+			model = std::string("Unkown");
 		Log(Log::INFO)<<i<<'\t'<<model<<(model.size() >= 8 ? "\t" : "\t\t")<<output[i].item().to<float>();
 	}
 
 	for(int64_t i = 0; i < output.size(0); ++i)
 	{
 		if(output[i].item().to<float>() > 0.15)
-			std::cout<<"Could be: "<<dataset->getModelStrFromClass(i)<<" confidence "<<output[i].item().to<float>()<<std::endl;
+		{
+			std::string model;
+			if(static_cast<int64_t>(dataset->modelCount()) == output.size(0))
+				model = dataset->getModelStrFromClass(i);
+			else
+				model = std::to_string(i);
+			std::cout<<"Could be: "<<model<<" confidence "<<output[i].item().to<float>()<<std::endl;
+		}
 	}
 
 	return 0;

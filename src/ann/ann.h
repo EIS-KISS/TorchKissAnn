@@ -14,11 +14,13 @@
 namespace ann
 {
 
-torch::Tensor use(torch::Tensor input, std::string fileName);
+std::shared_ptr<Net> load(const std::string& fileName = "net.vos");
 
-void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, double noise = 0);
+torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
-torch::Tensor testOnGenNeis(std::string fileName = "net.vos", std::string outputDir = "", double exportProb = 0);
+void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, double noise = 0, bool convNet = false);
+
+torch::Tensor testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir = "", double exportProb = 0);
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,

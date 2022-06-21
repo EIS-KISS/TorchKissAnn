@@ -48,7 +48,10 @@ int main(int argc, char** argv)
 	switch(config.mode)
 	{
 		case MODE_ANN:
-			ann::train("net.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise);
+			ann::train("net.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise, false);
+			break;
+		case MODE_ANN_CONV:
+			ann::train("netConv.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise, true);
 			break;
 		case MODE_SVM:
 			svm::train(false);
