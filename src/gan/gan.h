@@ -5,7 +5,7 @@
 
 namespace gan
 {
-	void train(std::string fileName = "ganNet", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, double noise = 0);
+	void train(std::string fileName = "ganNet", size_t exampleCount = EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, double noise = 0);
 	bool filter(torch::Tensor input, const std::string& fileName, float nabla = 20);
 	torch::Tensor generate(const std::string& fileName);
 }

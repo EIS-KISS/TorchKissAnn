@@ -48,10 +48,10 @@ int main(int argc, char** argv)
 	switch(config.mode)
 	{
 		case MODE_ANN:
-			ann::train("net.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise, false);
+			ann::train("net.vos", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise, false);
 			break;
 		case MODE_ANN_CONV:
-			ann::train("netConv.vos", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise, true);
+			ann::train("netConv.vos", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise, true);
 			break;
 		case MODE_SVM:
 			svm::train(false);
@@ -63,7 +63,7 @@ int main(int argc, char** argv)
 			svm::cross();
 			break;
 		case MODE_GAN:
-			gan::train("ganNet", EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, config.noise);
+			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise);
 			break;
 		case MODE_INVALID:
 		default:

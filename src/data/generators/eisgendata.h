@@ -13,7 +13,7 @@ public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<
 {
 public:
 	static constexpr bool PRINT = false;
-	static constexpr int DEFAULT_SWEEP_DEPTH = 20;
+	static constexpr size_t DEFAULT_EXAMPLE_COUNT = 1e8;
 
 public:
 	std::vector<eis::Model> models;
@@ -42,7 +42,7 @@ public:
 
 	std::string getModelStrFromClass(size_t classNum);
 
-	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, int sweepDepth = DEFAULT_SWEEP_DEPTH,
+	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, size_t desiredCount = DEFAULT_EXAMPLE_COUNT,
 														double noise = 0, bool inductivity = false, bool log = true);
 
 	c10::optional<size_t> size() const override;

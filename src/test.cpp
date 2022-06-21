@@ -72,7 +72,7 @@ std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
 
 void diff()
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e4);
 	ClassExtractorDataset<EisGeneratorDataset> extractor(testDataset, 5);
 
 	size_t rangeSteps = extractor.size().value();
@@ -113,7 +113,7 @@ void diff()
 
 void saveDataset()
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/10+2);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e4);
 	ClassExtractorDataset<EisGeneratorDataset> extractor(testDataset, 5);
 	saveDataset<ClassExtractorDataset<EisGeneratorDataset>>("./testdatasetexport", &extractor);
 }
@@ -142,7 +142,7 @@ void testfs(const std::string& str, const std::string& prefix)
 
 void testDeduplicator()
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/2);
+	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
 	DeduplatorDataset dataset(testDataset, testDataset->modelCount());
 
 	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
@@ -162,7 +162,7 @@ int main(int argc, char** argv)
 	x = net.forward(x);
 	std::cout<<"end with "<<x<<std::endl;
 
-	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_SWEEP_DEPTH/5);
+	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
 	//testLoader<EisGeneratorDataset>(testDataset);
 
 	//testDeduplicator();

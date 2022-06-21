@@ -18,7 +18,7 @@ std::shared_ptr<Net> load(const std::string& fileName = "net.vos");
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
-void train(std::string fileName = "net.vos", int sweepDepth = EisGeneratorDataset::DEFAULT_SWEEP_DEPTH, double noise = 0, bool convNet = false);
+void train(std::string fileName = "net.vos", size_t exampleCount = EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, double noise = 0, bool convNet = false);
 
 torch::Tensor testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir = "", double exportProb = 0);
 
@@ -80,7 +80,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		torch::Tensor targets = batch.target.to(DATA_LOCATION).view({-1});
 
 		torch::Tensor output = network->forward(data);
-		torch::Tensor loss = torch::nll_loss(output, targets);
+		torch::Tensor loss = torch::nll_loss(output, targets.to(torch::kInt64));
 		assert(!std::isnan(loss.template item<float>()));
 
 		torch::Tensor hits = output.argmax(1).eq(targets);
