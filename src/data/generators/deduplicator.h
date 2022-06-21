@@ -59,7 +59,7 @@ public:
 		options = options.device(torch::kCPU);
 
 		for(size_t i = 0; i < dataSetSize; ++i)
-			targets[i] = torch::zeros({classCount}, options);
+			targets[i] = torch::zeros({static_cast<int64_t>(classCount)}, options);
 
 		for(size_t classNum = 0; classNum < classCount-1; ++classNum)
 		{
