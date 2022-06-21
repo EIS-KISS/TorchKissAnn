@@ -35,7 +35,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		auto targets = batch.target.to(DATA_LOCATION).view({-1});
 
 		auto prediction = network->forward(data);
-		auto loss = torch::nll_loss(prediction, targets, classWeights);
+		auto loss = torch::nll_loss(prediction, targets.to(torch::kInt64), classWeights);
 		assert(!std::isnan(loss.template item<float>()));
 		auto acc = prediction.argmax(1).eq(targets).sum();
 

@@ -79,8 +79,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	torch::TensorOptions options;
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	//options = options.dtype(torch::kInt8); why not?
-	options = options.dtype(torch::kInt64);
+	options = options.dtype(torch::kInt8);
 	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(model);
 
