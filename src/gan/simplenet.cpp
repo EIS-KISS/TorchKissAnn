@@ -11,6 +11,7 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 
 GANGeneratorImpl::GANGeneratorImpl(size_t inputSize, size_t outputSize)
 {
+	register_module("GANGeneratorModel", model);
 	std::pair<size_t, size_t> layerSizes = layerWidthFunction(0, 4, inputSize, outputSize);
 	model->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
@@ -33,6 +34,8 @@ torch::Tensor GANGeneratorImpl::forward(torch::Tensor x)
 
 GANDiscriminatorImpl::GANDiscriminatorImpl(size_t inputSize)
 {
+	register_module("GANDiscriminatorFeature", feature);
+	register_module("GANDiscriminatorClassifier", classifier);
 	std::pair<size_t, size_t> layerSizes = layerWidthFunction(0, 4, inputSize, 1);
 	feature->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
 	feature->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
