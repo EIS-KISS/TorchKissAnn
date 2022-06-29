@@ -59,6 +59,8 @@ Net(inputSizeI, outputSizeI, leakI)
 	const int conv2Kernel = inputSize/10;
 	const int maxPool2Devisor = 2;
 
+	register_module("ConvModel", model);
+
 	//conv part
 	//model->push_back(SeqPrint());
 	model->push_back(torch::nn::Conv1d(torch::nn::Conv1dOptions(1, 3, conv1Kernel).stride(1).bias(false)));
