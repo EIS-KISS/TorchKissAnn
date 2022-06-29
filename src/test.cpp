@@ -157,10 +157,15 @@ int main(int argc, char** argv)
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
 	torch::Tensor x = torch::randn({1, 100});
-	std::cout<<"begin dim "<<x.dim()<<" with "<<x<<std::endl;
-	ann::ConvNet net(100, 2);
+	std::cout<<"begin dim "<<x.dim()<<std::endl;
+	ann::ConvNet net(100, 6);
 	x = net.forward(x);
 	std::cout<<"end with "<<x<<std::endl;
+
+	std::cout<<net<<std::endl;
+
+	ann::SimpleNet snet;
+	std::cout<<snet<<std::endl;
 
 	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
 	//testLoader<EisGeneratorDataset>(testDataset);
