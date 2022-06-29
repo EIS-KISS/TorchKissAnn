@@ -82,15 +82,19 @@ Net(inputSizeI, outputSizeI, leakI)
 	//model->push_back(SeqPrint());
 
 	//3 fully connected layers
-	std::pair<size_t, size_t> sizes = layerWidthFunction(0, 3, size, outputSize);
+	std::pair<size_t, size_t> sizes = layerWidthFunction(0, 4, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
-	sizes = layerWidthFunction(1, 3, size, outputSize);
+	sizes = layerWidthFunction(1, 4, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
-	sizes = layerWidthFunction(2, 3, size, outputSize);
+	sizes = layerWidthFunction(2, 4, size, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+
+	sizes = layerWidthFunction(3, 4, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
 }
