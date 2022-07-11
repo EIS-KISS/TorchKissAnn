@@ -14,12 +14,14 @@ set(SRC_FILES
 	utils/log.cpp
 	utils/randomgen.cpp
 	utils/losslog.cpp
+	utils/tensoroperators.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp
+	drt/drt.cpp
 )
 
 include_directories(utils .)
