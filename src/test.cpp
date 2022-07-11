@@ -18,6 +18,7 @@
 #include "data/filterdata.h"
 #include "data/generators/deduplicator.h"
 #include "ann/net.h"
+#include "utils/tensoroperators.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -156,6 +157,12 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
+	torch::Tensor a = torch::tensor({1, 2, 3, 4}, {torch::kFloat64});
+	torch::Tensor b =  torch::tensor({2, 4, 5, 6, 7}, {torch::kFloat64});
+
+	std::cout<<toeplitz(a, b);
+
+	return 0;
 	torch::Tensor x = torch::randn({1, 100});
 	std::cout<<"begin dim "<<x.dim()<<std::endl;
 	ann::ConvNet net(100, 6);
