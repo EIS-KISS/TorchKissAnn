@@ -10,9 +10,5 @@ torch::Tensor toeplitz(const torch::Tensor& b, const torch::Tensor a)
 		output = torch::cat({output, torch::roll(line, i)}, 0);
 
 	torch::Tensor indeciesCols = torch::linspace(0, a.numel()-1, a.numel(), torch::TensorOptions().dtype(torch::kInt32));
-	Log(Log::DEBUG)<<a;
-	Log(Log::DEBUG)<<b;
-	Log(Log::DEBUG)<<output;
-	Log(Log::DEBUG)<<indeciesCols;
 	return torch::index_select(output, 1, indeciesCols);
 }
