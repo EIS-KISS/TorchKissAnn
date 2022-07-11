@@ -3,15 +3,18 @@
 #include <cmath>
 #include <cstdint>
 
-torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data)
+torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs)
 {
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, options);
+	if(freqs)
+		*freqs = torch::empty({static_cast<long int>(data.size()*2)}, options);
 
 	float* tensorDataPtr = input.contiguous().data_ptr<float>();
+	float* tensorFreqDataPtr = freqs ? freqs->contiguous().data_ptr<float>() : nullptr;
 
 	for(size_t i = 0; i < data.size()*2; ++i)
 	{
@@ -19,6 +22,8 @@ torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data)
 		if(std::isnan(datapoint) || std::isinf(datapoint))
 			datapoint = 0;
 		tensorDataPtr[i] = datapoint;
+		if(tensorFreqDataPtr)
+			tensorFreqDataPtr[i] = data[i % data.size()].omega;
 	}
 
 	return input;
