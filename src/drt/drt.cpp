@@ -73,6 +73,9 @@ static double innerProd(double freqA, double freqB, double epsilon)
 
 torch::Tensor generateMatrixM(torch::Tensor taus, double epsilon, std::function<double(double)> fn)
 {
+	//Related to above todo
+	(void) fn;
+
 	torch::Tensor recoverdFreq = 1/taus;
 	auto recoverdFreqA = recoverdFreq.accessor<float, 1>();
 	torch::Tensor out = torch::zeros({taus.numel(), taus.numel()}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
@@ -136,5 +139,18 @@ void doDrt(const std::vector<eis::DataPoint>& data, torch::Tensor& drtOut)
 	torch::Tensor aRe = generateMatrixA(freqs, taus, [epsilon](double x) -> double {return discretizationFn(x, epsilon);}, false);
 	torch::Tensor aIm = generateMatrixA(freqs, taus, [epsilon](double x) -> double {return discretizationFn(x, epsilon);}, true);
 
+	torch::Tensor zeroCol = torch::zeros({aIm.size(0), 1}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
+	torch::Tensor oneCol = torch::ones({aRe.size(0), 1}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
+	aRe = torch::cat({oneCol, aRe}, 0);
+	aIm = torch::cat({zeroCol, aIm}, 0);
+
 	torch::Tensor M = generateMatrixM(taus, epsilon, [epsilon](double x) -> double {return discretizationFn(x, epsilon);});
+	torch::Tensor zeroRow = torch::zeros({1, M.size(1)}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
+	M = torch::cat({zeroCol, M}, 0);
+	M = torch::cat({M, zeroRow}, 1);
+
+	auto aReA = aRe.accessor<float, 2>();
+	auto aImA = aIm.accessor<float, 2>();
+
+
 }
