@@ -151,16 +151,27 @@ void testDeduplicator()
 	delete testDataset;
 }
 
+double integFn(double x)
+{
+	return x*x*x+1;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
+	torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
+
+	std::cout<<"ramp:\n"<<ramp<<std::endl;
+
+	std::cout<<"integ: "<<integrateFn(integFn, 2, 6)<<std::endl;
+
 	torch::Tensor a = torch::tensor({1, 2, 3, 4}, {torch::kFloat64});
 	torch::Tensor b =  torch::tensor({2, 4, 5, 6, 7}, {torch::kFloat64});
 
-	std::cout<<toeplitz(a, b);
+	std::cout<<toeplitz(a, b)<<std::endl;
 
 	return 0;
 	torch::Tensor x = torch::randn({1, 100});

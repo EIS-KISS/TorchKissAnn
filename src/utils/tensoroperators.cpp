@@ -12,3 +12,32 @@ torch::Tensor toeplitz(const torch::Tensor& b, const torch::Tensor a)
 	torch::Tensor indeciesCols = torch::linspace(0, a.numel()-1, a.numel(), torch::TensorOptions().dtype(torch::kInt32));
 	return torch::index_select(output, 1, indeciesCols);
 }
+
+torch::Tensor fnToTensor(std::function<double(double)> fn, double start, double stop, size_t size)
+{
+	torch::Tensor out = torch::empty({static_cast<int64_t>(size)}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
+	auto outA = out.accessor<float, 1>();
+
+	double step = (stop-start)/(size-1);
+
+	for(size_t i = 0; i < size; ++i)
+		outA[i] = fn(start+i*step);
+	return out;
+}
+
+double tensorSimpleIntegrate(torch::Tensor in, double length)
+{
+	return (torch::mean(in).item().to<double>())*length;
+}
+
+double integrateFn(std::function<double(double)> fn, double start, double stop, size_t steps, double *prev)
+{
+	double resH =  prev ? *prev : tensorSimpleIntegrate(fnToTensor(fn, start, stop, steps/2), stop-start);
+	double res = tensorSimpleIntegrate(fnToTensor(fn, start, stop, steps), stop-start);
+
+	double relDiff = res/resH;
+	if((relDiff > 0.99 && relDiff < 1.01) || steps > 3e6)
+		return res;
+	else
+		return integrateFn(fn, start, stop, steps*2, &res);
+}
