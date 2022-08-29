@@ -11,21 +11,9 @@
 #include "gan/gan.h"
 #include "log.h"
 #include "data/print.h"
+#include "data/generators/eisgendata.h"
+#include "data/generators/deduplicator.h"
 #include "trainoptions.h"
-
-void printHelp(char* argo)
-{
-	std::cout<<"Usage: "<<argo<<" [OPTION...] [TARGET]\n";
-	std::cout<<argo<<" training utility for torchkissann\n\n";
-	std::cout<<"Options:\n";
-	std::cout<<"-h, --help\tPrint this help\n";
-	std::cout<<"-v, --verbose\tPrint training information verbosly\n\n";
-	std::cout<<"Targets, one or more of of:\n";
-	std::cout<<"ann\n";
-	std::cout<<"svm\n";
-	std::cout<<"svmfilter\n";
-	std::cout<<"svmcross\n";
-}
 
 int main(int argc, char** argv)
 {
@@ -65,6 +53,14 @@ int main(int argc, char** argv)
 		case MODE_GAN:
 			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise);
 			break;
+		case MODE_DEDUP: //350GiB of ram required!!!
+		{
+			EisGeneratorDataset *dataset =
+				EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, 0, false, true);
+			DeduplatorDataset dedupData(dataset, dataset->modelCount());
+			dedupData.save("dedupInfo.csv");
+		}
+		break;
 		case MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"invalid model";

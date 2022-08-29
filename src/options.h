@@ -17,7 +17,7 @@ static struct argp_option options[] =
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"network",		'n', "[FILE]",		0,	"Network file name" },
   {"input",			'i', "[FILE]",		0,	"Input file name" },
-  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the file type valid options are: csv, mpt, trash, gan" },
+  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, mpt, trash, gan" },
   {"show",			's', 0,				0,	"Show filtered input"},
   {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, svm, knn, anntest"},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, svm, gan"},

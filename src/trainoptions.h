@@ -5,7 +5,7 @@
 #include <iostream>
 #include "utils/log.h"
 
-#define MODE_LIST "ann, conv, gan, svm, svmcross"
+#define MODE_LIST "ann, conv, gan, svm, svmcross, dedup"
 
 const char *argp_program_version = "TorchKissAnnTrain";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -19,7 +19,7 @@ static struct argp_option options[] =
   {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST " or svmfilter"},
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
-  {"noise",			'x', "[AMPLITUDE]",	0,	"directory to save diagonistic data too"},
+  {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
   { 0 }
 };
 
@@ -31,7 +31,8 @@ typedef enum
 	MODE_SVM,
 	MODE_SVM_FILTER,
 	MODE_SVM_CROSS,
-	MODE_GAN
+	MODE_GAN,
+	MODE_DEDUP
 } TrainMode;
 
 static TrainMode parseTrainMode(const std::string& in)
@@ -48,6 +49,8 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_SVM_FILTER;
 	else if(in == "gan")
 		return MODE_GAN;
+	else if(in == "dedup")
+		return MODE_DEDUP;
 
 	return MODE_INVALID;
 }
