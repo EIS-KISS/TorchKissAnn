@@ -12,6 +12,8 @@
 #include "constants.h"
 #include "classextractordatasethighspeed.h"
 #include "log.h"
+#include "../csvBackend.h"
+#include "tokenize.h"
 
 template <typename DatasetSelf>
 class DeduplatorDataset :
@@ -24,10 +26,72 @@ private:
 	std::vector<uint8_t> originClass;
 	std::vector<torch::Tensor> targets;
 	size_t classCount;
+	bool ready = false;
 
 public:
 
-	DeduplatorDataset(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset, size_t classCountIn):
+	DeduplatorDataset(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset,
+					  size_t classCountIn, const std::filesystem::path& fileName):
+	_dataset(dataset), classCount(classCountIn)
+	{
+		io::LineReader dedupLine(fileName);
+		std::string firstLineStr(dedupLine.next_line());
+		std::vector<std::string> firstLineTokens = tokenize(firstLineStr, ',');
+
+		if(firstLineTokens[0].find("id") == std::string::npos)
+		{
+			Log(Log::ERROR)<<"file "<<fileName<<" dosent contain a valid csv deduplication header";
+			return;
+		}
+
+		bool hasOrigin = (firstLineTokens.size() > 1 && firstLineTokens[1].find("originClass") != std::string::npos);
+		if(firstLineTokens.size()-1-hasOrigin != classCount)
+		{
+			Log(Log::ERROR)<<"file "<<fileName<<" is not a deduplication file for the current dataset";
+			return;
+		}
+
+		torch::TensorOptions options;
+		options = options.dtype(torch::kInt8);
+		options = options.layout(torch::kStrided);
+		options = options.device(torch::kCPU);
+		size_t datasetSize = dataset->size().value();
+		targets.resize(datasetSize);
+		for(size_t i = 0; i < datasetSize; ++i)
+			targets[i] = torch::zeros({static_cast<int64_t>(classCount)}, options);
+
+		try
+		{
+			while(char* line = dedupLine.next_line())
+			{
+				std::string lineStr(line);
+				std::vector<std::string> tokens = tokenize(lineStr, ',');
+				if(tokens.size()-1-hasOrigin != classCount)
+					return;
+				if(hasOrigin)
+					originClass.push_back(std::stoul(tokens[1]));
+
+				size_t id = std::stoul(tokens[0]);
+				if(id > targets.size()-1)
+				{
+					Log(Log::WARN)<<"id "<<id<<" is out of range for dataset of size "<<datasetSize;
+					continue;
+				}
+
+				for(size_t i = 0; i < classCount; ++i)
+					targets[id][i] = std::stoul(tokens[1]);
+			}
+
+			ready = true;
+		}
+		catch(const std::invalid_argument& ex)
+		{
+			Log(Log::ERROR)<<"file "<<fileName<<" contains invalid numbers";
+		}
+	}
+
+	DeduplatorDataset(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset,
+					  size_t classCountIn):
 	_dataset(dataset), classCount(classCountIn)
 	{
 		size_t dataSetSize = dataset->size().value();
@@ -105,6 +169,7 @@ public:
 				}
 				Log(Log::INFO)<<"Class "<<classNum<<" of "<<classCount-1<<'\t'<<i<<'\\'<<classSize<<"\tsmallest match: "<<smalest;
 			}
+			ready = true;
 		}
 
 		size_t classSize = classExtractorDatasets[classCount-1]->size().value();
@@ -164,5 +229,10 @@ public:
 	c10::optional<size_t> size() const override
 	{
 		return targets.size();
+	}
+
+	bool isReady()
+	{
+		return ready;
 	}
 };
