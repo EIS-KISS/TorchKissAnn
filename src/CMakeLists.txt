@@ -6,6 +6,7 @@ set(SRC_FILES
 	data/loaders/csv.cpp
 	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
+	data/loaders/deduploader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
 	svm/svmloader.cpp
