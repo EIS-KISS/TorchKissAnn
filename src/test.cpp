@@ -19,6 +19,7 @@
 #include "data/generators/deduplicator.h"
 #include "ann/net.h"
 #include "utils/tensoroperators.h"
+#include "data/loaders/deduploader.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -162,7 +163,9 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
+	FastDedupDataset dataset("/home/philipp/programing/kiss/kissdata/deduplicated/list-sorted.txt");
+
+	/*torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
 
 	std::cout<<"ramp:\n"<<ramp<<std::endl;
 
@@ -183,7 +186,7 @@ int main(int argc, char** argv)
 	std::cout<<net<<std::endl;
 
 	ann::SimpleNet snet;
-	std::cout<<snet<<std::endl;
+	std::cout<<snet<<std::endl;*/
 
 	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
 	//testLoader<EisGeneratorDataset>(testDataset);

@@ -28,6 +28,7 @@ bool isWhitespace(const char in)
 
 FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
 {
+	Log(Log::DEBUG)<<"Trying to load "<<fileName;
 	if(!(std::filesystem::is_regular_file(fileName) || std::filesystem::is_symlink(fileName)))
 	{
 		Log(Log::ERROR)<<fileName<<" dose not exist";
@@ -41,12 +42,53 @@ FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
 		return;
 	}
 
+	Log(Log::DEBUG)<<"Reading header";
 	std::string line;
 	std::getline(file, line, '\n');
 	std::vector<std::string> tokens = tokenize(line, ',', '{', '}');
+	tokens[0].resize(std::remove_if(tokens[0].begin(), tokens[0].end(), &isWhitespace) - tokens[0].begin());
+	if(tokens[0] != "UVOSEISDATATAB")
+	{
+		Log(Log::ERROR)<<fileName<<" is not a valid uvos eis table file";
+		file.close();
+		return;
+	}
+	if(tokens.size() >= 2)
+	{
+		std::vector<std::string> supertoken = tokenize(tokens[1], '.');
+		if(supertoken.size() < 2)
+		{
+			Log(Log::ERROR)<<fileName<<" can not parse version";
+			file.close();
+			return;
+		}
+
+		versionMajor = std::stoi(supertoken[0]);
+		versionMinor = std::stoi(supertoken[1]);
+	}
+	Log(Log::DEBUG)<<"Got table of version "<<versionMajor<<'.'<<versionMinor;
+
+	std::getline(file, line, '\n');
+	tokens = tokenize(line, ',', '{', '}');
+	tokens[0].resize(std::remove_if(tokens[0].begin(), tokens[0].end(), &isWhitespace) - tokens[0].begin());
+	modelStrings.reserve(tokens.size()-1);
+	if(tokens.size() < 2 || tokens[0] != "Models")
+	{
+		Log(Log::ERROR)<<fileName<<" can not parse models";
+		file.close();
+		return;
+	}
+	for(size_t i = 1; i < tokens.size(); ++i)
+	{
+		tokens[i].resize(std::remove_if(tokens[i].begin(), tokens[i].end(), &isWhitespace) - tokens[i].begin());
+		modelStrings.push_back(tokens[i]);
+	}
+
+	std::getline(file, line, '\n');
+	tokens = tokenize(line, ',', '{', '}');
 	for(std::string& token : tokens)
 	{
-		std::remove_if(token.begin(), token.end(), &isWhitespace);
+		token.resize(std::remove_if(token.begin(), token.end(), &isWhitespace) - token.begin());
 		if(token.find("class") == 0)
 		{
 			token.erase(0, 5);
@@ -61,17 +103,30 @@ FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
 		}
 	}
 
+	if(modelCount != modelStrings.size())
+	{
+		Log(Log::ERROR)<<"Number of model strings and model ids dose not match!";
+		file.close();
+		return;
+	}
+
+	Log(Log::DEBUG)<<"Reading lines";
 	std::istreambuf_iterator<char> iter = std::find(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n');
 	while(iter != std::istreambuf_iterator<char>() && file.good())
 	{
+		iter++;
 		iter = std::find(iter, std::istreambuf_iterator<char>(), '\n');
 		lineStarts.push_back(file.tellg());
 	}
-
 	file.seekg(0, std::ios_base::beg);
 	file.clear();
 
 	Log(Log::DEBUG)<<"Loaded dataset from "<<fileName<<" with "<<size().value()<<" examples of "<<modelCount<<" classes and a depth of "<<depth;
+}
+
+std::string FastDedupDataset::getModelStrFromClass(size_t classNum)
+{
+	return modelStrings[classNum];
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::parseLine(const std::string& line)
