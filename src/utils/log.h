@@ -53,7 +53,10 @@ public:
 	{
 		if(msglevel >= level)
 		{
-			std::cout<<msg;
+			if(msglevel == ERROR)
+				std::cerr<<msg;
+			else
+				std::cout<<msg;
 			opened = true;
 		}
 		return *this;
