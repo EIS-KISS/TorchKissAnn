@@ -7,9 +7,9 @@
 #include <fstream>
 
 #include "constants.h"
-#include "../dataset.h"
+#include "data/eisdataset.h"
 
-class FastDedupDataset : public Dataset
+class FastDedupDataset : public EisDataset<FastDedupDataset>
 {
 	static constexpr int MIN_VERSION_MAJOR = 0;
 	static constexpr int MIN_VERSION_MINOR = 1;

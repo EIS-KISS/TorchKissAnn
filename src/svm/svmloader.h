@@ -6,14 +6,15 @@
 #include <iostream>
 #include <libsvm/svm.h>
 #include "log.h"
+#include "data/eisdataset.h"
 
 template <typename DatasetSelf>
 class SvmLoader
 {
-	torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* _dataset;
+	EisDataset<DatasetSelf>* _dataset;
 public:
 
-	SvmLoader(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset): _dataset(dataset)
+	SvmLoader(EisDataset<DatasetSelf>* dataset): _dataset(dataset)
 	{
 
 	}

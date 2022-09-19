@@ -6,18 +6,22 @@
 #include <optional>
 #include <mutex>
 
-template <typename DatasetSelf>
-class ClassExtractorDatasetHighSpeed :
-public torch::data::datasets::Dataset<ClassExtractorDatasetHighSpeed<DatasetSelf>, torch::data::Example<torch::Tensor, torch::Tensor>>
+#include "data/eisdataset.h"
+
+template <typename ParentType>
+class ClassExtractorDatasetHighSpeed : public EisDataset<ClassExtractorDatasetHighSpeed<ParentType>>
 {
 private:
 	std::vector<torch::data::Example<torch::Tensor, torch::Tensor>> examples;
 	std::vector<size_t> indexList;
+	size_t _classNum;
+	std::string modelString;
 
 public:
 
-	ClassExtractorDatasetHighSpeed(torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset, size_t classNum)
+	ClassExtractorDatasetHighSpeed(EisDataset<ParentType>* dataset, size_t classNum): _classNum(classNum)
 	{
+		modelString = dataset->modelStringForClass(_classNum);
 		size_t dataSetSize = dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
@@ -35,6 +39,21 @@ public:
 		assert(index < examples.size());
 
 		return indexList[index];
+	}
+
+	virtual size_t classesCount() const override
+	{
+		return 1;
+	}
+
+	virtual size_t classForIndex(size_t index) override
+	{
+		return _classNum;
+	}
+
+	virtual std::string modelStringForClass(size_t classNum)
+	{
+		return modelString;
 	}
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override

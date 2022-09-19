@@ -5,9 +5,10 @@
 
 #include "eistotorch.h"
 #include "log.h"
+#include "eisdataset.h"
 
 template <typename DatasetType>
-bool saveDataset(std::string directory, torch::data::datasets::Dataset<DatasetType, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset)
+bool saveDataset(std::string directory, EisDataset<DatasetType>* dataset)
 {
 	if(!std::filesystem::is_directory(directory))
 	{

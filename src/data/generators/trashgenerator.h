@@ -4,15 +4,20 @@
 #include <sys/types.h>
 #include <random>
 
-class TrashDataset :
-public torch::data::datasets::Dataset<TrashDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
+#include "data/eisdataset.h"
+
+class TrashDataset : public EisDataset<TrashDataset>
 {
 	int64_t outputSize;
 	int64_t classCount;
 public:
 	explicit TrashDataset(int64_t outputSizeIn = 100, int64_t classCountIn = 6);
 
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
-	c10::optional<size_t> size() const override;
+	virtual c10::optional<size_t> size() const override;
+
+	virtual size_t classesCount() const override;
+	virtual size_t classForIndex(size_t index) override;
+	virtual std::string modelStringForClass(size_t classNum) override;
 };

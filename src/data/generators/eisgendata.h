@@ -6,9 +6,10 @@
 #include <optional>
 #include <eisgenerator/model.h>
 #include <string>
+#include <data/eisdataset.h>
 
 class EisGeneratorDataset :
-public torch::data::datasets::Dataset<EisGeneratorDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
+public EisDataset<EisGeneratorDataset>
 {
 public:
 	static constexpr bool PRINT = false;
@@ -28,7 +29,7 @@ public:
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
-	virtual torch::Tensor classWeights()/* override*/;
+	virtual torch::Tensor classWeights() override;
 
 	inline void setOmegaRange(eis::Range range){omega = range;}
 
@@ -36,12 +37,12 @@ public:
 
 	EisGeneratorDataset* getTestDataset();
 
-	virtual size_t classesCount()/* override*/;
+	virtual size_t classesCount() const override;
 	size_t frequencies();
 
-	virtual size_t classForIndex(size_t index)/* override*/;
+	virtual size_t classForIndex(size_t index) override;
 
-	virtual std::string modelStringForClass(size_t classNum)/* override*/;
+	virtual std::string modelStringForClass(size_t classNum) override;
 
 	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, size_t desiredCount = DEFAULT_EXAMPLE_COUNT,
 														double noise = 0, bool inductivity = false, bool log = true);

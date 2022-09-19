@@ -6,9 +6,9 @@
 #include <filesystem>
 
 #include "constants.h"
+#include "data/eisdataset.h"
 
-class EisDirDataset :
-public torch::data::datasets::Dataset<EisDirDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
+class EisDirDataset : public EisDataset<EisDirDataset>
 {
 private:
 
@@ -26,10 +26,23 @@ public:
 	explicit EisDirDataset(const std::string& dirName, const std::string& prefix, FileType fileTypeI, int64_t outputSizeI = 100);
 	EisDirDataset(const EisDirDataset& in) = default;
 
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
 	size_t modelCount();
 	torch::Tensor modelWeights();
 
-	c10::optional<size_t> size() const override;
+	virtual c10::optional<size_t> size() const override;
+
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override = 0;
+	virtual size_t classesCount() const = 0;
+	virtual size_t classForIndex(size_t index) = 0;
+	virtual std::string modelStringForClass(size_t classNum) {return std::string("Unkown");}
+	virtual torch::Tensor classWeights()
+	{
+		torch::TensorOptions options;
+		options = options.dtype(torch::kFloat32);
+		options = options.layout(torch::kStrided);
+		options = options.device(torch::kCPU);
+		return torch::ones({static_cast<int64_t>(classesCount())}, options);
+	}
 };

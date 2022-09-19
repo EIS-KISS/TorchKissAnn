@@ -57,7 +57,7 @@ int main(int argc, char** argv)
 		{
 			EisGeneratorDataset *dataset =
 				EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, 0, false, true);
-			DeduplatorDataset dedupData(dataset, dataset->classesCount());
+			DeduplatorDataset dedupData(dataset);
 			dedupData.save("dedupInfo.csv");
 		}
 		break;

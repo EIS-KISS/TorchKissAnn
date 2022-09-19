@@ -37,7 +37,7 @@ void svm::cross()
 {
 	svm_set_print_string_function(&discardStr);
 	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 20e4);
-	SvmLoader<EisGeneratorDataset> svmloader(eisData);
+	SvmLoader svmloader(eisData);
 	svm_problem problem = svmloader.getSvmProblem(2000);
 	svm_parameter params = getSvmParameters();
 

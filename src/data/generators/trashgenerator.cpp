@@ -49,3 +49,19 @@ c10::optional<size_t> TrashDataset::size() const
 {
 	return 1e6;
 }
+
+size_t TrashDataset::classesCount() const
+{
+	return classCount;
+}
+
+size_t TrashDataset::classForIndex(size_t index)
+{
+	std::default_random_engine rande(index);
+	return rande() % classesCount();
+}
+
+std::string TrashDataset::modelStringForClass(size_t classNum)
+{
+	return std::string("trash")+std::to_string(classNum);
+}

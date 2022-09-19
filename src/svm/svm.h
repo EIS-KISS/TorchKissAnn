@@ -13,9 +13,9 @@ namespace svm
 
     void train(bool oneClass = false);
 
-        template <typename DatasetSelf>
-    double test(svm_model* model,
-                torch::data::datasets::Dataset<DatasetSelf, torch::data::Example<torch::Tensor, torch::Tensor>>* dataset,
+    template <typename DatasetSelf>
+    inline double test(svm_model* model,
+                EisDataset<DatasetSelf>* dataset,
                 bool oneClass = false)
     {
         SvmLoader<DatasetSelf> svmloader(dataset);
@@ -35,9 +35,10 @@ namespace svm
 
         if(oneClass)
         {
-            int trashCorrect = 0;
+            assert(false);
+            /*int trashCorrect = 0;
             TrashDataset trashData;
-            SvmLoader<TrashDataset> trashSvmloader(&trashData);
+            SvmLoader<> trashSvmloader(&trashData);
             struct svm_problem trashProblem = trashSvmloader.getSvmProblem(1000, oneClass);
             for(int i = 0; i < trashProblem.l; ++i)
             {
@@ -53,7 +54,7 @@ namespace svm
 
             Log(Log::INFO)<<"Svm trash accuracy: "<<trashAcc;
             Log(Log::INFO)<<"Svm train accuracy: "<<acc;
-            acc = (acc + trashAcc)/2;
+            acc = (acc + trashAcc)/2;*/
         }
 
         Log(Log::INFO)<<"Svm accuracy: "<<acc;

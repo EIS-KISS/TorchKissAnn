@@ -85,7 +85,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t EisGeneratorDataset::classesCount()
+size_t EisGeneratorDataset::classesCount() const
 {
 	return models.size();
 }
