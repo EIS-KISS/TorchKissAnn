@@ -85,7 +85,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t EisGeneratorDataset::modelCount()
+size_t EisGeneratorDataset::classesCount()
 {
 	return models.size();
 }
@@ -103,15 +103,15 @@ c10::optional<size_t> EisGeneratorDataset::size() const
 	return size;
 }
 
-torch::Tensor EisGeneratorDataset::modelWeights()
+torch::Tensor EisGeneratorDataset::classWeights()
 {
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor output = torch::empty({static_cast<int64_t>(modelCount())}, options);
+	torch::Tensor output = torch::empty({static_cast<int64_t>(classesCount())}, options);
 	size_t count = size().value();
-	for(size_t i = 0; i < modelCount(); ++i)
+	for(size_t i = 0; i < classesCount(); ++i)
 	{
 		output[i] = count/static_cast<float>(Model::getRequiredStepsForSweeps(modelRanges[i]));
 	}
@@ -120,6 +120,19 @@ torch::Tensor EisGeneratorDataset::modelWeights()
 	Log(Log::DEBUG)<<"Weights:";
 	Log(Log::DEBUG)<<output;
 	return output;
+}
+
+size_t EisGeneratorDataset::classForIndex(size_t index)
+{
+	size_t model = 0;
+	for(; model < models.size(); ++model)
+	{
+		if(index < modelSweepSizes[model])
+			break;
+		else
+			index -= modelSweepSizes[model];
+	}
+	return model;
 }
 
 EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
@@ -293,13 +306,13 @@ EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t output
 	assert(bordW.checkParameterRanges(parameters));
 	dataset->addModel(bordW, parameters);
 
-	assert(dataset->modelCount() == modelCount);
+	assert(dataset->classesCount() == modelCount);
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples (approx "<<desiredCount<<" per model)";
 	return dataset;
 }
 
-std::string EisGeneratorDataset::getModelStrFromClass(size_t classNum)
+std::string EisGeneratorDataset::modelStringForClass(size_t classNum)
 {
 	if(classNum >= models.size())
 		return "invalid";

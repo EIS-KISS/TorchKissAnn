@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-
 #include <cstddef>
 #include <vector>
 #include <optional>
@@ -27,9 +26,9 @@ public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
-	torch::Tensor modelWeights();
+	virtual torch::Tensor classWeights()/* override*/;
 
 	inline void setOmegaRange(eis::Range range){omega = range;}
 
@@ -37,13 +36,15 @@ public:
 
 	EisGeneratorDataset* getTestDataset();
 
-	size_t modelCount();
+	virtual size_t classesCount()/* override*/;
 	size_t frequencies();
 
-	std::string getModelStrFromClass(size_t classNum);
+	virtual size_t classForIndex(size_t index)/* override*/;
+
+	virtual std::string modelStringForClass(size_t classNum)/* override*/;
 
 	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, size_t desiredCount = DEFAULT_EXAMPLE_COUNT,
 														double noise = 0, bool inductivity = false, bool log = true);
 
-	c10::optional<size_t> size() const override;
+	virtual c10::optional<size_t> size() const override;
 };

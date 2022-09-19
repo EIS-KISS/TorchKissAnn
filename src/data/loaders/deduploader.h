@@ -7,9 +7,9 @@
 #include <fstream>
 
 #include "constants.h"
+#include "../dataset.h"
 
-class FastDedupDataset :
-public torch::data::datasets::Dataset<FastDedupDataset, torch::data::Example<torch::Tensor, torch::Tensor>>
+class FastDedupDataset : public Dataset
 {
 	static constexpr int MIN_VERSION_MAJOR = 0;
 	static constexpr int MIN_VERSION_MINOR = 1;
@@ -26,6 +26,7 @@ private:
 
 private:
 	torch::data::Example<torch::Tensor, torch::Tensor> parseLine(const std::string& line);
+	size_t parseOriginalClass(const std::string& line);
 
 public:
 	explicit FastDedupDataset(const std::filesystem::path& fileName);
@@ -33,12 +34,13 @@ public:
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
-	size_t classesCount();
-	torch::Tensor modelWeights();
+	virtual size_t classesCount() const override;
+	virtual torch::Tensor classWeights() override;
+	virtual size_t classForIndex(size_t index) override;
 
-	std::string getModelStrFromClass(size_t classNum);
+	virtual std::string modelStringForClass(size_t classNum) override;
 
 	bool isOpen() {return file.is_open();}
 
-	c10::optional<size_t> size() const override;
+	virtual c10::optional<size_t> size() const override;
 };

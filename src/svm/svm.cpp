@@ -98,7 +98,7 @@ void svm::train(bool oneClass)
 	{
 		svmParam.probability = true;
 		svmParam.svm_type = C_SVC;
-		setSvmWeights(&svmParam, eisData->modelWeights());
+		setSvmWeights(&svmParam, eisData->classWeights());
 	}
 	else
 	{

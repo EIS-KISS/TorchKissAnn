@@ -202,11 +202,11 @@ int main(int argc, char** argv)
 
 	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
 
-	for(int64_t i = 0; i < std::min(static_cast<int64_t>(dataset->modelCount()), output.size(0)); ++i)
+	for(int64_t i = 0; i < std::min(static_cast<int64_t>(dataset->classesCount()), output.size(0)); ++i)
 	{
 		std::string model;
-		if(static_cast<int64_t>(dataset->modelCount()) == output.size(0))
-			model = dataset->getModelStrFromClass(i);
+		if(static_cast<int64_t>(dataset->classesCount()) == output.size(0))
+			model = dataset->modelStringForClass(i);
 		else
 			model = std::string("Unkown");
 		Log(Log::INFO)<<i<<'\t'<<model<<(model.size() >= 8 ? "\t" : "\t\t")<<output[i].item().to<float>();
@@ -217,8 +217,8 @@ int main(int argc, char** argv)
 		if(output[i].item().to<float>() > 0.15)
 		{
 			std::string model;
-			if(static_cast<int64_t>(dataset->modelCount()) == output.size(0))
-				model = dataset->getModelStrFromClass(i);
+			if(static_cast<int64_t>(dataset->classesCount()) == output.size(0))
+				model = dataset->modelStringForClass(i);
 			else
 				model = std::to_string(i);
 			std::cout<<"Could be: "<<model<<" confidence "<<output[i].item().to<float>()<<std::endl;

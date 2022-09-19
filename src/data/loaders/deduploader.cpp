@@ -124,7 +124,7 @@ FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
 	Log(Log::DEBUG)<<"Loaded dataset from "<<fileName<<" with "<<size().value()<<" examples of "<<modelCount<<" classes and a depth of "<<depth;
 }
 
-std::string FastDedupDataset::getModelStrFromClass(size_t classNum)
+std::string FastDedupDataset::modelStringForClass(size_t classNum)
 {
 	return modelStrings[classNum];
 }
@@ -143,12 +143,12 @@ torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::parseLine(c
 	std::vector<std::string> tokens = tokenize(line, ',', '{', '}');
 	if(tokens.size() != modelCount+depth*2+3)
 	{
-		const std::string error = std::string("line of file dose expected (") +
+		const std::string error = std::string("line of file dose not contain expected (") +
 			std::to_string(modelCount+depth*2+3) + std::string(") number of fields");
 		Log(Log::ERROR)<<error;
+		Log(Log::ERROR)<<"Line is: "<<line;
 		throw std::length_error(error);
 	}
-
 
 	for(size_t i = 3; i < 3+modelCount; ++i)
 	{
@@ -165,6 +165,30 @@ torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::parseLine(c
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, target);
 }
 
+size_t FastDedupDataset::parseOriginalClass(const std::string& line)
+{
+	std::vector<std::string> tokens = tokenize(line, ',', '{', '}');
+
+	if(tokens.size() < 3)
+	{
+		const std::string error = std::string("a line of the file dose not contain at least 3 fields");
+		Log(Log::ERROR)<<error;
+		Log(Log::ERROR)<<"Line is: "<<line;
+		throw std::length_error(error);
+	}
+
+	size_t classNum = std::stoul(tokens[2]);
+	if(classNum > classesCount())
+	{
+		const std::string error = std::string("The specified class in ");
+		Log(Log::ERROR)<<error;
+		Log(Log::ERROR)<<"Line is: "<<line;
+		throw std::length_error(error);
+	}
+
+	return classNum;
+}
+
 torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::get(size_t index)
 {
 	file.seekg(lineStarts[index]);
@@ -173,7 +197,16 @@ torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::get(size_t 
 	return parseLine(line);
 }
 
-size_t FastDedupDataset::classesCount()
+
+size_t FastDedupDataset::classForIndex(size_t index)
+{
+	file.seekg(lineStarts[index]);
+	std::string line;
+	std::getline(file, line, '\n');
+	return parseOriginalClass(line);
+}
+
+size_t FastDedupDataset::classesCount() const
 {
 	return modelCount;
 }
@@ -183,7 +216,7 @@ c10::optional<size_t> FastDedupDataset::size() const
 	return lineStarts.size();
 }
 
-torch::Tensor FastDedupDataset::modelWeights()
+torch::Tensor FastDedupDataset::classWeights()
 {
 	size_t classes = classesCount();
 
@@ -195,3 +228,4 @@ torch::Tensor FastDedupDataset::modelWeights()
 
 	return output;
 }
+

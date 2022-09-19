@@ -47,7 +47,7 @@ torch::Tensor ann::testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir
 
 	net->eval();
 
-	return test(net, *testDataLoader, testDataset->size().value(), testDataset->modelCount(), outputDir, exportProb);
+	return test(net, *testDataLoader, testDataset->size().value(), testDataset->classesCount(), outputDir, exportProb);
 }
 
 void ann::train(std::string fileName, size_t exampleCount, double noise, bool convNet)
@@ -58,9 +58,9 @@ void ann::train(std::string fileName, size_t exampleCount, double noise, bool co
 	std::shared_ptr<Net> net;
 
 	if(convNet)
-		net.reset(new ConvNet(DATA_WIDTH, trainDataset->modelCount()));
+		net.reset(new ConvNet(DATA_WIDTH, trainDataset->classesCount()));
 	else
-		net.reset(new SimpleNet(DATA_WIDTH, trainDataset->modelCount()));
+		net.reset(new SimpleNet(DATA_WIDTH, trainDataset->classesCount()));
 
 	LossLog log("annLoss.csv");
 
@@ -73,8 +73,8 @@ void ann::train(std::string fileName, size_t exampleCount, double noise, bool co
 
 	for (size_t i = 0; i < 3; ++i)
 	{
-		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->modelWeights(), &log);
-		test(net, *testDataLoader, testDataset->size().value(), trainDataset->modelCount());
+		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(), trainDataset->classWeights(), &log);
+		test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount());
 		torch::save(net, fileName + ".uf");
 	}
 

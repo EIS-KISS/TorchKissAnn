@@ -145,7 +145,7 @@ void testfs(const std::string& str, const std::string& prefix)
 void testDeduplicator()
 {
 	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
-	DeduplatorDataset dataset(testDataset, testDataset->modelCount());
+	DeduplatorDataset dataset(testDataset, testDataset->classesCount());
 
 	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
 
