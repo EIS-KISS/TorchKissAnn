@@ -1,7 +1,6 @@
 set(SRC_FILES
 	data/generators/classextractordataset.cpp
 	data/generators/eisgendata.cpp
-	data/generators/testgenerator.cpp
 	data/generators/trashgenerator.cpp
 	data/loaders/csv.cpp
 	data/loaders/mpt.cpp
