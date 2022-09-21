@@ -19,6 +19,7 @@ private:
 	std::fstream file;
 	size_t modelCount = 0;
 	size_t depth = 0;
+	std::filesystem::path path;
 	std::vector<std::streampos> lineStarts;
 	std::vector<std::string> modelStrings;
 	int versionMajor = 0;
@@ -30,7 +31,7 @@ private:
 
 public:
 	explicit FastDedupDataset(const std::filesystem::path& fileName);
-	FastDedupDataset(const FastDedupDataset& in) = default;
+	FastDedupDataset(const FastDedupDataset& in);
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 

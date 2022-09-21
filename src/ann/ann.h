@@ -18,28 +18,36 @@ std::shared_ptr<Net> load(const std::string& fileName = "net.vos");
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
-void train(std::string fileName = "net.vos", size_t exampleCount = EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, double noise = 0, bool convNet = false);
+template <typename DatasetType>
+void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet);
 
 torch::Tensor testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir = "", double exportProb = 0);
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
-		   size_t epoch, size_t data_size, torch::Tensor classWeights, LossLog* log = nullptr)
+		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, LossLog* log = nullptr)
 {
 	size_t index = 0;
 	network->train();
 	float lossF = 0;
 	float accF = 0;
 
+	torch::nn::BCELoss lossBCE(torch::nn::BCELossOptions().reduction(torch::kMean).weight(classWeights));
+	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
+
 	for(auto& batch : loader)
 	{
-		auto data = batch.data.to(DATA_LOCATION);
-		auto targets = batch.target.to(DATA_LOCATION).view({-1});
+		torch::Tensor data = batch.data.to(DATA_LOCATION);
+		torch::Tensor targets = batch.target.to(DATA_LOCATION).view({-1});
 
-		auto prediction = network->forward(data);
-		auto loss = torch::nll_loss(prediction, targets.to(torch::kInt64), classWeights);
+		torch::Tensor prediction = network->forward(data);
+		torch::Tensor loss;
+		if(!isMulticlass)
+			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
+		else
+			loss = lossBCE->forward(prediction, targets.to(torch::kInt64));
 		assert(!std::isnan(loss.template item<float>()));
-		auto acc = prediction.argmax(1).eq(targets).sum();
+		torch::Tensor acc = prediction.argmax(1).eq(targets).sum();
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -109,6 +117,41 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	std::cout<<"Test class acc:\n"<<classAcc<<'\n';
 	std::cout<<"Test Loss: "<<Loss / data_size<< "\tAcc: " <<Acc / data_size<< std::endl;
 	return classAcc;
+}
+
+template <typename DatasetType>
+void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet)
+{
+	EisDataset<EisGeneratorDataset>* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 13e4);
+
+	std::shared_ptr<Net> net;
+
+	if(convNet)
+		net.reset(new ConvNet(DATA_WIDTH, trainDataset->classesCount()));
+	else
+		net.reset(new SimpleNet(DATA_WIDTH, trainDataset->classesCount()));
+
+	LossLog log("annLoss.csv");
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(BATCH_SIZE).workers(JOBS);
+	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
+	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
+
+	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
+
+	for (size_t i = 0; i < 3; ++i)
+	{
+		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(),
+				  trainDataset->classWeights(), trainDataset->isMulticlass(), &log);
+		test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount());
+		torch::save(net, fileName + ".uf");
+	}
+
+	delete trainDataset;
+	delete testDataset;
+
+	torch::save(net, fileName);
 }
 
 }

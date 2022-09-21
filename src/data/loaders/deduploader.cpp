@@ -26,7 +26,7 @@ bool isWhitespace(const char in)
 	}
 }
 
-FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
+FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName): path(fileName)
 {
 	Log(Log::DEBUG)<<"Trying to load "<<fileName;
 	if(!(std::filesystem::is_regular_file(fileName) || std::filesystem::is_symlink(fileName)))
@@ -122,6 +122,20 @@ FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName)
 	file.clear();
 
 	Log(Log::DEBUG)<<"Loaded dataset from "<<fileName<<" with "<<size().value()<<" examples of "<<modelCount<<" classes and a depth of "<<depth;
+}
+
+FastDedupDataset::FastDedupDataset(const FastDedupDataset& in)
+{
+	modelCount = in.modelCount;
+	depth = in.depth;
+	lineStarts = in.lineStarts;
+	modelStrings = in.modelStrings;
+	versionMajor = in.versionMajor;
+	versionMinor = in.versionMinor;
+	path = in.path;
+	file.open(path, std::ios_base::in);
+	if(!file.is_open())
+		Log(Log::ERROR)<<"Could not open "<<path;
 }
 
 std::string FastDedupDataset::modelStringForClass(size_t classNum)

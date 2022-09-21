@@ -12,8 +12,60 @@
 #include "log.h"
 #include "data/print.h"
 #include "data/generators/eisgendata.h"
-#include "data/generators/deduplicator.h"
+#include "data/generators/trashgenerator.h"
+#include "data/loaders/dirloader.h"
+#include "data/loaders/deduploader.h"
 #include "trainoptions.h"
+
+template <typename DataSetType> int train(const Config& config);
+template <typename DataSetType> void trainSwitch(const TrainMode mode, EisDataset<DataSetType>* dataset);
+
+template <> int train<FastDedupDataset>(const Config& config)
+{
+	FastDedupDataset dataset(config.fileName);
+
+	if(!dataset.isOpen())
+	{
+		Log(Log::ERROR)<<"Could not load fast deduplicator dataset from "<<config.fileName;
+		return 1;
+	}
+
+	trainSwitch<FastDedupDataset>(config.mode, &dataset);
+	return 0;
+}
+
+template <> int train<EisGeneratorDataset>(const Config& config)
+{
+	if(!config.fileName.empty())
+		Log(Log::WARN)<<"warning: a file name was set, but thats meaningless with the generated dataset";
+	EisGeneratorDataset* dataset =
+		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT,
+			config.noise, true);
+
+	trainSwitch<EisGeneratorDataset>(config.mode, dataset);
+	return 0;
+}
+
+template <> int train<EisDirDataset>(const Config& config)
+{
+	if(config.fileName.empty() || std::filesystem::is_directory(config.fileName))
+	{
+		Log(Log::ERROR)<<"A valid directory must be specified in conbination with the dir dataset";
+		return 1;
+	}
+
+	EisDirDataset dataset(config.fileName, "csv", FILE_TYPE_CSV);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to load dataset from "<<config.fileName;
+		return 2;
+	}
+
+	trainSwitch<EisDirDataset>(config.mode, &dataset);
+	return 0;
+}
+
 
 int main(int argc, char** argv)
 {
@@ -23,23 +75,49 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	svm_set_print_string_function(&svmPrintFunction);
+
 	if(config.mode == MODE_INVALID)
 	{
-		Log(Log::ERROR)<<"You must specify what to train: -m ann, svm or svmcross";
+		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
 		return -1;
 	}
 
-	svm_set_print_string_function(&svmPrintFunction);
+	if(config.datasetMode == DATASET_INVALID)
+	{
+		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
+		return -1;
+	}
 
-	std::vector<size_t> skiparg;
+	switch(config.datasetMode)
+	{
+		case DATASET_GEN:
+			return train<EisGeneratorDataset>(config);
+		case DATASET_FDUP:
+			return train<FastDedupDataset>(config);
+		case DATASET_DIR:
+			return train<EisDirDataset>(config);
+		case DATASET_TRASH:
+			//return train<TrashDataset>(config);
+		case DATASET_INVALID:
+			break;
+	}
 
-	switch(config.mode)
+	return 0;
+}
+
+template <typename DataSetType> void trainSwitch(const TrainMode mode, EisDataset<DataSetType>* dataset)
+{
+	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
+		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
+	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
+	switch(mode)
 	{
 		case MODE_ANN:
-			ann::train("net.vos", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise, false);
+			ann::train<DataSetType>("net.vos", dataset, false);
 			break;
 		case MODE_ANN_CONV:
-			ann::train("netConv.vos", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise, true);
+			ann::train<DataSetType>("netConv.vos", dataset, true);
 			break;
 		case MODE_SVM:
 			svm::train(false);
@@ -51,21 +129,13 @@ int main(int argc, char** argv)
 			svm::cross();
 			break;
 		case MODE_GAN:
-			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, config.noise);
+			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
 			break;
-		case MODE_DEDUP: //350GiB of ram required!!!
-		{
-			EisGeneratorDataset *dataset =
-				EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT, 0, false, true);
-			DeduplatorDataset dedupData(dataset);
-			dedupData.save("dedupInfo.csv");
-		}
 		break;
 		case MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"invalid model";
 			break;
 	}
-
-	return 0;
 }
+

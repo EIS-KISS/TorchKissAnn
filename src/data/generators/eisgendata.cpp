@@ -44,22 +44,6 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 		}
 	}
 
-#if 0
-	if(model == 5)
-	{
-		static int grand = 0;
-		grand++;
-		if(grand == 100 || grand == 1000)
-		{
-			Log(Log::ERROR)<<models[model].getModelStr()<<" i: "<<grand<<"\nomega,real,imag";
-			printDataVect(data);
-			if(grand == 1000)
-				exit(1);
-		}
-	}
-#endif
-
-
 	assert(data.size());
 	filterData(data, omega.count*2);
 

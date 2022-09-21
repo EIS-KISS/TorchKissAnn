@@ -88,7 +88,7 @@ void svm::cross()
 
 void svm::train(bool oneClass)
 {
-	EisGeneratorDataset* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
+	EisDataset<EisGeneratorDataset>* eisData = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
 
 	SvmLoader<EisGeneratorDataset> svmloader(eisData);
 	struct svm_problem problem = svmloader.getSvmProblem(1000, oneClass);
