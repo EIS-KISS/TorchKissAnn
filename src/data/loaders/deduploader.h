@@ -37,6 +37,7 @@ public:
 	virtual size_t classesCount() const override;
 	virtual torch::Tensor classWeights() override;
 	virtual size_t classForIndex(size_t index) override;
+	virtual bool isMulticlass() {return true;}
 
 	virtual std::string modelStringForClass(size_t classNum) override;
 

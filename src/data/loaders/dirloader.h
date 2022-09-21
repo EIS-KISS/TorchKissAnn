@@ -28,15 +28,13 @@ public:
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
-	size_t modelCount();
 	torch::Tensor modelWeights();
 
 	virtual c10::optional<size_t> size() const override;
 
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override = 0;
-	virtual size_t classesCount() const = 0;
-	virtual size_t classForIndex(size_t index) = 0;
-	virtual std::string modelStringForClass(size_t classNum) {return std::string("Unkown");}
+	virtual size_t classesCount() const;
+	virtual size_t classForIndex(size_t index);
+
 	virtual torch::Tensor classWeights()
 	{
 		torch::TensorOptions options;

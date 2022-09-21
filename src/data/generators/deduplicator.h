@@ -16,7 +16,8 @@
 #include "tokenize.h"
 
 template <typename ParentType>
-class DeduplatorDataset : public EisDataset<DeduplatorDataset>
+class DeduplatorDataset :
+public EisDataset<DeduplatorDataset<ParentType>>
 {
 	static constexpr size_t BATCH_SIZE = 100000;
 	static constexpr float epsilon = 0.001;
@@ -176,6 +177,8 @@ public:
 			targets[parentIndex][masterExample.target.template item<int8_t>()] = 1;
 		}
 	}
+
+	virtual bool isMulticlass() {return true;}
 
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
 	{

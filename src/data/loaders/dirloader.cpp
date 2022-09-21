@@ -89,7 +89,12 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::get(size_t ind
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t EisDirDataset::modelCount()
+size_t EisDirDataset::classForIndex(size_t index)
+{
+	return fileNames[index].classNum;
+}
+
+size_t EisDirDataset::classesCount() const
 {
 	size_t classes = 0;
 	for(const FileNameStr& str : fileNames)
@@ -108,7 +113,7 @@ c10::optional<size_t> EisDirDataset::size() const
 
 torch::Tensor EisDirDataset::modelWeights()
 {
-	size_t classes = modelCount();
+	size_t classes = classesCount();
 
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);

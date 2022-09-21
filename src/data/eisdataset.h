@@ -13,6 +13,7 @@ public:
 	virtual c10::optional<size_t> size() const override = 0;
 	virtual size_t classForIndex(size_t index) = 0;
 	virtual std::string modelStringForClass(size_t classNum) {return std::string("Unkown");}
+	virtual bool isMulticlass() {return false;}
 	virtual torch::Tensor classWeights()
 	{
 		torch::TensorOptions options;
