@@ -163,7 +163,13 @@ int main(int argc, char** argv)
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	FastDedupDataset dataset("/home/philipp/programing/kiss/kissdata/deduplicated/list-sorted.txt");
+	FastDedupDataset dataset("/home/philipp/programing/kiss/TorchKissAnn/build/KissData/deduplicated/list-sorted.txt");
+	Log(Log::DEBUG)<<"Class Weights\n"<<dataset.classWeights()<<'\n';
+
+	for(size_t i = 0; i < dataset.size().value(); ++i)
+	{
+		std::cout<<dataset.get(i).target<<std::endl;
+	}
 
 	/*torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
 

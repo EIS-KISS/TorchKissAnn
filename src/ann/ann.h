@@ -9,6 +9,7 @@
 #include "../data/generators/eisgendata.h"
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
+#include "log.h"
 #include "losslog.h"
 
 namespace ann
@@ -32,7 +33,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 	float lossF = 0;
 	float accF = 0;
 
-	torch::nn::BCELoss lossBCE(torch::nn::BCELossOptions().reduction(torch::kMean).weight(classWeights));
+	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
 
 	for(auto& batch : loader)
@@ -42,12 +43,37 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss;
+
+		torch::Tensor acc;
 		if(!isMulticlass)
+		{
 			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
+			acc = prediction.argmax(1).eq(targets).sum();
+		}
 		else
-			loss = lossBCE->forward(prediction, targets.to(torch::kInt64));
+		{
+			targets = targets.reshape({prediction.size(0), prediction.size(1)});
+			loss = lossBCE->forward(prediction, targets.to(torch::kFloat32));
+
+			acc = torch::ones({prediction.size(0)},
+				torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
+			for(int64_t i = 0; i < prediction.size(0); ++i)
+			{
+				unsigned int hits = 0;
+				acc[i] = 1;
+				for(int64_t j = 0; j < prediction.size(1); ++j)
+				{
+					if((targets[i][j].template item<float>()) > 0.5)
+					{
+						++hits;
+						if(prediction[i][j].template item<float>() < 0.5)
+							acc[i] = 0;
+					}
+				}
+			}
+			acc = acc.sum();
+		}
 		assert(!std::isnan(loss.template item<float>()));
-		torch::Tensor acc = prediction.argmax(1).eq(targets).sum();
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -56,11 +82,11 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		lossF += loss.template item<float>();
 		accF += acc.template item<float>();
 
-		if (index++ % 1000 == 0 && index / 1000 > 1)
+		if (index++ % 100 == 0 && index / 100 > 1)
 		{
 			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
 			if(log)
-				log->log(epoch, end, lossF/end, accF/end, data_size);
+				log->log(epoch, end, (lossF/end)*100, accF/end, data_size);
 		}
 	}
 }
@@ -140,15 +166,19 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool con
 
 	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.001).momentum(0.5));
 
-	for (size_t i = 0; i < 3; ++i)
+	if(trainDataset->isMulticlass())
+		Log(Log::DEBUG)<<"Using BCELoss";
+	else
+		Log(Log::DEBUG)<<"Using NLLLoss";
+
+	for (size_t i = 0; i < 30; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(),
 				  trainDataset->classWeights(), trainDataset->isMulticlass(), &log);
-		test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount());
+		//test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount());
 		torch::save(net, fileName + ".uf");
 	}
 
-	delete trainDataset;
 	delete testDataset;
 
 	torch::save(net, fileName);

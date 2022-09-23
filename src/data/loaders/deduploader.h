@@ -22,12 +22,14 @@ private:
 	std::filesystem::path path;
 	std::vector<std::streampos> lineStarts;
 	std::vector<std::string> modelStrings;
+	std::vector<size_t> classCounts;
 	int versionMajor = 0;
 	int versionMinor = 1;
 
 private:
 	torch::data::Example<torch::Tensor, torch::Tensor> parseLine(const std::string& line);
 	size_t parseOriginalClass(const std::string& line);
+	std::vector<size_t> calculateClassCounts();
 
 public:
 	explicit FastDedupDataset(const std::filesystem::path& fileName);

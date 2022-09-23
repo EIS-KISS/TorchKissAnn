@@ -111,12 +111,14 @@ FastDedupDataset::FastDedupDataset(const std::filesystem::path& fileName): path(
 	}
 
 	Log(Log::DEBUG)<<"Reading lines";
+	lineStarts.push_back(file.tellg());
 	std::istreambuf_iterator<char> iter = std::find(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n');
+	iter++;
 	while(iter != std::istreambuf_iterator<char>() && file.good())
 	{
-		iter++;
+		lineStarts.push_back(file.tellg()+std::streamoff(1));
 		iter = std::find(iter, std::istreambuf_iterator<char>(), '\n');
-		lineStarts.push_back(file.tellg());
+		iter++;
 	}
 	file.seekg(0, std::ios_base::beg);
 	file.clear();
@@ -132,6 +134,7 @@ FastDedupDataset::FastDedupDataset(const FastDedupDataset& in)
 	modelStrings = in.modelStrings;
 	versionMajor = in.versionMajor;
 	versionMinor = in.versionMinor;
+	classCounts = in.classCounts;
 	path = in.path;
 	file.open(path, std::ios_base::in);
 	if(!file.is_open())
@@ -230,6 +233,26 @@ c10::optional<size_t> FastDedupDataset::size() const
 	return lineStarts.size();
 }
 
+std::vector<size_t> FastDedupDataset::calculateClassCounts()
+{
+	file.clear();
+	std::vector<size_t> classCounts(modelCount);
+	for(size_t i = 0; i < lineStarts.size(); ++i)
+	{
+		file.seekg(lineStarts[i]);
+		std::string line;
+		std::getline(file, line, '\n');
+		std::vector<std::string> tokens = tokenize(line, ',', '{', '}');
+		if(tokens.size() < 3)
+			throw std::length_error(std::string("line ") + std::to_string(i) + " is to short: " + line);
+		size_t classNum = std::stoul(tokens[2]);
+		if(classNum > classCounts.size()-1)
+			throw std::length_error(std::string("line ") + std::to_string(i) + " has originClass that is out of range");
+		++classCounts[classNum];
+	}
+	return classCounts;
+}
+
 torch::Tensor FastDedupDataset::classWeights()
 {
 	size_t classes = classesCount();
@@ -238,7 +261,15 @@ torch::Tensor FastDedupDataset::classWeights()
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor output = torch::ones({static_cast<int64_t>(classes)}, options);
+	torch::Tensor output = torch::empty({static_cast<int64_t>(classes)}, options);
+
+	if(classCounts.size() != modelCount)
+		classCounts = calculateClassCounts();
+
+	for(size_t i = 0; i < modelCount; ++i)
+		output[i] = size().value() / static_cast<float>(classCounts[i]);
+
+	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 
 	return output;
 }
