@@ -23,6 +23,8 @@ static struct argp_option options[] =
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
+  {"batch-size",	'b', "[NUMBER]",	0,	"size of the training batch"},
+  {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   { 0 }
 };
 
@@ -85,6 +87,8 @@ struct Config
 	std::string exportDirectory;
 	std::string fileName;
 	double noise = 0;
+	size_t batchSize = 100;
+	size_t epochs = 3;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -127,6 +131,11 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	case 'e':
 		config->exportDirectory.assign(arg);
 		break;
+	case 'b':
+		config->batchSize = std::stoul(std::string(arg));
+		break;
+	case 'i':
+		config->epochs = std::stoul(std::string(arg));
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}
