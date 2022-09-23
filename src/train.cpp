@@ -100,6 +100,7 @@ int main(int argc, char** argv)
 		case DATASET_TRASH:
 			//return train<TrashDataset>(config);
 		case DATASET_INVALID:
+			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;
 	}
 
