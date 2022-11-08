@@ -33,7 +33,7 @@ Net(inputSizeI, outputSizeI, leakI)
 torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 {
 	torch::nn::functional::LeakyReLUFuncOptions leakyOptions;
-	leakyOptions = leakyOptions.negative_slope(0.42).inplace(true);
+	leakyOptions = leakyOptions.negative_slope(0.2).inplace(true);
 
 	x = torch::relu(fc1->forward(x));
 	x = torch::dropout(x, /*p=*/0.5, /*train=*/is_training());
@@ -86,6 +86,13 @@ Net(inputSizeI, outputSizeI, leakI)
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
+	/*model->push_back(torch::nn::Linear(sizes.second, sizes.second));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+
+	model->push_back(torch::nn::Linear(sizes.second, sizes.second));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));*/
+
+	//Downconverting layers
 	sizes = layerWidthFunction(1, 4, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
