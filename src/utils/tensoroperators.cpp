@@ -41,3 +41,17 @@ double integrateFn(std::function<double(double)> fn, double start, double stop, 
 	else
 		return integrateFn(fn, start, stop, steps*2, &res);
 }
+
+torch::Tensor unargmax(const torch::Tensor& in, int64_t size)
+{
+	assert(size >= 0);
+	assert(in.dim() == 1);
+	torch::Tensor multiClassTargets = torch::zeros({in.size(0), size}, in.options());
+
+	for(int i = 0; i < in.size(0); ++i)
+	{
+		multiClassTargets[i][in[i].template item<int64_t>()] = 1;
+	}
+	return multiClassTargets;
+}
+
