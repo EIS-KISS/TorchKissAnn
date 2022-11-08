@@ -20,6 +20,7 @@ static struct argp_option options[] =
   {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST},
   {"dataset", 		'd', "[STRING]",	0,	"model to use for training: " DATASET_LIST},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
+  {"test",			't', "[STRING]",	0,	"filename for the test dataset"},
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
@@ -86,6 +87,7 @@ struct Config
 	DatasetMode datasetMode = DATASET_INVALID;
 	std::string exportDirectory;
 	std::string fileName;
+	std::string testFileName;
 	double noise = 0;
 	size_t batchSize = 100;
 	size_t epochs = 3;
@@ -122,6 +124,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	case 'f':
 		config->fileName.assign(arg);
 		break;
+	case 't':
+		config->testFileName.assign(arg);
 	case 'x':
 		if(arg)
 			config->noise = std::stod(std::string(arg));
