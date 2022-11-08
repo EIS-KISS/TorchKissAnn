@@ -101,8 +101,6 @@ torch::Tensor EisGeneratorDataset::classWeights()
 	}
 
 	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
-	Log(Log::DEBUG)<<"Weights:";
-	Log(Log::DEBUG)<<output;
 	return output;
 }
 
