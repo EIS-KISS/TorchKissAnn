@@ -14,7 +14,7 @@
 
 using namespace eis;
 
-bool isWhitespace(const char in)
+static bool isWhitespace(const char in)
 {
 	switch(in)
 	{
@@ -267,9 +267,9 @@ torch::Tensor FastDedupDataset::classWeights()
 		classCounts = calculateClassCounts();
 
 	for(size_t i = 0; i < modelCount; ++i)
-		output[i] = size().value() / static_cast<float>(classCounts[i]);
+		output[i] = size().value()/static_cast<float>(classCounts[i]);
 
-	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
+	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 
 	return output;
 }
