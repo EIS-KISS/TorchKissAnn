@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "ann/ann.h"
-#include "svm/svm.h"
 #include "gan/gan.h"
 #include "log.h"
 #include "data/print.h"
@@ -84,8 +83,6 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
-	svm_set_print_string_function(&svmPrintFunction);
-
 	if(config.mode == MODE_INVALID)
 	{
 		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
@@ -129,15 +126,6 @@ void trainSwitch(const TrainMode mode, EisDataset<DataSetType>* dataset, EisData
 			break;
 		case MODE_ANN_CONV:
 			ann::train<DataSetType, TestDataSetType>("netConv.vos", dataset, testDataset, true);
-			break;
-		case MODE_SVM:
-			svm::train(false);
-			break;
-		case MODE_SVM_FILTER:
-			svm::train(true);
-			break;
-		case MODE_SVM_CROSS:
-			svm::cross();
 			break;
 		case MODE_GAN:
 			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);

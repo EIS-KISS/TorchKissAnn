@@ -8,8 +8,6 @@ set(SRC_FILES
 	data/loaders/deduploader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
-	svm/svmloader.cpp
-	svm/svm.cpp
 	utils/tokenize.cpp
 	utils/log.cpp
 	utils/randomgen.cpp
@@ -21,7 +19,6 @@ set(SRC_FILES
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp
-	drt/drt.cpp
 )
 
 include_directories(utils .)
@@ -30,7 +27,7 @@ set(ENV{TORCH_INSTALL_PREFIX} "/usr")
 
 find_package(Torch REQUIRED)
 
-set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} -leisgenerator -lsvm)
+set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} -leisgenerator)
 set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g -Wfatal-errors")
 

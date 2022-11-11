@@ -2,7 +2,6 @@
 #include <cstdio>
 #include <eisgenerator/eistype.h>
 #include <iostream>
-#include <libsvm/svm.h>
 #include <memory>
 #include <vector>
 #include <string>
@@ -17,7 +16,6 @@
 #include "data/generators/eisgendata.h"
 #include "nearest/nearest.h"
 #include "utils/log.h"
-#include "svm/svm.h"
 #include "ann/ann.h"
 #include "gan/gan.h"
 #include "data/print.h"
@@ -94,9 +92,6 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	{
 		case FILTER_NONE:
 			return true;
-		case FILTER_SVM:
-			pass = svm::filter(data, fileName);
-			break;
 		case FILTER_GAN:
 			pass = gan::filter(data, fileName);
 			break;
@@ -121,7 +116,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 {
 	torch::Tensor output;
 
-	if(networkFileName.empty() && (mode == MODE_ANN || mode == MODE_SVM))
+	if(networkFileName.empty() && (mode == MODE_ANN))
 	{
 		Log(Log::ERROR)<<"A network file name must be specified";
 		return torch::Tensor();
@@ -141,9 +136,6 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 			output = NearestNeighbor::use(input, dataset.get());
 			break;
 		}
-		case MODE_SVM:
-			output = svm::use(input, networkFileName);
-			break;
 		case MODE_KNN:
 		default:
 			Log(Log::ERROR)<<"Not implemented";
@@ -157,8 +149,6 @@ int main(int argc, char** argv)
 {
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
-
-	svm_set_print_string_function(&svmPrintFunction);
 
 	std::vector<eis::DataPoint> data;
 

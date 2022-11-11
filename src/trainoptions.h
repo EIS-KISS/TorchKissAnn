@@ -5,7 +5,7 @@
 #include <iostream>
 #include "utils/log.h"
 
-#define MODE_LIST "ann, conv, gan, svm, svmfilter, svmcross"
+#define MODE_LIST "ann, conv, gan"
 #define DATASET_LIST "gen, fdedup, dir, trash"
 
 const char *argp_program_version = "TorchKissAnnTrain";
@@ -34,9 +34,6 @@ typedef enum
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
 	MODE_ANN_CONV,
-	MODE_SVM,
-	MODE_SVM_FILTER,
-	MODE_SVM_CROSS,
 	MODE_GAN
 } TrainMode;
 
@@ -55,12 +52,6 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_ANN;
 	else if(in == "conv")
 		return MODE_ANN_CONV;
-	else if(in == "svm")
-		return MODE_SVM;
-	else if(in == "svmcross")
-		return MODE_SVM_CROSS;
-	else if(in == "svmfilter")
-		return MODE_SVM_FILTER;
 	else if(in == "gan")
 		return MODE_GAN;
 

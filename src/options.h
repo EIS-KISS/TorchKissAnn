@@ -19,8 +19,8 @@ static struct argp_option options[] =
   {"input",			'i', "[FILE]",		0,	"Input file name" },
   {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, mpt, trash, gan" },
   {"show",			's', 0,				0,	"Show filtered input"},
-  {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, svm, knn, anntest"},
-  {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, svm, gan"},
+  {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, knn, anntest"},
+  {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
@@ -34,15 +34,13 @@ typedef enum
 	MODE_ANN = 0,
 	MODE_ANN_TEST,
 	MODE_NN,
-	MODE_KNN,
-	MODE_SVM
+	MODE_KNN
 } PredictionMode;
 
 typedef enum
 {
 	FILTER_INVALID = -1,
 	FILTER_NONE = 0,
-	FILTER_SVM,
 	FILTER_GAN
 } FilterMode;
 
@@ -67,8 +65,6 @@ static PredictionMode parseMode(const std::string& in)
 		return MODE_ANN;
 	else if(in == "anntest")
 		return MODE_ANN_TEST;
-	else if(in == "svm")
-		return MODE_SVM;
 	else if(in == "nn")
 		return MODE_NN;
 	else if(in == "knn")
@@ -81,8 +77,6 @@ static FilterMode parseFilterMode(const std::string& in)
 {
 	if(in.empty() || in == "none")
 		return FILTER_NONE;
-	else if(in == "svm")
-		return FILTER_SVM;
 	else if(in == "gan")
 		return FILTER_GAN;
 
