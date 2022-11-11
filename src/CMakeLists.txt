@@ -26,9 +26,10 @@ include_directories(utils .)
 set(ENV{TORCH_INSTALL_PREFIX} "/usr")
 
 find_package(Torch REQUIRED)
+find_package(Armadillo REQUIRED)
 
-set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} -leisgenerator)
-set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS})
+set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} -leisgenerator)
+set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS} ${ARMADILLO_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g -Wfatal-errors")
 
 message("Linking: " "${COMMON_LINK_LIBRARIES}")
