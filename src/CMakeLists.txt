@@ -19,6 +19,10 @@ set(SRC_FILES
 	ann/net.cpp
 	ann/ann.cpp
 	nearest/nearest.cpp
+	drt/base_funcs.cpp
+	drt/NNLS.cpp
+	drt/T2_inversion.cpp
+	drt/drt.cpp
 )
 
 include_directories(utils .)

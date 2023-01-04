@@ -20,6 +20,7 @@
 #include "ann/net.h"
 #include "utils/tensoroperators.h"
 #include "data/loaders/deduploader.h"
+#include "drt/drt.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -157,19 +158,25 @@ double integFn(double x)
 	return x*x*x+1;
 }
 
+void testDrt()
+{
+	eis::Model model("rc");
+
+	std::vector<eis::DataPoint> inSpectra = model.executeSweep(eis::Range(0.001, 1e6, 6000, true));
+	std::vector<fvalue> drt = calcDrt(inSpectra);
+
+	std::cout<<"Drt: \n";
+	for(const fvalue value : drt)
+		std::cout<<value<<'\n';
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
 
 	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
 
-	FastDedupDataset dataset("/home/philipp/programing/kiss/TorchKissAnn/build/KissData/deduplicated/traindata.txt");
-	Log(Log::DEBUG)<<"Class Weights\n"<<dataset.classWeights()<<'\n';
-
-	for(size_t i = 0; i < dataset.size().value(); ++i)
-	{
-		std::cout<<(dataset.get(i).data)<<std::endl;
-	}
+	testDrt();
 
 	/*torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
 
