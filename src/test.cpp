@@ -57,7 +57,7 @@ bool cmpDouble(double a, double b)
 	return diff < 0.0001;
 }
 
-std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
+/*std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
 {
 	eis::Model model("t{1,2,3}");
 	std::vector<eis::Range> modelRange;
@@ -71,7 +71,7 @@ std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
 	if(size)
 		*size = eis::Model::getRequiredStepsForSweeps(modelRange);
 	return data;
-}
+}*/
 
 /*void diff()
 {

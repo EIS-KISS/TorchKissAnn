@@ -20,7 +20,7 @@ template <typename DataSetType>
 int train(const Config& config);
 
 template <typename DataSetType, typename TestDataSetType = DataSetType>
-void trainSwitch(const TrainMode mode, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
+void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
 
 template <> int train<FastDedupDataset>(const Config& config)
 {
@@ -32,7 +32,7 @@ template <> int train<FastDedupDataset>(const Config& config)
 		return 1;
 	}
 
-	trainSwitch<FastDedupDataset>(config.mode, &dataset, &dataset);
+	trainSwitch<FastDedupDataset>(config, &dataset, &dataset);
 	return 0;
 }
 
@@ -41,13 +41,11 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	if(!config.fileName.empty() || !config.testFileName.empty())
 		Log(Log::WARN)<<"warning: a file name was set, but thats meaningless with the generated dataset";
 	EisGeneratorDataset* dataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT,
-			config.noise, true);
+		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true, config.fileName.empty() ? &config.fileName : nullptr);
 	EisGeneratorDataset* testDataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT/11,
-			config.noise, true);
+		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true, config.fileName.empty() ? &config.fileName : nullptr);
 
-	trainSwitch<EisGeneratorDataset>(config.mode, dataset, testDataset);
+	trainSwitch<EisGeneratorDataset>(config, dataset, testDataset);
 	return 0;
 }
 
@@ -61,8 +59,7 @@ template <> int train<EisDirDataset>(const Config& config)
 
 	EisDirDataset dataset(config.fileName, "csv", FILE_TYPE_CSV);
 	EisGeneratorDataset* testDataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT/11,
-			config.noise, true);
+		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true);
 
 	if(dataset.size().value() == 0)
 	{
@@ -70,7 +67,7 @@ template <> int train<EisDirDataset>(const Config& config)
 		return 2;
 	}
 
-	trainSwitch<EisDirDataset, EisGeneratorDataset>(config.mode, &dataset, testDataset);
+	trainSwitch<EisDirDataset, EisGeneratorDataset>(config, &dataset, testDataset);
 	return 0;
 }
 
@@ -114,18 +111,18 @@ int main(int argc, char** argv)
 }
 
 template <typename DataSetType, typename TestDataSetType>
-void trainSwitch(const TrainMode mode, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset)
+void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset)
 {
 	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
-	switch(mode)
+	switch(config.mode)
 	{
 		case MODE_ANN:
-			ann::train<DataSetType, TestDataSetType>("net.vos", dataset, testDataset, false);
+			ann::train<DataSetType, TestDataSetType>("net.vos", dataset, testDataset, false, config.epochs);
 			break;
 		case MODE_ANN_CONV:
-			ann::train<DataSetType, TestDataSetType>("netConv.vos", dataset, testDataset, true);
+			ann::train<DataSetType, TestDataSetType>("netConv.vos", dataset, testDataset, true, config.epochs);
 			break;
 		case MODE_GAN:
 			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);

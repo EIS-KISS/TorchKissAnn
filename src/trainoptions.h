@@ -81,7 +81,7 @@ struct Config
 	std::string testFileName;
 	double noise = 0;
 	size_t batchSize = 100;
-	size_t epochs = 3;
+	size_t epochs = 30;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -131,6 +131,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 'i':
 		config->epochs = std::stoul(std::string(arg));
+		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}

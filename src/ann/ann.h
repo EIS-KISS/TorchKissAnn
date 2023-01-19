@@ -21,7 +21,7 @@ std::shared_ptr<Net> load(const std::string& fileName = "net.vos");
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
 template <typename DatasetType>
-void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet);
+void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
 
 torch::Tensor testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir = "", double exportProb = 0);
 
@@ -160,7 +160,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset, bool convNet)
+void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset, bool convNet, size_t epochs = 30)
 {
 	std::shared_ptr<Net> net;
 
@@ -189,7 +189,7 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDatas
 	else
 		Log(Log::DEBUG)<<"Using NLLLoss";
 
-	for (size_t i = 0; i < 30; ++i)
+	for (size_t i = 0; i < epochs; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(),
 				  trainDataset->classWeights(), trainDataset->isMulticlass(), &log);
@@ -199,6 +199,7 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDatas
 				 trainDataset->classWeights(), trainDataset->isMulticlass());
 		}
 		torch::save(net, fileName + ".uf");
+		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 
 	torch::save(net, fileName);

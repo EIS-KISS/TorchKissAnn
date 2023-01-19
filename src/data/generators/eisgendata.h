@@ -7,6 +7,8 @@
 #include <eisgenerator/model.h>
 #include <string>
 #include <data/eisdataset.h>
+#include <set>
+#include <filesystem>
 
 class EisGeneratorDataset :
 public EisDataset<EisGeneratorDataset>
@@ -15,13 +17,16 @@ public:
 	static constexpr bool PRINT = false;
 	static constexpr size_t DEFAULT_EXAMPLE_COUNT = 1e8;
 
-public:
+private:
 	std::vector<eis::Model> models;
-	std::vector< std::vector<eis::Range> > modelRanges;
+	std::vector<size_t> modelClasses;
+	std::set<std::string> modelStrings;
 	std::vector<size_t> modelSweepSizes;
 	eis::Range omega;
 	double noise;
 
+private:
+	std::pair<eis::Model*, size_t> getModelAndOffsetForIndex(size_t index);
 
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
@@ -33,7 +38,7 @@ public:
 
 	inline void setOmegaRange(eis::Range range){omega = range;}
 
-	void addModel(const eis::Model& model, std::vector<eis::Range> modelRange);
+	void addModel(const eis::Model& model);
 
 	EisGeneratorDataset* getTestDataset();
 
@@ -44,8 +49,7 @@ public:
 
 	virtual std::string modelStringForClass(size_t classNum) override;
 
-	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, size_t desiredCount = DEFAULT_EXAMPLE_COUNT,
-														double noise = 0, bool inductivity = false, bool log = true);
+	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, double noise = 0, bool inductivity = false, const std::filesystem::path* path = nullptr);
 
 	virtual c10::optional<size_t> size() const override;
 };

@@ -8,34 +8,57 @@
 #include <cstdlib>
 #include <eisgenerator/normalize.h>
 #include <eisgenerator/basicmath.h>
+#include <sstream>
+#include <fstream>
+#include <istream>
 
 #include "../eistotorch.h"
 #include "log.h"
 #include "../print.h"
 #include "../filterdata.h"
 
+#define INCBIN_PREFIX r
+#include "incbin.h"
+
 using namespace eis;
+
+INCTXT(Circuits, "../circuits.txt");
+
+static std::vector<std::string> readCircutsFromStream(std::istream& ss)
+{
+	std::vector<std::string> out;
+
+	while(ss.good())
+	{
+		std::string line;
+		std::getline(ss, line);
+		if(!line.empty() && line[0] != '#')
+			out.push_back(line);
+	}
+
+	return out;
+}
 
 EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI): omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
 }
 
-void EisGeneratorDataset::addModel(const eis::Model& model, std::vector<eis::Range> modelRange)
+void EisGeneratorDataset::addModel(const eis::Model& model)
 {
 	models.push_back(model);
-	modelRanges.push_back(modelRange);
-	modelSweepSizes.push_back(eis::Model::getRequiredStepsForSweeps(modelRange));
+	modelSweepSizes.push_back(models.back().getRequiredStepsForSweeps());
+	std::pair<std::set<std::string>::iterator, bool> iteratorPair = modelStrings.insert(models.back().getModelStr());
+	size_t index = std::distance(modelStrings.begin(), iteratorPair.first);
+	modelClasses.push_back(index);
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
+std::pair<eis::Model*, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index)
 {
-	std::vector<eis::DataPoint> data;
 	size_t model = 0;
 	for(; model < models.size(); ++model)
 	{
 		if(index < modelSweepSizes[model])
 		{
-			data = models[model].executeParamByIndex(modelRanges[model], omega, index);
 			break;
 		}
 		else
@@ -43,6 +66,14 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 			index -= modelSweepSizes[model];
 		}
 	}
+
+	return std::pair<eis::Model*, size_t>(&models[model], index);
+}
+
+torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
+{
+	std::pair<eis::Model*, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
+	std::vector<eis::DataPoint> data = modelAndOffset.first->executeSweep(omega, modelAndOffset.second);
 
 	assert(data.size());
 	filterData(data, omega.count*2);
@@ -64,14 +95,14 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt8);
 	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(model);
+	output[0] = static_cast<float>(classForIndex(index));
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
 size_t EisGeneratorDataset::classesCount() const
 {
-	return models.size();
+	return modelStrings.size();
 }
 
 size_t EisGeneratorDataset::frequencies()
@@ -93,12 +124,18 @@ torch::Tensor EisGeneratorDataset::classWeights()
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor output = torch::empty({static_cast<int64_t>(classesCount())}, options);
-	size_t count = size().value();
-	for(size_t i = 0; i < classesCount(); ++i)
+	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
+	int64_t count = size().value();
+	for(size_t i = 0; i < models.size(); ++i)
 	{
-		output[i] = count/static_cast<float>(Model::getRequiredStepsForSweeps(modelRanges[i]));
+		auto iterator = modelStrings.find(models[i].getModelStr());
+		assert(iterator != modelStrings.end());
+
+		size_t classNum = std::distance(modelStrings.begin(), iterator);
+		output[classNum] = output[classNum] + static_cast<int64_t>(modelSweepSizes[i]);
 	}
+
+	output = count/output;
 
 	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	return output;
@@ -106,198 +143,54 @@ torch::Tensor EisGeneratorDataset::classWeights()
 
 size_t EisGeneratorDataset::classForIndex(size_t index)
 {
-	size_t model = 0;
-	for(; model < models.size(); ++model)
-	{
-		if(index < modelSweepSizes[model])
-			break;
-		else
-			index -= modelSweepSizes[model];
-	}
-	return model;
+	std::pair<eis::Model*, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
+	auto iterator = modelStrings.find(modelAndOffset.first->getModelStr());
+	assert(iterator != modelStrings.end());
+	size_t classNum = std::distance(modelStrings.begin(), iterator);
+	return classNum;
 }
 
 EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 {
 	return this;
-	//EisGeneratorDataset* testDataset =
 }
 
-static std::vector<eis::Range> getRange(size_t index, size_t desiredCount, bool inductivity, bool log)
+EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, double noise, bool inductivity, const std::filesystem::path* path)
 {
-	std::vector<eis::Range> modelRange;
-
-	if(inductivity)
-		modelRange.push_back(eis::Range(5e-7, 5e-7, 1, log, 'l'));
-
-	switch(index)
-	{
-		case 0:
-			modelRange.push_back(eis::Range(1e-7, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(10, 1e3, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(10, 1e3, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(10, 1e3, 2, log, 'r'));
-			break;
-		case 1:
-			modelRange.push_back(eis::Range(0.1, 10, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-6, 1e-4, 2, log, 'c'));
-			modelRange.push_back(eis::Range(0.1, 10, 2, log, 'r'));
-			break;
-		case 2:
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-13, 1e-10, 2, log, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-10, 1e-7, 2, log, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-4, 2, log, 'c'));
-			break;
-		case 3:
-			modelRange.push_back(eis::Range(1e1, 1e3, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-5, 1e-3, 2, log, 'l'));
-			modelRange.push_back(eis::Range(1e1, 1e3, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-9, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(1e1, 1e3, 2, log, 'r'));
-			break;
-		case 4:
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-7, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-10, 1e-7, 2, log, 'c'));
-			modelRange.push_back(eis::Range(1e2, 1e4, 2, log, 'r'));
-			break;
-		case 5:
-			modelRange.push_back(eis::Range(10, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(10, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(10, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, 2, log, 'c'));
-			modelRange.push_back(eis::Range(10, 1e4, 2, log, 'r'));
-			modelRange.push_back(eis::Range(1e-12, 1e-5, 2, log, 'c'));
-			break;
-		case 6:
-			modelRange.push_back(eis::Range(1e3, 1e4, 2, log, 't'));
-			modelRange.push_back(eis::Range(1e-7, 1e-6, 2, log, 't'));
-			modelRange.push_back(eis::Range(5, 5, 1, log, 't'));
-			break;
-		case 7:
-			modelRange.push_back(eis::Range(10, 100, 2, log, 'w'));
-			break;
-	}
-
-	size_t activeCitizens = 0;
-	for(const eis::Range& range : modelRange)
-	{
-		if(range.count > 1)
-			++activeCitizens;
-	}
-
-	size_t sweepDepth = std::pow(desiredCount, 1.0/activeCitizens);
-	if(sweepDepth < 3)
-	{
-		Log(Log::WARN)<<"For model "<<index<<" a desired count of "<<
-			desiredCount<<" would result in a sweep depth of < 3";
-		Log(Log::WARN)<<"Ajusting sweep depth to 3 this will result in "<<
-			static_cast<size_t>(std::pow(3, activeCitizens))<<" examples for this model";
-		sweepDepth = 3;
-	}
-
-	for(eis::Range& range : modelRange)
-	{
-		if(range.count > 1)
-			range.count = sweepDepth;
-	}
-
-	return modelRange;
-}
-
-EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, size_t desiredCount, double noise, bool inductivity, bool log)
-{
-	const int modelCount = 7;
-	desiredCount /= modelCount;
-
 	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize, noise);
 
-	std::string modelStr;
-	std::vector<eis::Range> parameters;
+	std::vector<std::string> modelStrs;
+	if(!path)
+	{
+		std::stringstream ss(std::string(rCircuitsData, rCircuitsSize));
+		modelStrs = readCircutsFromStream(ss);
+	}
+	else
+	{
+		std::ifstream is(path->c_str(), std::ios::in | std::ios::binary | std::ios::ate);
+		modelStrs = readCircutsFromStream(is);
+	}
 
-	const std::string probeModelString("l{5e-7}-");
+	for(const std::string& modelStr : modelStrs)
+	{
+		Log(Log::DEBUG)<<__func__<<"adding model "<<modelStr;
+		Model model(modelStr);
+		if(!model.isReady())
+		{
+			Log(Log::WARN)<<__func__<<" invalid model string "<<modelStr;
+			continue;
+		}
+		dataset->addModel(model);
+	}
 
-	modelStr.assign("(c{1e-6}-r{47})(c{1e-6}-r{1e3})(c{1e-6}-r{22e3})");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bord1_1(modelStr);
-	parameters = getRange(0, desiredCount, inductivity, log);
-	assert(bord1_1.checkParameterRanges(parameters));
-	dataset->addModel(bord1_1, parameters);
-
-	modelStr.assign("r{0.5}-c{10e-6}r{0.5}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bord1_3(modelStr);
-	parameters = getRange(1, desiredCount, inductivity, log);
-	assert(bord1_3.checkParameterRanges(parameters));
-	dataset->addModel(bord1_3, parameters);
-
-	modelStr.assign("r{100}c{1e-6}-r{100}c{100e-9}-r{100}c{100e-12}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bord1_4(modelStr);
-	parameters = getRange(2, desiredCount, inductivity, log);
-	assert(bord1_4.checkParameterRanges(parameters));
-	dataset->addModel(bord1_4, parameters);
-
-	modelStr.assign("r{47}l{100e-6}-r{47}c{1e-6}-r{47}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bord1_5(modelStr);
-	parameters = getRange(3, desiredCount, inductivity, log);
-	assert(bord1_5.checkParameterRanges(parameters));
-	dataset->addModel(bord1_5, parameters);
-
-	modelStr.assign("r{1e3}c{1e-6}-r{1e3}c{1e-9}-r{47}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bord2(modelStr);
-	parameters = getRange(4, desiredCount, inductivity, log);
-	assert(bord2.checkParameterRanges(parameters));
-	dataset->addModel(bord2, parameters);
-
-//	modelStr.assign("r{100}-r{470}c{100e-12}-r{1e3}c{1e-9}-r{100}c{1e-6}");
-//	if(inductivity)
-//		modelStr.insert(0, probeModelString);
-//	eis::Model bord4(modelStr);
-//	parameters = getRange(5, desiredCount, inductivity, log);
-//	assert(bord4.checkParameterRanges(parameters));
-//	dataset->addModel(bord4, parameters);
-
-	modelStr.assign("t{1e3, 1e-7, 3}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bordTl(modelStr);
-	parameters = getRange(6, desiredCount, inductivity, log);
-	assert(bordTl.checkParameterRanges(parameters));
-	dataset->addModel(bordTl, parameters);
-
-	modelStr.assign("w{1000}");
-	if(inductivity)
-		modelStr.insert(0, probeModelString);
-	eis::Model bordW(modelStr);
-	parameters = getRange(7, desiredCount, inductivity, log);
-	assert(bordW.checkParameterRanges(parameters));
-	dataset->addModel(bordW, parameters);
-
-	assert(dataset->classesCount() == modelCount);
-
-	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples (approx "<<desiredCount<<" per model)";
+	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;
 }
 
 std::string EisGeneratorDataset::modelStringForClass(size_t classNum)
 {
-	if(classNum >= models.size())
+	if(classNum >= modelStrings.size())
 		return "invalid";
-
-	else return models[classNum].getModelStr();
+	else
+		return *std::next(modelStrings.begin(), classNum);
 }
