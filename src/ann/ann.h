@@ -193,11 +193,11 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDatas
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(),
 				  trainDataset->classWeights(), trainDataset->isMulticlass(), &log);
-		if(testDataset)
+		/*if(testDataset)
 		{
 			test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount(),
 				 trainDataset->classWeights(), trainDataset->isMulticlass());
-		}
+		}*/
 		torch::save(net, fileName + ".uf");
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}

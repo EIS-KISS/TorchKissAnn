@@ -9,7 +9,6 @@
 
 #include "utils/log.h"
 #include "options.h"
-#include "data/loaders/csv.h"
 #include "data/loaders/mpt.h"
 #include "data/generators/trashgenerator.h"
 #include "data/eistotorch.h"
@@ -48,7 +47,15 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 	switch(type)
 	{
 		case FILE_TYPE_CSV:
-			return loaders::csv(fileName);
+			try
+			{
+				return eis::loadFromDisk(fileName).first;
+			}
+			catch(const eis::file_error& ex)
+			{
+				Log(Log::ERROR)<<"Could not load file(s): "<<ex.what();
+				return std::vector<eis::DataPoint>();
+			}
 		case FILE_TYPE_MPT:
 			return loaders::mpt(fileName);
 		case FILE_TYPE_TRASH:
@@ -132,7 +139,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 			break;
 		case MODE_NN:
 		{
-			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
+			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 1e6));
 			output = NearestNeighbor::use(input, dataset.get());
 			break;
 		}
@@ -188,7 +195,7 @@ int main(int argc, char** argv)
 	if(output.numel() == 0)
 		return 5;
 
-	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH));
+	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 1e6));
 
 	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
 

@@ -57,63 +57,6 @@ bool cmpDouble(double a, double b)
 	return diff < 0.0001;
 }
 
-/*std::vector<eis::DataPoint> getControll(size_t i, size_t* size = nullptr)
-{
-	eis::Model model("t{1,2,3}");
-	std::vector<eis::Range> modelRange;
-	modelRange.push_back(eis::Range(1e3, 1e4, 40, true, 't'));
-	modelRange.push_back(eis::Range(1e-6, 1e-5, 40, true, 't'));
-	modelRange.push_back(eis::Range(5, 5, 1, true, 't'));
-	eis::Range omega(10, 1e6, 100/2, true);
-	std::vector<eis::DataPoint> data = model.executeParamByIndex(modelRange, omega, i);
-	filterData(data, 100);
-	data = torchToEis(eisToTorch(data));
-	if(size)
-		*size = eis::Model::getRequiredStepsForSweeps(modelRange);
-	return data;
-}*/
-
-/*void diff()
-{
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e4);
-	ClassExtractorDataset<EisGeneratorDataset> extractor(testDataset, 5);
-
-	size_t rangeSteps = extractor.size().value();
-	for(size_t i = 0; i < rangeSteps; ++i)
-	{
-		std::vector<eis::DataPoint> controll = getControll(i);
-
-		eis::saveToDisk(controll, std::string("./controll")+std::string("/")+std::to_string(++i)+".csv");
-		eis::saveToDisk(controll, std::string("./controll2")+std::string("/")+std::to_string(++i)+".csv");
-
-		torch::Tensor tmp = extractor.get(i).data;
-		std::vector<eis::DataPoint> testSweep = torchToEis(tmp);
-
-		eis::saveToDisk(std::vector<eis::DataPoint>(testSweep), std::string("./testSweep")+std::string("/")+std::to_string(++i)+".csv");
-
-		if(controll.size() != testSweep.size())
-		{
-			Log(Log::ERROR)<<"Sweeps not the same size!";
-			return;
-		}
-
-		for(size_t j = 0; j < controll.size(); ++j)
-		{
-			if(!cmpDouble(controll[j].im.real(), testSweep[j].im.real()) || !cmpDouble(controll[j].im.imag(), testSweep[j].im.imag()))
-			{
-				if(!cmpDouble(controll[j].im.real(), testSweep[j].im.real()))
-					Log(Log::ERROR)<<"no real match! at "<<i<<','<<j<<' '<<controll[j].im.real()<<" != "<<testSweep[j].im.real();
-				else
-					Log(Log::ERROR)<<"no imag match! at "<<i<<','<<j<<' '<<controll[j].im.imag()<<" != "<<testSweep[j].im.imag();
-				//return;
-			}
-		}
-		Log(Log::INFO,false)<<'.';
-
-	}
-	std::cout<<std::endl;
-}*/
-
 /*void saveDataset()
 {
 	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e4);
@@ -143,21 +86,6 @@ void testfs(const std::string& str, const std::string& prefix)
 	}
 }
 
-void testDeduplicator()
-{
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
-	DeduplatorDataset dataset(testDataset);
-
-	std::cout<<"Data:\n"<<dataset.get(42).data<<"\nTarget:\n"<<dataset.get(42).target;
-
-	delete testDataset;
-}
-
-double integFn(double x)
-{
-	return x*x*x+1;
-}
-
 void testDrt()
 {
 	eis::Model model("rc");
@@ -170,43 +98,18 @@ void testDrt()
 		std::cout<<value<<'\n';
 }
 
+bool testEisGeneratorDataset()
+{
+	EisGeneratorDataset* dataset = EisGeneratorDataset::newDefaultDataset(100, 0, false);
+	Log(Log::INFO)<<__func__<<" size: "<<dataset->size().value();
+	Log(Log::INFO)<<__func__<<" classes: "<<dataset->classesCount();
+
+	delete dataset;
+	return true;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
-
-	//std::cout<<std::setprecision(3)<<std::fixed<<std::setw(3);
-
-	testDrt();
-
-	/*torch::Tensor ramp = fnToTensor(integFn, 2, 6, 10);
-
-	std::cout<<"ramp:\n"<<ramp<<std::endl;
-
-	std::cout<<"integ: "<<integrateFn(integFn, 2, 6)<<std::endl;
-
-	torch::Tensor a = torch::tensor({1, 2, 3, 4}, {torch::kFloat64});
-	torch::Tensor b =  torch::tensor({2, 4, 5, 6, 7}, {torch::kFloat64});
-
-	std::cout<<toeplitz(a, b)<<std::endl;
-
-	return 0;
-	torch::Tensor x = torch::randn({1, 100});
-	std::cout<<"begin dim "<<x.dim()<<std::endl;
-	ann::ConvNet net(100, 6);
-	x = net.forward(x);
-	std::cout<<"end with "<<x<<std::endl;
-
-	std::cout<<net<<std::endl;
-
-	ann::SimpleNet snet;
-	std::cout<<snet<<std::endl;*/
-
-	//EisGeneratorDataset* testDataset = EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, 1e7);
-	//testLoader<EisGeneratorDataset>(testDataset);
-
-	//testDeduplicator();
-	//saveDataset();
-	//diff();
-	//printDataset(EisGeneratorDataset::getNeisGeneratedDataset(10));
-	//testfs("./export", "fail_");
+	testEisGeneratorDataset();
 }

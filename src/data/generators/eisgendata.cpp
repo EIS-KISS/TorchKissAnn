@@ -16,6 +16,7 @@
 #include "log.h"
 #include "../print.h"
 #include "../filterdata.h"
+#include "tokenize.h"
 
 #define INCBIN_PREFIX r
 #include "incbin.h"
@@ -39,41 +40,112 @@ static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 	return out;
 }
 
-EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI): omega(10, 1e6, outputSize/2, true), noise(noiseI)
+EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI):
+omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
+}
+
+EisGeneratorDataset::EisGeneratorDataset(std::istream& is, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset(outputSize, noise)
+{
+	std::vector<std::string> circuits = readCircutsFromStream(is);
+	if(circuits.empty())
+		throw eis::file_error("stream dosent contain any circuits");
+	addVectorOfModels(circuits, desiredSize, inductivity);
+}
+
+EisGeneratorDataset::EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset(outputSize, noise)
+{
+	std::ifstream is(path, std::ios::in);
+	if(!is.is_open())
+		throw eis::file_error("can not open " + path.string());
+	std::vector<std::string> circuits = readCircutsFromStream(is);
+	if(circuits.empty())
+		throw eis::file_error("file dosent contain any circuits: " + path.string());
+	addVectorOfModels(circuits, desiredSize, inductivity);
+}
+
+EisGeneratorDataset::EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset(outputSize, noise)
+{
+	std::stringstream ss(std::string(cStr, cStrLen));
+	std::vector<std::string> circuits = readCircutsFromStream(ss);
+	if(circuits.empty())
+		throw std::runtime_error("array contains no circuits");
+	addVectorOfModels(circuits, desiredSize, inductivity);
+}
+
+void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity)
+{
+	int64_t sizePerModel = desiredSize/modelStrs.size();
+	assert(sizePerModel > 3);
+	for(const std::string& modelStr : modelStrs)
+	{
+		std::string workModelStr = stripWhitespace(modelStr);
+		if(workModelStr.empty())
+			continue;
+
+		if(inductivity)
+			workModelStr.insert(0, std::string("l{5e-7}-"));
+
+		Log(Log::DEBUG)<<__func__<<" adding model "<<workModelStr;
+
+		Model model(workModelStr);
+		if(!model.isReady())
+		{
+			Log(Log::WARN)<<__func__<<" invalid model string "<<workModelStr;
+			continue;
+		}
+		model.setParamSweepCountClosestTotal(sizePerModel);
+
+		addModel(model);
+	}
+
+	if(desiredSize/2 > trueSize())
+	{
+		repetitionCount = desiredSize/trueSize();
+	}
 }
 
 void EisGeneratorDataset::addModel(const eis::Model& model)
 {
 	models.push_back(model);
 	modelSweepSizes.push_back(models.back().getRequiredStepsForSweeps());
-	std::pair<std::set<std::string>::iterator, bool> iteratorPair = modelStrings.insert(models.back().getModelStr());
-	size_t index = std::distance(modelStrings.begin(), iteratorPair.first);
+	std::vector<std::string>::iterator iterator = std::find(modelStrings.begin(), modelStrings.end(), models.back().getModelStr());
+	size_t index;
+	if(iterator == modelStrings.end())
+	{
+		modelStrings.push_back(models.back().getModelStr());
+		index = modelStrings.size()-1;
+	}
+	else
+	{
+		index = std::distance(modelStrings.begin(), iterator);
+	}
+
 	modelClasses.push_back(index);
 }
 
-std::pair<eis::Model*, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index)
+std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index) const
 {
 	size_t model = 0;
 	for(; model < models.size(); ++model)
 	{
 		if(index < modelSweepSizes[model])
-		{
 			break;
-		}
 		else
-		{
 			index -= modelSweepSizes[model];
-		}
 	}
 
-	return std::pair<eis::Model*, size_t>(&models[model], index);
+	return std::pair<size_t, size_t>(model, index);
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
 {
-	std::pair<eis::Model*, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
-	std::vector<eis::DataPoint> data = modelAndOffset.first->executeSweep(omega, modelAndOffset.second);
+	index = index % trueSize();
+	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
+	std::vector<eis::DataPoint> data = models[modelAndOffset.first].executeSweep(omega, modelAndOffset.second);
 
 	assert(data.size());
 	filterData(data, omega.count*2);
@@ -95,7 +167,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt8);
 	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(classForIndex(index));
+	output[0] = static_cast<float>(modelClasses[modelAndOffset.first]);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
@@ -112,6 +184,11 @@ size_t EisGeneratorDataset::frequencies()
 
 c10::optional<size_t> EisGeneratorDataset::size() const
 {
+	return trueSize()*repetitionCount;
+}
+
+size_t EisGeneratorDataset::trueSize() const
+{
 	size_t size = 0;
 	for(size_t i = 0; i < models.size(); ++i)
 		size += modelSweepSizes[i];
@@ -125,29 +202,27 @@ torch::Tensor EisGeneratorDataset::classWeights()
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
-	int64_t count = size().value();
+	int64_t count = trueSize();
 	for(size_t i = 0; i < models.size(); ++i)
 	{
-		auto iterator = modelStrings.find(models[i].getModelStr());
+		auto iterator = std::find(modelStrings.begin(), modelStrings.end(), models[i].getModelStr());
 		assert(iterator != modelStrings.end());
 
 		size_t classNum = std::distance(modelStrings.begin(), iterator);
 		output[classNum] = output[classNum] + static_cast<int64_t>(modelSweepSizes[i]);
 	}
 
-	output = count/output;
+	output = output/static_cast<double>(count);
+	output = torch::min(output)/output;
 
-	output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
+	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	return output;
 }
 
 size_t EisGeneratorDataset::classForIndex(size_t index)
 {
-	std::pair<eis::Model*, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
-	auto iterator = modelStrings.find(modelAndOffset.first->getModelStr());
-	assert(iterator != modelStrings.end());
-	size_t classNum = std::distance(modelStrings.begin(), iterator);
-	return classNum;
+	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
+	return modelClasses[modelAndOffset.first];
 }
 
 EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
@@ -155,33 +230,11 @@ EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 	return this;
 }
 
-EisGeneratorDataset* EisGeneratorDataset::getNeisGeneratedDataset(int64_t outputSize, double noise, bool inductivity, const std::filesystem::path* path)
+EisGeneratorDataset* EisGeneratorDataset::newDefaultDataset(int64_t outputSize, int64_t desiredSize, double noise, bool inductivity)
 {
-	EisGeneratorDataset* dataset = new EisGeneratorDataset(outputSize, noise);
-
-	std::vector<std::string> modelStrs;
-	if(!path)
-	{
-		std::stringstream ss(std::string(rCircuitsData, rCircuitsSize));
-		modelStrs = readCircutsFromStream(ss);
-	}
-	else
-	{
-		std::ifstream is(path->c_str(), std::ios::in | std::ios::binary | std::ios::ate);
-		modelStrs = readCircutsFromStream(is);
-	}
-
-	for(const std::string& modelStr : modelStrs)
-	{
-		Log(Log::DEBUG)<<__func__<<"adding model "<<modelStr;
-		Model model(modelStr);
-		if(!model.isReady())
-		{
-			Log(Log::WARN)<<__func__<<" invalid model string "<<modelStr;
-			continue;
-		}
-		dataset->addModel(model);
-	}
+	assert(outputSize > 2);
+	assert(desiredSize > 1000);
+	EisGeneratorDataset* dataset = new EisGeneratorDataset(rCircuitsData, rCircuitsSize, desiredSize, outputSize, noise, inductivity);
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;
@@ -192,5 +245,5 @@ std::string EisGeneratorDataset::modelStringForClass(size_t classNum)
 	if(classNum >= modelStrings.size())
 		return "invalid";
 	else
-		return *std::next(modelStrings.begin(), classNum);
+		return modelStrings[classNum];
 }

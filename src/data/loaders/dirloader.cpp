@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <eisgenerator/eistype.h>
 
-#include "csv.h"
 #include "mpt.h"
 #include "../print.h"
 #include "log.h"
@@ -14,7 +13,8 @@
 
 using namespace eis;
 
-EisDirDataset::EisDirDataset(const std::string& dirName, const std::string& prefix, FileType fileTypeI, int64_t outputSizeI):
+EisDirDataset::EisDirDataset(const std::string& dirName, const std::string& prefix,
+                             FileType fileTypeI,  const std::string& extension, int64_t outputSizeI):
 fileType(fileTypeI), outputSize(outputSizeI)
 {
 	const std::filesystem::path directoryPath{dirName};
@@ -22,14 +22,24 @@ fileType(fileTypeI), outputSize(outputSizeI)
 	{
 		std::string fileName = dirent.path().filename();
 		std::cout<<fileName;
+		if(extension != "*" && extension != dirent.path().extension())
+			continue;
 		if(dirent.is_regular_file() && fileName.size() > prefix.size() && fileName.find(prefix) == 0)
 		{
 			fileName.erase(fileName.begin(), fileName.begin()+prefix.size());
 			std::vector<std::string> tokens = tokenize(fileName, '_');
-			size_t classNum = std::stoul(tokens[0]);
-			fileNames.push_back({dirent.path(), classNum});
+			if(tokens.size() != 2)
+			{
+				Log(Log::WARN)<<"file "<<fileName<<" dosent correspond to the required prefixCircut_*.extension sheme, skipping";
+				continue;
+			}
+			auto iteratorPair = modelStrs.insert(tokens[0]);
+			size_t index = std::distance(modelStrs.begin(), iteratorPair.first);
+			fileNames.push_back({dirent.path(), index});
 		}
 	}
+	if(fileNames.size() < 20)
+		Log(Log::WARN)<<"found few valid files in "<<directoryPath;
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::get(size_t index)
@@ -52,7 +62,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::get(size_t ind
 	switch(fileType)
 	{
 		case FILE_TYPE_CSV:
-			data = loaders::csv(fileNames[index].path);
+			data = eis::loadFromDisk(fileNames[index].path).first;
 			break;
 		case FILE_TYPE_MPT:
 			data = loaders::mpt(fileNames[index].path);
@@ -126,4 +136,12 @@ torch::Tensor EisDirDataset::modelWeights()
 		++tensorDataPtr[str.classNum];
 
 	return output;
+}
+
+std::string EisDirDataset::modelStringForClass(size_t classNum)
+{
+	if(classNum >= modelStrs.size())
+		return "invalid";
+	else
+		return *std::next(modelStrs.begin(), classNum);
 }

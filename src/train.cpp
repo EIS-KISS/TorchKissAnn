@@ -38,12 +38,26 @@ template <> int train<FastDedupDataset>(const Config& config)
 
 template <> int train<EisGeneratorDataset>(const Config& config)
 {
-	if(!config.fileName.empty() || !config.testFileName.empty())
-		Log(Log::WARN)<<"warning: a file name was set, but thats meaningless with the generated dataset";
-	EisGeneratorDataset* dataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true, config.fileName.empty() ? &config.fileName : nullptr);
-	EisGeneratorDataset* testDataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true, config.fileName.empty() ? &config.fileName : nullptr);
+	EisGeneratorDataset* dataset;
+	EisGeneratorDataset* testDataset;
+
+	if(config.fileName.empty())
+		dataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize, config.noise, config.probeModel);
+	else
+		dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
+
+	if(config.testFileName.empty())
+		testDataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize/10, config.noise, config.probeModel);
+	else
+		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
+
+	if(dataset->classesCount() != testDataset->classesCount())
+	{
+		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
+			<<"The traing dataset has "<<dataset->classesCount()
+			<<" and the test dataset has "<<testDataset->classesCount();
+		return 1;
+	}
 
 	trainSwitch<EisGeneratorDataset>(config, dataset, testDataset);
 	return 0;
@@ -59,7 +73,7 @@ template <> int train<EisDirDataset>(const Config& config)
 
 	EisDirDataset dataset(config.fileName, "csv", FILE_TYPE_CSV);
 	EisGeneratorDataset* testDataset =
-		EisGeneratorDataset::getNeisGeneratedDataset(DATA_WIDTH, config.noise, true);
+		EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.noise, true);
 
 	if(dataset.size().value() == 0)
 	{
@@ -71,7 +85,7 @@ template <> int train<EisDirDataset>(const Config& config)
 	return 0;
 }
 
-
+//
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);

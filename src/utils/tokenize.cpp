@@ -28,3 +28,16 @@ std::vector<std::string> tokenize(const std::string& str, const char delim, cons
 		tokens.push_back(token);
 	return tokens;
 }
+
+std::string stripWhitespace(const std::string& in)
+{
+	std::string out;
+	out.reserve(in.size());
+	for(char ch : in)
+	{
+		if(ch <= 32 || ch == 127)
+			continue;
+		out.push_back(ch);
+	}
+	return out;
+}

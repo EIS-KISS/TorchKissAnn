@@ -103,61 +103,69 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
 	Config *config = reinterpret_cast<Config*>(state->input);
 
-	switch (key)
+	try
 	{
-	case 'q':
-		Log::level = Log::ERROR;
-		break;
-	case 'v':
-		Log::level = Log::DEBUG;
-		break;
-	case 'n':
-		config->networkFileName.assign(arg);
-		break;
-	case 'i':
-		config->spectraFileName.assign(arg);
-		break;
-	case 't':
-		config->fileType = parseFileType(arg);
-		if(config->fileType == FILE_TYPE_INVALID)
+		switch (key)
 		{
-			std::cout<<arg<<" is not a vaild file type.\n";
-			argp_usage(state);
+		case 'q':
+			Log::level = Log::ERROR;
+			break;
+		case 'v':
+			Log::level = Log::DEBUG;
+			break;
+		case 'n':
+			config->networkFileName.assign(arg);
+			break;
+		case 'i':
+			config->spectraFileName.assign(arg);
+			break;
+		case 't':
+			config->fileType = parseFileType(arg);
+			if(config->fileType == FILE_TYPE_INVALID)
+			{
+				std::cout<<arg<<" is not a vaild file type.\n";
+				argp_usage(state);
+			}
+			break;
+		case 'p':
+			config->filterMode = parseFilterMode(arg);
+			if(config->filterMode == FILTER_INVALID)
+			{
+				std::cout<<arg<<" is not a vaild filter method.\n";
+				argp_usage(state);
+			}
+			break;
+		case 's':
+			config->show = true;
+			break;
+		case 'm':
+			config->mode = parseMode(arg);
+			if(config->mode == MODE_INVALID)
+			{
+				std::cout<<arg<<" is not a vaild classifier method.\n";
+				argp_usage(state);
+			}
+			break;
+		case 'f':
+			config->filterFileName.assign(arg);
+			break;
+		case 'e':
+			config->exportDir.assign(arg);
+			break;
+		case 'o':
+			config->outputProb = std::stod(std::string(arg));
+			break;
+		case 'a':
+			config->reexport = true;
+			break;
+		default:
+			return ARGP_ERR_UNKNOWN;
 		}
-		break;
-	case 'p':
-		config->filterMode = parseFilterMode(arg);
-		if(config->filterMode == FILTER_INVALID)
-		{
-			std::cout<<arg<<" is not a vaild filter method.\n";
-			argp_usage(state);
-		}
-		break;
-	case 's':
-		config->show = true;
-		break;
-	case 'm':
-		config->mode = parseMode(arg);
-		if(config->mode == MODE_INVALID)
-		{
-			std::cout<<arg<<" is not a vaild classifier method.\n";
-			 argp_usage(state);
-		}
-		break;
-	case 'f':
-		config->filterFileName.assign(arg);
-		break;
-	case 'e':
-		config->exportDir.assign(arg);
-		break;
-	case 'o':
-		config->outputProb = std::stod(std::string(arg));
-		break;
-	case 'a':
-		config->reexport = true;
-		break;
-	default:
-		return ARGP_ERR_UNKNOWN;
+	}
+	catch(const std::invalid_argument& ex)
+	{
+		std::cout<<arg<<" passed for argument -"<<key<<" is not a valid number.";
+		return ARGP_KEY_ERROR;
 	}
 	return 0;
 }

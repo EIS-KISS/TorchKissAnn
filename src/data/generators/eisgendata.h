@@ -20,16 +20,23 @@ public:
 private:
 	std::vector<eis::Model> models;
 	std::vector<size_t> modelClasses;
-	std::set<std::string> modelStrings;
+	std::vector<std::string> modelStrings;
 	std::vector<size_t> modelSweepSizes;
 	eis::Range omega;
 	double noise;
+	size_t repetitionCount = 1;
 
 private:
-	std::pair<eis::Model*, size_t> getModelAndOffsetForIndex(size_t index);
+	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
+	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity);
+	size_t trueSize() const;
 
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
+	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity);
+	explicit EisGeneratorDataset(std::istream& is, int64_t outputSize, int64_t desiredSize, double noise, bool inductivity);
+	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity);
+
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
@@ -49,7 +56,7 @@ public:
 
 	virtual std::string modelStringForClass(size_t classNum) override;
 
-	static EisGeneratorDataset* getNeisGeneratedDataset(int64_t outputSize = 100, double noise = 0, bool inductivity = false, const std::filesystem::path* path = nullptr);
+	static EisGeneratorDataset* newDefaultDataset(int64_t outputSize, int64_t desiredSize, double noise = 0, bool inductivity = false);
 
 	virtual c10::optional<size_t> size() const override;
 };
