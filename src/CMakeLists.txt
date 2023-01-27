@@ -26,14 +26,16 @@ set(SRC_FILES
 
 include_directories(utils .)
 
-set(ENV{TORCH_INSTALL_PREFIX} "/usr")
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+	set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "..." FORCE)
+endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 find_package(Torch REQUIRED)
 find_package(Armadillo REQUIRED)
 
 set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} -leisgenerator)
 set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS} ${ARMADILLO_INCLUDE_DIRS})
-set(COMMON_COMPILE_FLAGS "-std=c++20 -Wall -O2 -march=native -g -Wfatal-errors")
+set(COMMON_COMPILE_FLAGS "-std=c++2a -Wall -O2 -march=native -g -Wfatal-errors")
 
 message("Linking: " "${COMMON_LINK_LIBRARIES}")
 message("Includeing: " "${COMMON_INCLUDE_DIRECTORYS}")
