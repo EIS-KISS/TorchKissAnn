@@ -119,7 +119,8 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	return pass;
 }
 
-torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName, const std::string exportDir, double exportProb)
+torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName,
+					   size_t outputSize, size_t extraLayers, const std::string exportDir, double exportProb)
 {
 	torch::Tensor output;
 
@@ -132,10 +133,10 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 	switch(mode)
 	{
 		case MODE_ANN:
-			output = ann::use(input, ann::load(networkFileName));
+			output = ann::use(input, ann::load(networkFileName, DATA_WIDTH, outputSize, false, 4, extraLayers));
 			break;
 		case MODE_ANN_TEST:
-			output = ann::testOnGenNeis(ann::load(networkFileName), exportDir, exportProb);
+			output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, false, 4, extraLayers), exportDir, exportProb);
 			break;
 		case MODE_NN:
 		{
@@ -190,7 +191,8 @@ int main(int argc, char** argv)
 	if(!filter(input, config.filterFileName, config.filterMode))
 		return 4;
 
-	torch::Tensor output = classify(input, config.mode, config.networkFileName, config.exportDir, config.outputProb);
+	torch::Tensor output = classify(input, config.mode, config.networkFileName, config.outputSize,
+									config.extraLayers, config.exportDir, config.outputProb);
 
 	if(output.numel() == 0)
 		return 5;

@@ -16,7 +16,8 @@
 namespace ann
 {
 
-std::shared_ptr<Net> load(const std::string& fileName = "net.vos");
+std::shared_ptr<Net> load(const std::string& fileName = "net.vos", int64_t inputSize = 100, int64_t outputSize = 6,
+						  bool leak = false, size_t downsampleSteps = 4, size_t extraSteps = 3);
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
@@ -160,20 +161,14 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset, bool convNet, size_t epochs = 30)
+void train(std::string fileName, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
+		   size_t epochs, double learingRate)
 {
-	std::shared_ptr<Net> net;
-
 	if(testDataset)
 	{
 		assert(trainDataset->classesCount() == testDataset->classesCount());
 		assert(trainDataset->isMulticlass() == testDataset->isMulticlass());
 	}
-
-	if(convNet)
-		net.reset(new ConvNet(DATA_WIDTH, trainDataset->classesCount()));
-	else
-		net.reset(new SimpleNet(DATA_WIDTH, trainDataset->classesCount()));
 
 	LossLog log("annLoss.csv");
 
@@ -182,7 +177,7 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, EisDatas
 	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
 
-	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(0.005).momentum(0.5));
+	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).momentum(0.5));
 
 	if(trainDataset->isMulticlass())
 		Log(Log::DEBUG)<<"Using BCELoss";

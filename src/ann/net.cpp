@@ -21,7 +21,7 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 	return std::pair<size_t, size_t>(layerIn, layerOut);
 }
 
-ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI):
+ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
 Net(inputSizeI, outputSizeI, leakI)
 {
 	fc1 = register_module("fc1", torch::nn::Linear(inputSize, inputSize/2));
@@ -50,7 +50,7 @@ torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 	return x;
 }
 
-ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI):
+ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
 Net(inputSizeI, outputSizeI, leakI)
 {
 	int64_t size = inputSize;
@@ -82,28 +82,27 @@ Net(inputSizeI, outputSizeI, leakI)
 	//model->push_back(SeqPrint());
 
 	//3 fully connected layers
-	std::pair<size_t, size_t> sizes = layerWidthFunction(0, 4, size, outputSize);
-	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	std::pair<size_t, size_t> sizes;
+	for(size_t i = 0; i < downsampleSteps-1; ++i)
+	{
+		sizes = layerWidthFunction(i, downsampleSteps, size, outputSize);
+		model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 
-	/*model->push_back(torch::nn::Linear(sizes.second, sizes.second));
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+		if(i == 0)
+		{
+			for(size_t j = 0; j < extraSteps; ++j)
+			{
+				model->push_back(torch::nn::Linear(sizes.second, sizes.second));
+				model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+			}
+		}
+	}
 
-	model->push_back(torch::nn::Linear(sizes.second, sizes.second));
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));*/
-
-	//Downconverting layers
-	sizes = layerWidthFunction(1, 4, size, outputSize);
-	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-
-	sizes = layerWidthFunction(2, 4, size, outputSize);
-	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-
-	sizes = layerWidthFunction(3, 4, size, outputSize);
+	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
+
 }
 
 torch::Tensor ann::ConvNet::forward(torch::Tensor x)

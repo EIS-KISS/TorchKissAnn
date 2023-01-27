@@ -130,14 +130,30 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
+
 	switch(config.mode)
 	{
 		case MODE_ANN:
-			ann::train<DataSetType, TestDataSetType>("net.vos", dataset, testDataset, false, config.epochs);
-			break;
 		case MODE_ANN_CONV:
-			ann::train<DataSetType, TestDataSetType>("netConv.vos", dataset, testDataset, true, config.epochs);
+		{
+			std::shared_ptr<ann::Net> net;
+			std::string outputFileName("net");
+			if(MODE_ANN_CONV)
+			{
+				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), false, 4, config.extraLayers));
+				outputFileName.append("Conv");
+			}
+			else
+			{
+				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), false, 4, config.extraLayers));
+			}
+			outputFileName.append(std::to_string(dataset->classesCount()));
+			outputFileName.push_back('_');
+			outputFileName.append(std::to_string(config.extraLayers));
+			outputFileName.append(".vos");
+			ann::train<DataSetType, TestDataSetType>(outputFileName, net, dataset, testDataset, config.epochs, config.learingRate);
 			break;
+		}
 		case MODE_GAN:
 			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
 			break;

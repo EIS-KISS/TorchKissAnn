@@ -25,6 +25,8 @@ static struct argp_option options[] =
   {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
   {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   {"re-export",		'a', 0,				0,	"re-export."},
+  {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
+  {"output-size",	'z', "[NUMBER]",	0,	"number of models the network to be loaded was trained on, default: 6"},
   { 0 }
 };
 
@@ -54,6 +56,8 @@ struct Config
 	bool show = false;
 	bool trash = false;
 	bool reexport = false;
+	size_t extraLayers = 3;
+	size_t outputSize = 6;
 	PredictionMode mode = MODE_ANN;
 	FilterMode filterMode = FILTER_NONE;
 	FileType fileType = FILE_TYPE_CSV;
@@ -158,6 +162,11 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'a':
 			config->reexport = true;
 			break;
+		case 'l':
+			config->extraLayers = std::stoul(std::string(arg));
+			break;
+		case 'z':
+			config->outputSize = std::stoul(std::string(arg));
 		default:
 			return ARGP_ERR_UNKNOWN;
 		}

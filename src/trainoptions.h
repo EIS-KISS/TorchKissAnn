@@ -29,6 +29,8 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the training batch"},
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"probe-model",	'p', 0,				0,	"use probe model (l{5e-7})"},
+  {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
+  {"learing-rate",	'r', "[NUMBER]",	0,	"sgd lering rate, default: 0.005"},
   { 0 }
 };
 
@@ -83,9 +85,11 @@ struct Config
 	std::filesystem::path fileName;
 	std::filesystem::path testFileName;
 	double noise = 0;
+	double learingRate = 0.005;
 	size_t batchSize = 100;
 	size_t epochs = 30;
 	size_t datasetSize = 2e6;
+	size_t extraLayers = 3;
 	bool probeModel = false;
 };
 
@@ -144,6 +148,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'p':
 			config->probeModel = true;
+			break;
+		case 'l':
+			config->extraLayers = std::stoul(std::string(arg));
+			break;
+		case 'r':
+			config->learingRate = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

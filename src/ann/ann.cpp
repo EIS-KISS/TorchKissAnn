@@ -3,10 +3,11 @@
 
 using namespace ann;
 
-std::shared_ptr<Net> ann::load(const std::string& fileName)
+std::shared_ptr<Net> ann::load(const std::string& fileName, int64_t inputSize, int64_t outputSize,
+						  bool leak, size_t downsampleSteps, size_t extraSteps)
 {
-	std::shared_ptr<SimpleNet> simpleNet(new SimpleNet);
-	std::shared_ptr<ConvNet> convNet(new ConvNet);
+	std::shared_ptr<SimpleNet> simpleNet(new SimpleNet(inputSize, outputSize, leak, downsampleSteps, extraSteps));
+	std::shared_ptr<ConvNet> convNet(new ConvNet(inputSize, outputSize, leak, downsampleSteps, extraSteps));
 
 	try
 	{
@@ -27,7 +28,8 @@ std::shared_ptr<Net> ann::load(const std::string& fileName)
 	}
 	catch(torch::Error& error)
 	{
-		Log(Log::ERROR)<<fileName<<" is not a conv network or simple network";
+		Log(Log::ERROR)<<fileName<<" is not a conv network or simple network with output size "<<outputSize
+			<<" and "<<extraSteps<<" extra hidden layers";
 		return nullptr;
 	}
 }
