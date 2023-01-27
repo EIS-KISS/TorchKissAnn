@@ -39,16 +39,16 @@ template <> int train<FastDedupDataset>(const Config& config)
 template <> int train<EisGeneratorDataset>(const Config& config)
 {
 	EisGeneratorDataset* dataset;
-	EisGeneratorDataset* testDataset;
+	EisGeneratorDataset* testDataset = nullptr;
 
 	if(config.fileName.empty())
 		dataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize, config.noise, config.probeModel);
 	else
 		dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
 
-	if(config.testFileName.empty())
+	if(config.testFileName.empty() && config.fileName.empty())
 		testDataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize/10, config.noise, config.probeModel);
-	else
+	else if(!config.testFileName.empty())
 		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
 
 	if(dataset->classesCount() != testDataset->classesCount())
