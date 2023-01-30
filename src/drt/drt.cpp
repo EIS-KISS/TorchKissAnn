@@ -1,3 +1,5 @@
+#ifdef DRT_ENABLED
+
 #include "drt.h"
 #include "T2_inversion.h"
 
@@ -32,3 +34,5 @@ std::vector<fvalue> calcDrt(const std::vector<eis::DataPoint>& data)
 		drt.push_back(T2dist[i]);
 	return drt;
 }
+
+#endif

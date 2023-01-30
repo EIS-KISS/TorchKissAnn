@@ -86,6 +86,7 @@ void testfs(const std::string& str, const std::string& prefix)
 	}
 }
 
+#ifdef DRT_ENABLED
 void testDrt()
 {
 	eis::Model model("rc");
@@ -97,6 +98,7 @@ void testDrt()
 	for(const fvalue value : drt)
 		std::cout<<value<<'\n';
 }
+#endif
 
 bool testEisGeneratorDataset()
 {
