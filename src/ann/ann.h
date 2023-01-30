@@ -175,7 +175,7 @@ void train(std::string fileName, std::shared_ptr<Net> net, EisDataset<DatasetTyp
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(BATCH_SIZE).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
-	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
+	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
 	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).momentum(0.5));
 

@@ -51,7 +51,7 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	else if(!config.testFileName.empty())
 		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
 
-	if(dataset->classesCount() != testDataset->classesCount())
+	if(testDataset && dataset->classesCount() != testDataset->classesCount())
 	{
 		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
 			<<"The traing dataset has "<<dataset->classesCount()

@@ -79,6 +79,7 @@ EisGeneratorDataset(outputSize, noise)
 void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity)
 {
 	int64_t sizePerModel = desiredSize/modelStrs.size();
+
 	assert(sizePerModel > 3);
 	for(const std::string& modelStr : modelStrs)
 	{
@@ -89,7 +90,7 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 		if(inductivity)
 			workModelStr.insert(0, std::string("l{5e-7}-"));
 
-		Log(Log::DEBUG)<<__func__<<" adding model "<<workModelStr;
+		Log(Log::DEBUG, false)<<__func__<<" adding model "<<workModelStr<<" attempting to give "<<sizePerModel<<" examples ";
 
 		Model model(workModelStr);
 		if(!model.isReady())
@@ -98,11 +99,12 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 			continue;
 		}
 		model.setParamSweepCountClosestTotal(sizePerModel);
+		Log(Log::DEBUG)<<"got "<<model.getRequiredStepsForSweeps();
 
 		addModel(model);
 	}
 
-	if(desiredSize/2 > trueSize())
+	if(desiredSize/2 > static_cast<ssize_t>(trueSize()))
 	{
 		repetitionCount = desiredSize/trueSize();
 	}
@@ -233,7 +235,7 @@ EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 EisGeneratorDataset* EisGeneratorDataset::newDefaultDataset(int64_t outputSize, int64_t desiredSize, double noise, bool inductivity)
 {
 	assert(outputSize > 2);
-	assert(desiredSize > 1000);
+	assert(desiredSize > 10);
 	EisGeneratorDataset* dataset = new EisGeneratorDataset(rCircuitsData, rCircuitsSize, desiredSize, outputSize, noise, inductivity);
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
