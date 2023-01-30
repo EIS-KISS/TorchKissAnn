@@ -29,7 +29,7 @@ endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 find_package(Torch REQUIRED)
 find_package(Armadillo)
 
-if(DEFINED Armadillo_FOUND)
+if(DEFINED ARMADILLO_LIBRARIES)
 	message("DRT support enabled")
 	set(SRC_FILES ${SRC_FILES}
 		drt/base_funcs.cpp
