@@ -25,10 +25,7 @@ public:
 
 class SimpleNet : public Net
 {
-	torch::nn::Linear fc1{nullptr};
-	torch::nn::Linear fc2{nullptr};
-	torch::nn::Linear fc3{nullptr};
-	torch::nn::Linear fc4{nullptr};
+	torch::nn::Sequential model;
 
 public:
 	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, bool leakI = false, size_t downsampleSteps = 4, size_t extraSteps = 3);

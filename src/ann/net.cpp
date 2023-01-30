@@ -24,30 +24,30 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
 Net(inputSizeI, outputSizeI, leakI)
 {
-	fc1 = register_module("fc1", torch::nn::Linear(inputSize, inputSize/2));
-	fc2 = register_module("fc2", torch::nn::Linear(inputSize/2, inputSize/4));
-	fc3 = register_module("fc3", torch::nn::Linear(inputSize/4, outputSize*4));
-	fc4 = register_module("fc4", torch::nn::Linear(outputSize*4, outputSize));
+	register_module("SimpleModel", model);
+
+	std::pair<size_t, size_t> sizes = layerWidthFunction(0, downsampleSteps, inputSize, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.first));
+	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+	for(size_t i = 0; i < downsampleSteps-1; ++i)
+	{
+		sizes = layerWidthFunction(i, downsampleSteps, inputSize, outputSize);
+		model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+		if(leak)
+			model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+		else
+			model->push_back(torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)));
+		/*if(i % 2 == 0)
+			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.42)));*/
+	}
+	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
+	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
+	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
 }
 
 torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 {
-	torch::nn::functional::LeakyReLUFuncOptions leakyOptions;
-	leakyOptions = leakyOptions.negative_slope(0.2).inplace(true);
-
-	x = torch::relu(fc1->forward(x));
-	x = torch::dropout(x, /*p=*/0.5, /*train=*/is_training());
-	if(leak)
-		x = torch::nn::functional::leaky_relu(fc2->forward(x), leakyOptions);
-	else
-		x = torch::relu(fc2->forward(x));
-	x = torch::dropout(x, /*p=*/0.1, /*train=*/is_training());
-	if(leak)
-		x = torch::nn::functional::leaky_relu(fc3->forward(x), leakyOptions);
-	else
-		x = torch::relu(fc3->forward(x));
-	x = torch::log_softmax(fc4->forward(x), 1);
-	return x;
+	return model->forward(x);
 }
 
 ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
@@ -102,7 +102,6 @@ Net(inputSizeI, outputSizeI, leakI)
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
-
 }
 
 torch::Tensor ann::ConvNet::forward(torch::Tensor x)
