@@ -133,10 +133,10 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 	switch(mode)
 	{
 		case MODE_ANN:
-			output = ann::use(input, ann::load(networkFileName, DATA_WIDTH, outputSize, false, 4, extraLayers));
+			output = ann::use(input, ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers));
 			break;
 		case MODE_ANN_TEST:
-			output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, false, 4, extraLayers), exportDir, exportProb);
+			output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers), exportDir, exportProb);
 			break;
 		case MODE_NN:
 		{

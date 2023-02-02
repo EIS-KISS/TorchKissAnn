@@ -10,11 +10,10 @@ class Net : public torch::nn::Module
 protected:
 	const int64_t inputSize;
 	const int64_t outputSize;
-	const bool leak = false;
 
 public:
-	Net(int64_t inputSizeI = 100, int64_t outputSizeI = 6, bool leakI = false, size_t downsampleSteps = 4, size_t extraSteps = 3):
-	inputSize(inputSizeI), outputSize(outputSizeI), leak(leakI)
+	Net(int64_t inputSizeI, int64_t outputSizeI):
+	inputSize(inputSizeI), outputSize(outputSizeI)
 	{}
 
 	virtual torch::Tensor forward(torch::Tensor x) = 0;
@@ -28,7 +27,7 @@ class SimpleNet : public Net
 	torch::nn::Sequential model;
 
 public:
-	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, bool leakI = false, size_t downsampleSteps = 4, size_t extraSteps = 3);
+	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3);
 	virtual torch::Tensor forward(torch::Tensor x) override;
 };
 
@@ -37,7 +36,7 @@ class ConvNet : public Net
 	torch::nn::Sequential model;
 
 public:
-	ConvNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, bool leakI = false, size_t downsampleSteps = 4, size_t extraSteps = 3);
+	ConvNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3);
 	virtual torch::Tensor forward(torch::Tensor x) override;
 };
 

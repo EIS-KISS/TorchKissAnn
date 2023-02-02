@@ -21,24 +21,27 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 	return std::pair<size_t, size_t>(layerIn, layerOut);
 }
 
-ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
-Net(inputSizeI, outputSizeI, leakI)
+ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleSteps, size_t extraSteps):
+Net(inputSizeI, outputSizeI)
 {
 	register_module("SimpleModel", model);
 
 	std::pair<size_t, size_t> sizes = layerWidthFunction(0, downsampleSteps, inputSize, outputSize);
-	model->push_back(torch::nn::Linear(sizes.first, sizes.first));
+	torch::nn::Linear linear(sizes.first, sizes.first);
+	torch::nn::init::xavier_uniform_(linear->weight);
+	model->push_back(linear);
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 	for(size_t i = 0; i < downsampleSteps-1; ++i)
 	{
 		sizes = layerWidthFunction(i, downsampleSteps, inputSize, outputSize);
-		model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-		if(leak)
-			model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-		else
-			model->push_back(torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)));
+		torch::nn::Linear linear(sizes.first, sizes.second);
+		torch::nn::init::xavier_uniform_(linear->weight);
+		model->push_back(linear);
+		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.1).inplace(true)));
 		/*if(i % 2 == 0)
-			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.42)));*/
+			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.1)));*/
+		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(0.5).momentum(0.1).affine(false));
+		model->push_back(bn);
 	}
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
@@ -50,8 +53,8 @@ torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 	return model->forward(x);
 }
 
-ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, bool leakI, size_t downsampleSteps, size_t extraSteps):
-Net(inputSizeI, outputSizeI, leakI)
+ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleSteps, size_t extraSteps):
+Net(inputSizeI, outputSizeI)
 {
 	int64_t size = inputSize;
 	const int conv1Kernel = inputSize/5;
@@ -81,7 +84,7 @@ Net(inputSizeI, outputSizeI, leakI)
 	size = size*6;
 	//model->push_back(SeqPrint());
 
-	//3 fully connected layers
+	//fully connected layers
 	std::pair<size_t, size_t> sizes;
 	for(size_t i = 0; i < downsampleSteps-1; ++i)
 	{

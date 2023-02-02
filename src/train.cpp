@@ -138,14 +138,14 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		{
 			std::shared_ptr<ann::Net> net;
 			std::string outputFileName("net");
-			if(MODE_ANN_CONV)
+			if(config.mode == MODE_ANN_CONV)
 			{
-				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), false, 4, config.extraLayers));
+				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
 				outputFileName.append("Conv");
 			}
 			else
 			{
-				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), false, 4, config.extraLayers));
+				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
 			}
 			outputFileName.append(std::to_string(dataset->classesCount()));
 			outputFileName.push_back('_');

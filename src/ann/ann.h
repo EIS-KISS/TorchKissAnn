@@ -16,8 +16,7 @@
 namespace ann
 {
 
-std::shared_ptr<Net> load(const std::string& fileName = "net.vos", int64_t inputSize = 100, int64_t outputSize = 6,
-						  bool leak = false, size_t downsampleSteps = 4, size_t extraSteps = 3);
+std::shared_ptr<Net> load(const std::string& fileName, int64_t inputSize, int64_t outputSize, size_t downsampleSteps, size_t extraSteps);
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 

@@ -3,11 +3,10 @@
 
 using namespace ann;
 
-std::shared_ptr<Net> ann::load(const std::string& fileName, int64_t inputSize, int64_t outputSize,
-						  bool leak, size_t downsampleSteps, size_t extraSteps)
+std::shared_ptr<Net> ann::load(const std::string& fileName, int64_t inputSize, int64_t outputSize, size_t downsampleSteps, size_t extraSteps)
 {
-	std::shared_ptr<SimpleNet> simpleNet(new SimpleNet(inputSize, outputSize, leak, downsampleSteps, extraSteps));
-	std::shared_ptr<ConvNet> convNet(new ConvNet(inputSize, outputSize, leak, downsampleSteps, extraSteps));
+	std::shared_ptr<SimpleNet> simpleNet(new SimpleNet(inputSize, outputSize, downsampleSteps, extraSteps));
+	std::shared_ptr<ConvNet> convNet(new ConvNet(inputSize, outputSize, downsampleSteps, extraSteps));
 
 	try
 	{
