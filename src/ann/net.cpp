@@ -66,7 +66,9 @@ Net(inputSizeI, outputSizeI)
 
 	//conv part
 	//model->push_back(SeqPrint());
-	model->push_back(torch::nn::Conv1d(torch::nn::Conv1dOptions(1, 3, conv1Kernel).stride(1).bias(false)));
+	torch::nn::Conv1d conv1d0(torch::nn::Conv1dOptions(1, 3, conv1Kernel).stride(1).bias(false));
+	torch::nn::init::xavier_uniform_(conv1d0->weight);
+	model->push_back(conv1d0);
 	size = size-conv1Kernel+1;
 	//model->push_back(SeqPrint());
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
@@ -88,6 +90,9 @@ Net(inputSizeI, outputSizeI)
 	std::pair<size_t, size_t> sizes;
 	for(size_t i = 0; i < downsampleSteps-1; ++i)
 	{
+		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(0.5).momentum(0.1).affine(false));
+		model->push_back(bn);
+
 		sizes = layerWidthFunction(i, downsampleSteps, size, outputSize);
 		model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
