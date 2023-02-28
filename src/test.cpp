@@ -21,6 +21,7 @@
 #include "utils/tensoroperators.h"
 #include "data/loaders/deduploader.h"
 #include "drt/drt.h"
+#include "data/loaders/dirloader.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -102,7 +103,7 @@ void testDrt()
 
 bool testEisGeneratorDataset()
 {
-	EisGeneratorDataset* dataset = EisGeneratorDataset::newDefaultDataset(100, 0, false);
+	EisGeneratorDataset* dataset = EisGeneratorDataset::newDefaultDataset(100, 1e3, 0, false);
 	Log(Log::INFO)<<__func__<<" size: "<<dataset->size().value();
 	Log(Log::INFO)<<__func__<<" classes: "<<dataset->classesCount();
 
@@ -110,8 +111,25 @@ bool testEisGeneratorDataset()
 	return true;
 }
 
+bool reexportDirDataset()
+{
+	EisDirDataset dataset("realDataset/train");
+	Log(Log::INFO)<<__func__<<" size: "<<dataset.size().value();
+	Log(Log::INFO)<<__func__<<" classes: "<<dataset.classesCount();
+	torch::Tensor classCounts = dataset.classCounts();
+	for(size_t i = 0; i < dataset.classesCount(); ++i)
+		Log(Log::INFO)<<__func__<<" class "<<i<<", "<<classCounts[i].item().to<int64_t>()<<" examples: "<<dataset.modelStringForClass(i);
+	bool ret = saveDataset<EisDirDataset>("datasetexport", &dataset);
+	if(!ret)
+		Log(Log::ERROR)<<__func__<<" could not save dataset";
+	return ret;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
-	testEisGeneratorDataset();
+
+	//testEisGeneratorDataset();
+	//reexportDirDataset();
+	return 0;
 }
