@@ -38,8 +38,8 @@ Net(inputSizeI, outputSizeI)
 		torch::nn::init::xavier_uniform_(linear->weight);
 		model->push_back(linear);
 		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.1).inplace(true)));
-		/*if(i % 2 == 0)
-			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.1)));*/
+		if(i % 2 == 0)
+			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.2)));
 		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(0.5).momentum(0.1).affine(false));
 		model->push_back(bn);
 	}
