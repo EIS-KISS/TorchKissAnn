@@ -88,7 +88,7 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 			continue;
 
 		if(inductivity)
-			workModelStr.insert(0, std::string("l{5e-7}-"));
+			workModelStr.insert(0, std::string("l{5e-6}-"));
 
 		Log(Log::DEBUG, false)<<__func__<<" adding model "<<workModelStr<<" attempting to give "<<sizePerModel<<" examples ";
 
@@ -199,12 +199,23 @@ size_t EisGeneratorDataset::trueSize() const
 
 torch::Tensor EisGeneratorDataset::classWeights()
 {
+	torch::Tensor output = classCounts();
+	int64_t count = trueSize();
+
+	output = output/static_cast<double>(count);
+	output = torch::min(output)/output;
+
+	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
+	return output;
+}
+
+torch::Tensor EisGeneratorDataset::classCounts()
+{
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
-	int64_t count = trueSize();
 	for(size_t i = 0; i < models.size(); ++i)
 	{
 		auto iterator = std::find(modelStrings.begin(), modelStrings.end(), models[i].getModelStr());
@@ -213,11 +224,6 @@ torch::Tensor EisGeneratorDataset::classWeights()
 		size_t classNum = std::distance(modelStrings.begin(), iterator);
 		output[classNum] = output[classNum] + static_cast<int64_t>(modelSweepSizes[i]);
 	}
-
-	output = output/static_cast<double>(count);
-	output = torch::min(output)/output;
-
-	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	return output;
 }
 

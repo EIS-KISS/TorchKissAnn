@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <assert.h>
 #include <eisgenerator/eistype.h>
+#include <eisgenerator/translators.h>
 
 #include "mpt.h"
 #include "../print.h"
@@ -13,30 +14,36 @@
 
 using namespace eis;
 
-EisDirDataset::EisDirDataset(const std::string& dirName, const std::string& prefix,
-                             FileType fileTypeI,  const std::string& extension, int64_t outputSizeI):
-fileType(fileTypeI), outputSize(outputSizeI)
+EisDirDataset::EisDirDataset(const std::string& dirName, int64_t outputSizeI):
+outputSize(outputSizeI)
 {
 	const std::filesystem::path directoryPath{dirName};
+	if(!std::filesystem::is_directory(dirName))
+	{
+		Log(Log::WARN)<<dirName<<" is not a valid directory";
+		return;
+	}
+
 	for(const std::filesystem::directory_entry& dirent : std::filesystem::directory_iterator{directoryPath})
 	{
-		std::string fileName = dirent.path().filename();
-		std::cout<<fileName;
-		if(extension != "*" && extension != dirent.path().extension())
+		if(!dirent.is_regular_file() || dirent.path().extension() != ".csv")
 			continue;
-		if(dirent.is_regular_file() && fileName.size() > prefix.size() && fileName.find(prefix) == 0)
+		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();
+		eis::EisSpectra spectra = eis::loadFromDisk(dirent.path());
+		purgeEisParamBrackets(spectra.model);
+		auto search = std::find(modelStrs.begin(), modelStrs.end(), spectra.model);
+		size_t index;
+		if(search == modelStrs.end())
 		{
-			fileName.erase(fileName.begin(), fileName.begin()+prefix.size());
-			std::vector<std::string> tokens = tokenize(fileName, '_');
-			if(tokens.size() != 2)
-			{
-				Log(Log::WARN)<<"file "<<fileName<<" dosent correspond to the required prefixCircut_*.extension sheme, skipping";
-				continue;
-			}
-			auto iteratorPair = modelStrs.insert(tokens[0]);
-			size_t index = std::distance(modelStrs.begin(), iteratorPair.first);
-			fileNames.push_back({dirent.path(), index});
+			index = modelStrs.size();
+			modelStrs.push_back(spectra.model);
+			Log(Log::DEBUG)<<"New model "<<index<<": "<<spectra.model;
 		}
+		else
+		{
+			index = search - modelStrs.begin();
+		}
+		fileNames.push_back({dirent.path(), index});
 	}
 	if(fileNames.size() < 20)
 		Log(Log::WARN)<<"found few valid files in "<<directoryPath;
@@ -57,45 +64,28 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::get(size_t ind
 	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(fileNames[index].classNum);
 
-	std::vector<eis::DataPoint> data;
+	eis::EisSpectra data;
 
-	switch(fileType)
+	try
 	{
-		case FILE_TYPE_CSV:
-			data = eis::loadFromDisk(fileNames[index].path).first;
-			break;
-		case FILE_TYPE_MPT:
-			data = loaders::mpt(fileNames[index].path);
-			break;
-		case FILE_TYPE_RELAXIS:
-		case FILE_TYPE_INVALID:
-		case FILE_TYPE_TRASH:
-		case FILE_TYPE_GAN:
-		default:
-			Log(Log::ERROR)<<"invalid file type "<<fileType<<" in "<<__func__;
-			assert(false);
-			break;
+		data = eis::loadFromDisk(fileNames[index].path);
 	}
-
-	if(data.empty())
+	catch(const eis::file_error& err)
 	{
+		Log(Log::WARN)<<"Can't load datafile from "<<fileNames[index].path<<' '<<err.what();
 		if(index != 0)
 		{
-			Log(Log::WARN)<<"Can't load datafile from "<<fileNames[index].path;
 			if(index+1 < size().value())
 				return get(index+1);
 			else
 				return get(0);
 		}
-		else
-		{
-			assert(false);
-		}
+		assert(false);
 	}
 
-	filterData(data, outputSize);
+	filterData(data.data, outputSize);
 
-	torch::Tensor input = eisToTorch(data);
+	torch::Tensor input = eisToTorch(data.data);
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
@@ -144,4 +134,17 @@ std::string EisDirDataset::modelStringForClass(size_t classNum)
 		return "invalid";
 	else
 		return *std::next(modelStrs.begin(), classNum);
+}
+
+torch::Tensor EisDirDataset::classCounts()
+{
+	torch::TensorOptions options;
+	options = options.dtype(torch::kFloat32);
+	options = options.layout(torch::kStrided);
+	options = options.device(torch::kCPU);
+	torch::Tensor out = torch::zeros({static_cast<int64_t>(classesCount())}, options);
+
+	for(const FileNameStr& file : fileNames)
+		out[file.classNum] = out[file.classNum] + 1;
+	return out;
 }

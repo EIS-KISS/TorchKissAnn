@@ -38,25 +38,18 @@ public:
 	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity);
 
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
-
-	virtual torch::Tensor classWeights() override;
-
+	void addModel(const eis::Model& model);
+	EisGeneratorDataset* getTestDataset();
+	size_t frequencies();
 	inline void setOmegaRange(eis::Range range){omega = range;}
 
-	void addModel(const eis::Model& model);
-
-	EisGeneratorDataset* getTestDataset();
-
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	virtual torch::Tensor classWeights() override;
+	virtual torch::Tensor classCounts() override;
 	virtual size_t classesCount() const override;
-	size_t frequencies();
-
 	virtual size_t classForIndex(size_t index) override;
-
 	virtual std::string modelStringForClass(size_t classNum) override;
+	virtual c10::optional<size_t> size() const override;
 
 	static EisGeneratorDataset* newDefaultDataset(int64_t outputSize, int64_t desiredSize, double noise = 0, bool inductivity = false);
-
-	virtual c10::optional<size_t> size() const override;
 };
