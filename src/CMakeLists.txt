@@ -10,7 +10,6 @@ set(SRC_FILES
 	utils/tokenize.cpp
 	utils/log.cpp
 	utils/randomgen.cpp
-	utils/losslog.cpp
 	utils/tensoroperators.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
@@ -27,6 +26,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 find_package(Torch REQUIRED)
+find_package(tensorboard_logger REQUIRED)
 find_package(Armadillo)
 
 if(DEFINED ARMADILLO_LIBRARIES)
@@ -41,8 +41,8 @@ else()
 	message("DRT support disabled")
 endif(DEFINED ARMADILLO_LIBRARIES)
 
-set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} -leisgenerator)
-set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS})
+set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} -ltensorboard_logger -leisgenerator)
+set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS} ${TENSORBOARD_LOGGER_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-std=c++2a -Wall -O2 -march=native -g -Wfatal-errors")
 
 message("Linking: " "${COMMON_LINK_LIBRARIES}")
@@ -54,6 +54,7 @@ target_include_directories(${PROJECT_NAME}_common PUBLIC ${COMMON_INCLUDE_DIRECT
 set_target_properties(${PROJECT_NAME}_common PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
 target_precompile_headers(${PROJECT_NAME}_common PRIVATE torchph.h)
 target_compile_definitions(${PROJECT_NAME}_common PRIVATE DRT_ENABLED)
+target_compile_definitions(${PROJECT_NAME}_common PRIVATE "_XOPEN_SOURCE")
 
 add_executable(${PROJECT_NAME} main.cpp)
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}_common)
@@ -61,12 +62,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${COMMON_INCLUDE_DIRECTORYS} .
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
 target_precompile_headers(${PROJECT_NAME} REUSE_FROM ${PROJECT_NAME}_common)
 target_compile_definitions(${PROJECT_NAME} PRIVATE DRT_ENABLED)
+target_compile_definitions(${PROJECT_NAME} PRIVATE "_XOPEN_SOURCE")
 
 add_executable(${PROJECT_NAME}_train train.cpp)
 target_link_libraries(${PROJECT_NAME}_train ${PROJECT_NAME}_common)
 target_include_directories(${PROJECT_NAME}_train PUBLIC ${COMMON_INCLUDE_DIRECTORYS} .)
 set_target_properties(${PROJECT_NAME}_train PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
 target_precompile_headers(${PROJECT_NAME}_train REUSE_FROM ${PROJECT_NAME}_common)
+target_compile_definitions(${PROJECT_NAME}_train PRIVATE "_XOPEN_SOURCE")
 target_compile_definitions(${PROJECT_NAME}_train PRIVATE DRT_ENABLED)
 
 add_executable(${PROJECT_NAME}_test test.cpp)
@@ -75,6 +78,7 @@ target_include_directories(${PROJECT_NAME}_test PUBLIC ${COMMON_INCLUDE_DIRECTOR
 set_target_properties(${PROJECT_NAME}_test PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
 target_precompile_headers(${PROJECT_NAME}_test  REUSE_FROM ${PROJECT_NAME}_common)
 target_compile_definitions(${PROJECT_NAME}_test PRIVATE DRT_ENABLED)
+target_compile_definitions(${PROJECT_NAME}_test PRIVATE "_XOPEN_SOURCE")
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 install(TARGETS ${PROJECT_NAME}_train RUNTIME DESTINATION bin)
