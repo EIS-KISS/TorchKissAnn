@@ -10,6 +10,7 @@
 #include "gan/gan.h"
 #include "log.h"
 #include "data/print.h"
+#include "data/splitdataset.h"
 #include "data/generators/eisgendata.h"
 #include "data/generators/trashgenerator.h"
 #include "data/generators/extendordataset.h"
@@ -20,20 +21,37 @@
 template <typename DataSetType>
 int train(const Config& config);
 
+template <typename DataSetType>
+void trainWithSplitDataset(const Config& config, DataSetType* dataset);
+
 template <typename DataSetType, typename TestDataSetType = DataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
 
+template <typename DataSetType>
+void trainWithSplitDataset(const Config& config, DataSetType* dataset)
+{
+	std::pair<SplitDataset<DataSetType>, SplitDataset<DataSetType>> datasets = createSplitDataset<DataSetType>(dataset, 0.1);
+	trainSwitch<SplitDataset<DataSetType>, SplitDataset<DataSetType>>(config, &datasets.first, &datasets.second);
+}
+
 template <> int train<FastDedupDataset>(const Config& config)
 {
-	FastDedupDataset dataset(config.fileName);
+	FastDedupDataset* dataset = new FastDedupDataset(config.fileName);
 
-	if(!dataset.isOpen())
+	if(!dataset->isOpen())
 	{
 		Log(Log::ERROR)<<"Could not load fast deduplicator dataset from "<<config.fileName;
 		return 1;
 	}
 
-	trainSwitch<FastDedupDataset>(config, &dataset, &dataset);
+	if(!config.testFileName.empty())
+	{
+		Log(Log::WARN)<<"a seperate test dataset cant be used with EisDirDataset,"
+			<<"instead 25% of the training dataset is automaticly used as a testing datastet";
+	}
+
+	trainWithSplitDataset<FastDedupDataset>(config, dataset);
+	delete dataset;
 	return 0;
 }
 
@@ -61,6 +79,10 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	}
 
 	trainSwitch<EisGeneratorDataset>(config, dataset, testDataset);
+
+	delete dataset;
+	if(testDataset)
+		delete testDataset;
 	return 0;
 }
 
@@ -102,7 +124,6 @@ template <> int train<EisDirDataset>(const Config& config)
 	return 0;
 }
 
-//
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
