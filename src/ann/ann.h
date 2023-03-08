@@ -23,9 +23,11 @@ torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 template <typename DatasetType>
 void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
 
-torch::Tensor testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir = "", double exportProb = 0);
-
 torch::Tensor multiClassHits(const torch::Tensor& prediction, torch::Tensor targets, double thresh = 0.5);
+
+void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
+						 const torch::Tensor& hits, const std::filesystem::path& outDir,
+						 bool outputProb);
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
@@ -79,12 +81,6 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 	}
 }
 
-static const std::string getSampleOutputFileName(const std::string& dir, bool succ, int classNum)
-{
-	return dir + (succ ? std::string("/succ_") : std::string("/fail_")) +
-			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid()) + ".spc";
-}
-
 template <typename DataLoader>
 torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
 				   int64_t classesCount, torch::Tensor classWeights, bool isMulticlass, const std::string& outputDir = "",
@@ -96,6 +92,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 	torch::Tensor classAcc = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
 	torch::Tensor classCount = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor histograms = torch::zeros({classesCount, classesCount}, torch::TensorOptions().dtype(torch::kInt64));
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -123,36 +120,28 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		assert(!std::isnan(loss.template item<float>()));
 
 		torch::Tensor hits = multiClassHits(output, targets, 0.25);
+		torch::Tensor acc = hits.sum();
+
+		if(!outputDir.empty())
+			exportRandomSamples(data, targets, hits, outputDir, outputProb);
 
 		for(int i = 0; i < hits.size(0); ++i)
 		{
 			if(hits[i].template item<int>() > 0)
-			{
 				classAcc += targets[i];
-				if(outputProb > 0 && rd::rand() < (outputProb/10) && !outputDir.empty())
-				{
-					for(int64_t j = 0; j < targets[i].size(0); ++j)
-					{
-						if((targets[i][j].template item<int64_t>()) == 1)
-							eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outputDir, true, j));
-					}
-				}
-			}
-			else if(outputProb > 0 && rd::rand() < outputProb && !outputDir.empty())
-			{
-				for(int64_t j = 0; j < targets[i].size(0); ++j)
-				{
-					if((targets[i][j].template item<int64_t>()) == 1)
-						eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outputDir, false, j));
-				}
-			}
 			classCount += targets[i];
+
+			histograms[targets.select(0, i).argmax()] = histograms[targets.select(0, i).argmax()] + output.select(0, i);
 		}
-		torch::Tensor acc = hits.sum();
 
 		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();
 	}
+
+	TensorLog histogramLog("classHistograms");
+	for(int i = 0; i < histograms.size(0); ++i)
+		histogramLog.log(histograms.select(0, i));
+
 	classAcc = classAcc/classCount;
 	std::cout<<"Test class acc:\n"<<classAcc<<'\n';
 	std::cout<<"Test Loss: "<<(Loss / data_size)*100<< "\tAcc: " <<Acc / data_size<< std::endl;

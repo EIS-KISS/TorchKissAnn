@@ -92,14 +92,15 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 
 		Log(Log::DEBUG, false)<<__func__<<" adding model "<<workModelStr<<" attempting to give "<<sizePerModel<<" examples ";
 
-		Model model(workModelStr);
-		if(!model.isReady())
+		std::shared_ptr<eis::Model> model(new eis::Model(workModelStr));
+		if(!model->isReady())
 		{
 			Log(Log::WARN)<<__func__<<" invalid model string "<<workModelStr;
 			continue;
 		}
-		model.setParamSweepCountClosestTotal(sizePerModel);
-		Log(Log::DEBUG)<<"got "<<model.getRequiredStepsForSweeps();
+		if(model->getRequiredStepsForSweeps() > 1)
+			model->setParamSweepCountClosestTotal(sizePerModel);
+		Log(Log::DEBUG)<<"got "<<model->getRequiredStepsForSweeps();
 
 		addModel(model);
 	}
@@ -108,17 +109,42 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 	{
 		repetitionCount = desiredSize/trueSize();
 	}
+
+	size_t single = singleSweepCount();
+	Log(Log::DEBUG)<<__func__<<" dataset now has "<<trueSize()<<" examples from "<<single
+		<<" single sweep models and "<<(models.size()-single)<<" regular models and a repetition count of "<<repetitionCount;
 }
 
 void EisGeneratorDataset::addModel(const eis::Model& model)
 {
-	models.push_back(model);
-	modelSweepSizes.push_back(models.back().getRequiredStepsForSweeps());
-	std::vector<std::string>::iterator iterator = std::find(modelStrings.begin(), modelStrings.end(), models.back().getModelStr());
+	std::shared_ptr<eis::Model> modelPtr(new eis::Model(model));
+	addModel(modelPtr);
+}
+
+void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model)
+{
+	ModelData modelData;
+
+	size_t steps = model->getRequiredStepsForSweeps();
+	const std::string modelStr = model->getModelStr();
+
+	if(steps == 1)
+	{
+		modelData.isSingleSweep = true;
+		modelData.singleModelParamString = model->getModelStrWithParam();
+	}
+	else
+	{
+		modelData.model = model;
+		modelData.isSingleSweep = false;
+	}
+	modelData.sweepSize = steps;
+
+	std::vector<std::string>::iterator iterator = std::find(modelStrings.begin(), modelStrings.end(), modelStr);
 	size_t index;
 	if(iterator == modelStrings.end())
 	{
-		modelStrings.push_back(models.back().getModelStr());
+		modelStrings.push_back(modelStr);
 		index = modelStrings.size()-1;
 	}
 	else
@@ -126,7 +152,8 @@ void EisGeneratorDataset::addModel(const eis::Model& model)
 		index = std::distance(modelStrings.begin(), iterator);
 	}
 
-	modelClasses.push_back(index);
+	modelData.classNum = index;
+	models.push_back(modelData);
 }
 
 std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index) const
@@ -134,10 +161,10 @@ std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t 
 	size_t model = 0;
 	for(; model < models.size(); ++model)
 	{
-		if(index < modelSweepSizes[model])
+		if(index < models[model].sweepSize)
 			break;
 		else
-			index -= modelSweepSizes[model];
+			index -= models[model].sweepSize;
 	}
 
 	return std::pair<size_t, size_t>(model, index);
@@ -147,7 +174,21 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 {
 	index = index % trueSize();
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
-	std::vector<eis::DataPoint> data = models[modelAndOffset.first].executeSweep(omega, modelAndOffset.second);
+
+	std::vector<eis::DataPoint> data;
+	if(!models[modelAndOffset.first].isSingleSweep)
+	{
+		data = models[modelAndOffset.first].model->executeSweep(omega, modelAndOffset.second);
+	}
+	else
+	{
+		if(models[modelAndOffset.first].data.size() == 0)
+		{
+			eis::Model model(models[modelAndOffset.first].singleModelParamString);
+			models[modelAndOffset.first].data = model.executeSweep(omega);
+		}
+		data = models[modelAndOffset.first].data;
+	}
 
 	assert(data.size());
 	filterData(data, omega.count*2);
@@ -169,7 +210,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt8);
 	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(modelClasses[modelAndOffset.first]);
+	output[0] = static_cast<float>(models[modelAndOffset.first].classNum);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
@@ -193,7 +234,7 @@ size_t EisGeneratorDataset::trueSize() const
 {
 	size_t size = 0;
 	for(size_t i = 0; i < models.size(); ++i)
-		size += modelSweepSizes[i];
+		size += models[i].sweepSize;
 	return size;
 }
 
@@ -217,20 +258,14 @@ torch::Tensor EisGeneratorDataset::classCounts()
 	options = options.device(torch::kCPU);
 	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
 	for(size_t i = 0; i < models.size(); ++i)
-	{
-		auto iterator = std::find(modelStrings.begin(), modelStrings.end(), models[i].getModelStr());
-		assert(iterator != modelStrings.end());
-
-		size_t classNum = std::distance(modelStrings.begin(), iterator);
-		output[classNum] = output[classNum] + static_cast<int64_t>(modelSweepSizes[i]);
-	}
+		output[models[i].classNum] = output[models[i].classNum] + static_cast<int64_t>(models[i].sweepSize);
 	return output;
 }
 
 size_t EisGeneratorDataset::classForIndex(size_t index)
 {
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
-	return modelClasses[modelAndOffset.first];
+	return models[modelAndOffset.first].classNum;
 }
 
 EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
@@ -254,4 +289,25 @@ std::string EisGeneratorDataset::modelStringForClass(size_t classNum)
 		return "invalid";
 	else
 		return modelStrings[classNum];
+}
+
+void EisGeneratorDataset::setOmegaRange(eis::Range range)
+{
+	omega = range;
+	for(ModelData& model : models)
+	{
+		if(model.isSingleSweep)
+			model.data.clear();
+	}
+}
+
+size_t EisGeneratorDataset::singleSweepCount()
+{
+	size_t count = 0;
+	for(ModelData& model : models)
+	{
+		if(model.isSingleSweep)
+			++count;
+	}
+	return count;
 }

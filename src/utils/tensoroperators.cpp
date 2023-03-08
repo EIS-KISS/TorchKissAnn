@@ -1,4 +1,7 @@
 #include "tensoroperators.h"
+
+#include <fstream>
+
 #include "log.h"
 
 torch::Tensor toeplitz(const torch::Tensor& b, const torch::Tensor a)
@@ -53,5 +56,70 @@ torch::Tensor unargmax(const torch::Tensor& in, int64_t size)
 		multiClassTargets[i][in[i].template item<int64_t>()] = 1;
 	}
 	return multiClassTargets;
+}
+
+template<typename DataType>
+static void save2dTensorToCsv(const torch::Tensor& tensor, std::fstream& file)
+{
+	auto tensorAcesssor = tensor.accessor<DataType, 2>();
+	for(int i = 0; i < tensorAcesssor.size(0); ++i)
+	{
+		for(int j = 0; j < tensorAcesssor.size(1); ++j)
+		{
+			file<<tensorAcesssor[i][j];
+			if(j+1 < tensorAcesssor.size(1))
+				file<<", ";
+		}
+		file<<'\n';
+	}
+}
+
+template<typename DataType>
+static void save1dTensorToCsv(const torch::Tensor& tensor, std::fstream& file)
+{
+	auto tensorAcesssor = tensor.accessor<DataType, 1>();
+
+	for(int i = 0; i < tensorAcesssor.size(0); ++i)
+	{
+		file<<tensorAcesssor[i];
+		if(i+1 < tensorAcesssor.size(0))
+			file<<", ";
+	}
+	file<<'\n';
+}
+
+bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& tensor, const std::string& name)
+{
+	std::fstream file;
+	file.open(path, std::ios_base::out);
+	if(!file.is_open())
+	{
+		Log(Log::ERROR)<<"can not open "<<path<<" for writing\n";
+		return false;
+	}
+
+	file<<std::scientific;
+	file<<name<<'\n';
+	if(tensor.dim() == 2)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			save2dTensorToCsv<float>(tensor, file);
+		else
+			save2dTensorToCsv<int64_t>(tensor, file);
+	}
+	else if(tensor.dim() == 1)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			save1dTensorToCsv<float>(tensor, file);
+		else
+			save1dTensorToCsv<int64_t>(tensor, file);
+	}
+	else if(tensor.dim() == 1)
+	{
+		Log(Log::ERROR)<<"can not save "<<tensor.dim()<<" dimentional tensor\n";
+		return false;
+	}
+	file.close();
+	return true;
 }
 

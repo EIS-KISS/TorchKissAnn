@@ -9,6 +9,7 @@ set(SRC_FILES
 	data/print.cpp
 	utils/tokenize.cpp
 	utils/log.cpp
+	utils/losslog.cpp
 	utils/randomgen.cpp
 	utils/tensoroperators.cpp
 	gan/networks.cpp
@@ -41,8 +42,8 @@ else()
 	message("DRT support disabled")
 endif(DEFINED ARMADILLO_LIBRARIES)
 
-set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} -ltensorboard_logger -leisgenerator)
-set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS} ${TENSORBOARD_LOGGER_INCLUDE_DIRS})
+set(COMMON_LINK_LIBRARIES ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} eisgenerator)
+set(COMMON_INCLUDE_DIRECTORYS ${TORCH_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-std=c++2a -Wall -O2 -march=native -g -Wfatal-errors")
 
 message("Linking: " "${COMMON_LINK_LIBRARIES}")

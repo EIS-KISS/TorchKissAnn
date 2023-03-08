@@ -49,7 +49,7 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 		case FILE_TYPE_CSV:
 			try
 			{
-				return eis::loadFromDisk(fileName).first;
+				return eis::loadFromDisk(fileName).data;
 			}
 			catch(const eis::file_error& ex)
 			{
@@ -136,7 +136,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 			output = ann::use(input, ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers));
 			break;
 		case MODE_ANN_TEST:
-			output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers), exportDir, exportProb);
+			//output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers), exportDir, exportProb);
 			break;
 		case MODE_NN:
 		{
@@ -181,7 +181,7 @@ int main(int argc, char** argv)
 		if(config.reexport)
 		{
 			torch::Tensor input = eisToTorch(data);
-			eis::saveToDisk(torchToEis(input), "export.txt");
+			eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
 			return 0;
 		}
 	}

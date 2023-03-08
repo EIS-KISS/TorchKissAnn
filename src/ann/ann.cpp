@@ -59,14 +59,37 @@ torch::Tensor ann::use(torch::Tensor input, std::shared_ptr<Net> net)
 	return output;
 }
 
-torch::Tensor ann::testOnGenNeis(std::shared_ptr<Net> net, std::string outputDir, double exportProb)
+
+static const std::string getSampleOutputFileName(const std::string& dir, bool succ, int classNum)
 {
-	EisGeneratorDataset* testDataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 13e4);
-	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()),
-														torch::data::DataLoaderOptions().batch_size(BATCH_SIZE).workers(16));
+	return dir + (succ ? std::string("/succ_") : std::string("/fail_")) +
+			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid()) + ".spc";
+}
 
-	net->eval();
-
-	return test(net, *testDataLoader, testDataset->size().value(), testDataset->classesCount(),
-				testDataset->classWeights(), false, outputDir, exportProb);
+void ann::exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
+						 const torch::Tensor& hits, const std::filesystem::path& outDir,
+						 bool outputProb)
+{
+	for(int i = 0; i < hits.size(0); ++i)
+	{
+		if(hits[i].template item<int>() > 0)
+		{
+			if(outputProb > 0 && rd::rand() < (outputProb/10))
+			{
+				for(int64_t j = 0; j < targets[i].size(0); ++j)
+				{
+					if((targets[i][j].template item<int64_t>()) == 1)
+						eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outDir, true, j));
+				}
+			}
+		}
+		else if(outputProb > 0 && rd::rand() < outputProb)
+		{
+			for(int64_t j = 0; j < targets[i].size(0); ++j)
+			{
+				if((targets[i][j].template item<int64_t>()) == 1)
+					eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outDir, false, j));
+			}
+		}
+	}
 }

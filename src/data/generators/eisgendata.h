@@ -9,19 +9,30 @@
 #include <data/eisdataset.h>
 #include <set>
 #include <filesystem>
+#include <memory>
 
 class EisGeneratorDataset :
 public EisDataset<EisGeneratorDataset>
 {
+	struct ModelData
+	{
+		std::shared_ptr<eis::Model> model;
+		size_t sweepSize;
+		size_t classNum;
+
+		bool isSingleSweep;
+		std::string singleModelParamString;
+		std::vector<eis::DataPoint> data;
+	};
+
 public:
 	static constexpr bool PRINT = false;
 	static constexpr size_t DEFAULT_EXAMPLE_COUNT = 1e8;
 
 private:
-	std::vector<eis::Model> models;
-	std::vector<size_t> modelClasses;
+	std::vector<ModelData> models;
 	std::vector<std::string> modelStrings;
-	std::vector<size_t> modelSweepSizes;
+
 	eis::Range omega;
 	double noise;
 	size_t repetitionCount = 1;
@@ -39,9 +50,11 @@ public:
 
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 	void addModel(const eis::Model& model);
+	void addModel(std::shared_ptr<eis::Model> model);
 	EisGeneratorDataset* getTestDataset();
 	size_t frequencies();
-	inline void setOmegaRange(eis::Range range){omega = range;}
+	void setOmegaRange(eis::Range range);
+	size_t singleSweepCount();
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 	virtual torch::Tensor classWeights() override;
