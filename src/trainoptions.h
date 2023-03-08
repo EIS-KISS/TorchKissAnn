@@ -128,6 +128,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 't':
 			config->testFileName.assign(arg);
+			break;
 		case 'x':
 			if(arg)
 				config->noise = std::stod(std::string(arg));
@@ -161,7 +162,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	}
 	catch(const std::invalid_argument& ex)
 	{
-		std::cout<<arg<<" passed for argument -"<<key<<" is not a valid number.";
+		std::cout<<arg<<" passed for argument -"<<static_cast<char>(key)<<" is not a valid number.\n";
 		return ARGP_KEY_ERROR;
 	}
 	return 0;

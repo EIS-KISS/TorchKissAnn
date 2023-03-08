@@ -12,6 +12,7 @@
 #include "data/print.h"
 #include "data/generators/eisgendata.h"
 #include "data/generators/trashgenerator.h"
+#include "data/generators/extendordataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
 #include "trainoptions.h"
@@ -65,15 +66,14 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 
 template <> int train<EisDirDataset>(const Config& config)
 {
-	if(config.fileName.empty() || std::filesystem::is_directory(config.fileName))
+	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
 	{
 		Log(Log::ERROR)<<"A valid directory must be specified in conbination with the dir dataset";
 		return 1;
 	}
 
-	EisDirDataset dataset(config.fileName, "csv", FILE_TYPE_CSV);
-	EisGeneratorDataset* testDataset =
-		EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.noise, true);
+	EisDirDataset dataset(config.fileName);
+	EisDirDataset* testDataset = nullptr;
 
 	if(dataset.size().value() == 0)
 	{
@@ -81,7 +81,24 @@ template <> int train<EisDirDataset>(const Config& config)
 		return 2;
 	}
 
-	trainSwitch<EisDirDataset, EisGeneratorDataset>(config, &dataset, testDataset);
+	if(!config.testFileName.empty())
+	{
+		testDataset = new EisDirDataset(config.testFileName);
+		if(dataset.classesCount() != testDataset->classesCount())
+		{
+			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
+				<<"The traing dataset has "<<dataset.classesCount()
+				<<" and the test dataset has "<<testDataset->classesCount();
+			return 1;
+		}
+	}
+
+	ExtendorDataset<EisDirDataset> datasetExtended(&dataset, 4);
+
+	trainSwitch<ExtendorDataset<EisDirDataset>, EisDirDataset>(config, &datasetExtended, testDataset);
+
+	if(testDataset)
+		delete testDataset;
 	return 0;
 }
 
