@@ -134,7 +134,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 					for(int64_t j = 0; j < targets[i].size(0); ++j)
 					{
 						if((targets[i][j].template item<int64_t>()) == 1)
-							eis::saveToDisk(torchToEis(data.select(0, i)), getSampleOutputFileName(outputDir, true, j));
+							eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outputDir, true, j));
 					}
 				}
 			}
@@ -143,7 +143,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 				for(int64_t j = 0; j < targets[i].size(0); ++j)
 				{
 					if((targets[i][j].template item<int64_t>()) == 1)
-						eis::saveToDisk(torchToEis(data.select(0, i)), getSampleOutputFileName(outputDir, false, j));
+						eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outputDir, false, j));
 				}
 			}
 			classCount += targets[i];
