@@ -182,6 +182,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		meta.noise = config.noise;
 		meta.dataset = datasetModeToStr(config.datasetMode);
 		meta.datasetSize = dataset->size().value();
+		meta.trainingFile = config.fileName;
+		meta.testingFile = config.testFileName;
 		saveMetadata(meta);
 	}
 

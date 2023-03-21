@@ -2,6 +2,7 @@
 
 #include "log.h"
 #include "tensoroperators.h"
+#include "gitrev.h"
 
 #include <ctime>
 
@@ -38,9 +39,9 @@ void saveMetadata(const MetaData& meta)
 	if(file.is_open())
 	{
 		file<<std::scientific;
-		file<<"start time\t,model,\tnum classes,\tmulticlass,\tlearing rate,\textra layers,\t"
+		file<<"start time\t, git revision\t, model,\tnum classes,\tmulticlass,\tlearing rate,\textra layers,\t"
 			<<"noise,\tdataset,\tdataset size,\tdataset file,\ttesting dataset file\n";
-		file<<time(nullptr)<<",\t"<<meta.model<<",\t"<<meta.classNumber<<",\t"<<meta.multiClass<<",\t"<<meta.learingRate
+		file<<time(nullptr)<<",\t"<<git_sha<<",\t"<<meta.model<<",\t"<<meta.classNumber<<",\t"<<meta.multiClass<<",\t"<<meta.learingRate
 			<<",\t"<<meta.extraLayers<<",\t"<<meta.noise<<",\t"<<meta.dataset<<",\t"<<meta.datasetSize
 			<<",\t"<<meta.trainingFile<<",\t"<<meta.testingFile<<'\n';
 		file.close();

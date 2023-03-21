@@ -24,6 +24,7 @@ def plotHistrogramFromReport(filename):
             print(f"{filename} is not a valid histrogram file")
             return
         line = reader.__next__()
+        line = reader.__next__()
         lables = reader.__next__()
         lables[:] = [cell.strip() for cell in lables]
         line = reader.__next__()

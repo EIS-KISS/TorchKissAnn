@@ -128,7 +128,7 @@ bool reexportDirDataset()
 void testModelGrad()
 {
 	ann::SimpleNet net;
-	Log(Log::DEBUG)<<net[0].weights
+	//Log(Log::DEBUG)<<net[0].weights
 }
 
 int main(int argc, char** argv)

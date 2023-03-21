@@ -23,6 +23,13 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 
 	for(size_t i = 0; i < dataset->classesCount(); ++i)
 	{
+		ss<<i;
+		if(i+1 < dataset->classesCount())
+			ss<<",\t";
+	}
+	ss<<'\n';
+	for(size_t i = 0; i < dataset->classesCount(); ++i)
+	{
 		ss<<dataset->modelStringForClass(i);
 		if(i+1 < dataset->classesCount())
 			ss<<",\t";

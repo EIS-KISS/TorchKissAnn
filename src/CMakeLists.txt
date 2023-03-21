@@ -20,6 +20,10 @@ set(SRC_FILES
 	nearest/nearest.cpp
 )
 
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/utils/gitrev.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/utils/gitrev.cpp" @ONLY)
+
+list(APPEND SRC_FILES "${CMAKE_CURRENT_BINARY_DIR}/utils/gitrev.cpp")
+
 if(DEFINED ARMADILLO_LIBRARIES)
 	message("DRT support enabled")
 	set(SRC_FILES ${SRC_FILES}
