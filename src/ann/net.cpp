@@ -42,10 +42,23 @@ Net(inputSizeI, outputSizeI)
 			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.2)));
 		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(0.5).momentum(0.1).affine(false));
 		model->push_back(bn);
+		if(i == 0)
+		{
+			for(size_t j = 0; j < extraSteps; ++j)
+			{
+				model->push_back(torch::nn::Linear(sizes.second, sizes.second));
+				model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
+			}
+		}
 	}
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
 	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
+}
+
+std::shared_ptr<torch::nn::Module> ann::SimpleNet::operator[](size_t index)
+{
+	return model->operator[](index);
 }
 
 torch::Tensor ann::SimpleNet::forward(torch::Tensor x)

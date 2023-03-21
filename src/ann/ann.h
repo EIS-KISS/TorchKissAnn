@@ -10,7 +10,7 @@
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
 #include "log.h"
-#include "losslog.h"
+#include "trainlog.h"
 #include "tensoroperators.h"
 
 namespace ann
@@ -31,7 +31,7 @@ void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets
 
 template <typename DataLoader>
 void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
-		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, LossLog* log = nullptr)
+		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, TrainLog::Loss* log = nullptr)
 {
 	size_t index = 0;
 	network->train();
@@ -83,8 +83,8 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 template <typename DataLoader>
 torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
-				   int64_t classesCount, torch::Tensor classWeights, bool isMulticlass, const std::string& outputDir = "",
-				   double outputProb = 0)
+				   int64_t classesCount, torch::Tensor classWeights, bool isMulticlass, size_t epoch = 0,
+				   TrainLog::Loss* log = nullptr, const std::string& outputDir = "", double outputProb = 0)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
@@ -138,13 +138,17 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		Acc += acc.template item<float>();
 	}
 
-	TensorLog histogramLog("classHistograms");
+	std::cout<<"Class predictions:\n";
+	std::cout<<histograms<<std::endl;
+
+	TrainLog::Tensor histogramLog("class_predictions");
 	for(int i = 0; i < histograms.size(0); ++i)
 		histogramLog.log(histograms.select(0, i));
 
 	classAcc = classAcc/classCount;
 	std::cout<<"Test class acc:\n"<<classAcc<<'\n';
 	std::cout<<"Test Loss: "<<(Loss / data_size)*100<< "\tAcc: " <<Acc / data_size<< std::endl;
+	log->log(epoch, data_size, (Loss / data_size)*100, Acc/data_size, data_size);
 	return classAcc;
 }
 
@@ -158,7 +162,8 @@ void train(std::string fileName, std::shared_ptr<Net> net, EisDataset<DatasetTyp
 		assert(trainDataset->isMulticlass() == testDataset->isMulticlass());
 	}
 
-	LossLog log("annLoss.csv");
+	TrainLog::Loss trainLosslog("train_loss.csv");
+	TrainLog::Loss testLosslog("test_loss.csv");
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(BATCH_SIZE).workers(JOBS);
@@ -174,12 +179,12 @@ void train(std::string fileName, std::shared_ptr<Net> net, EisDataset<DatasetTyp
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
-		trainImpl(net, *trainDataLoader, optimizer, i+1, trainDataset->size().value(),
-				  trainDataset->classWeights(), trainDataset->isMulticlass(), &log);
+		trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
+				  trainDataset->classWeights(), trainDataset->isMulticlass(), &trainLosslog);
 		if(testDataset)
 		{
 			test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount(),
-				 trainDataset->classWeights(), trainDataset->isMulticlass());
+				 trainDataset->classWeights(), trainDataset->isMulticlass(), i, &testLosslog);
 		}
 		torch::save(net, fileName + ".uf");
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;

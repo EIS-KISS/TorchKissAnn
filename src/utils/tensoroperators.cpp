@@ -1,6 +1,7 @@
 #include "tensoroperators.h"
 
 #include <fstream>
+#include <sstream>
 
 #include "log.h"
 
@@ -59,33 +60,33 @@ torch::Tensor unargmax(const torch::Tensor& in, int64_t size)
 }
 
 template<typename DataType>
-static void save2dTensorToCsv(const torch::Tensor& tensor, std::fstream& file)
+static void save2dTensorToCsv(const torch::Tensor& tensor, std::iostream& stream)
 {
 	auto tensorAcesssor = tensor.accessor<DataType, 2>();
 	for(int i = 0; i < tensorAcesssor.size(0); ++i)
 	{
 		for(int j = 0; j < tensorAcesssor.size(1); ++j)
 		{
-			file<<tensorAcesssor[i][j];
+			stream<<tensorAcesssor[i][j];
 			if(j+1 < tensorAcesssor.size(1))
-				file<<", ";
+				stream<<", ";
 		}
-		file<<'\n';
+		stream<<'\n';
 	}
 }
 
 template<typename DataType>
-static void save1dTensorToCsv(const torch::Tensor& tensor, std::fstream& file)
+static void save1dTensorToCsv(const torch::Tensor& tensor, std::iostream& stream)
 {
 	auto tensorAcesssor = tensor.accessor<DataType, 1>();
 
 	for(int i = 0; i < tensorAcesssor.size(0); ++i)
 	{
-		file<<tensorAcesssor[i];
+		stream<<tensorAcesssor[i];
 		if(i+1 < tensorAcesssor.size(0))
-			file<<", ";
+			stream<<", ";
 	}
-	file<<'\n';
+	stream<<'\n';
 }
 
 bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& tensor, const std::string& name)
@@ -114,12 +115,39 @@ bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& ten
 		else
 			save1dTensorToCsv<int64_t>(tensor, file);
 	}
-	else if(tensor.dim() == 1)
+	else
 	{
 		Log(Log::ERROR)<<"can not save "<<tensor.dim()<<" dimentional tensor\n";
 		return false;
 	}
 	file.close();
 	return true;
+}
+
+std::string tensorToString(const torch::Tensor& tensor)
+{
+	std::stringstream ss;
+	ss<<std::scientific;
+
+	if(tensor.dim() == 2)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			save2dTensorToCsv<float>(tensor, ss);
+		else
+			save2dTensorToCsv<int64_t>(tensor, ss);
+	}
+	else if(tensor.dim() == 1)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			save1dTensorToCsv<float>(tensor, ss);
+		else
+			save1dTensorToCsv<int64_t>(tensor, ss);
+	}
+	else
+	{
+		Log(Log::ERROR)<<"cant convert "<<tensor.dim()<<" dimentional tensor to string\n";
+		return "";
+	}
+	return ss.str();
 }
 

@@ -1,0 +1,169 @@
+diff --git a/src/data/splitdataset.h b/src/data/splitdataset.h
+index 5cd2180..15b1490 100644
+--- a/src/data/splitdataset.h
++++ b/src/data/splitdataset.h
+@@ -2,37 +2,68 @@
+ #include <cstdint>
+ #include <optional>
+ #include <string>
+-#include <pair>
+-#
++#include <utility>
++
++#include "eisdataset.h"
+ 
+ template <typename SourceDataset>
+ class SplitDataset:
+-public EisDataset<SplitDataset>
++public EisDataset<SplitDataset<SourceDataset>>
+ {
+-	SourceDataset *dataset_;
++	SourceDataset* dataset_;
+ 	std::vector<size_t> indices_;
+ public:
+-	SplitDataset(SourceDataset *dataset, const std::vector<size_t>& indices);
+-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+-	virtual size_t classesCount() const override;
+-	virtual c10::optional<size_t> size() const override;
+-	virtual size_t classForIndex(size_t index);
+-	virtual std::string modelStringForClass(size_t classNum) override;
+-	virtual bool isMulticlass() override;
+-	virtual torch::Tensor classWeights() override;
++	SplitDataset(SourceDataset *dataset, const std::vector<size_t>& indices):
++	dataset_(dataset),
++	indices_(indices)
++	{}
++
++	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
++	{
++		return dataset_->get(indices_.at(index));
++	}
++
++	virtual size_t classesCount() const override
++	{
++		return dataset_->classesCount();
++	}
++
++	virtual c10::optional<size_t> size() const override
++	{
++		return dataset_->size();
++	}
++
++	virtual size_t classForIndex(size_t index)
++	{
++		return dataset_->classForIndex(indices_.at(index));
++	}
++
++	virtual std::string modelStringForClass(size_t classNum) override
++	{
++		return dataset_->modelStringForClass(classNum);
++	}
++
++	virtual bool isMulticlass() override
++	{
++		return dataset_->isMulticlass();
++	}
++
++	virtual torch::Tensor classWeights() override
++	{
++		return dataset_->classWeights();
++	}
+ };
+ 
+ template <typename SourceDataset>
+ std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> createSplitDataset(SourceDataset* dataset, double split)
+ {
+-	std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> out;
+ 	size_t size = dataset->size().value();
+ 
+ 	std::vector<size_t> aIdx(size);
+ 	std::vector<size_t> bIdx;
+-	bIdex.reserve(size*split);
++	bIdx.reserve(size*split);
+ 
+-	for(size_t i = 0; i < aIdx; ++i)
++	for(size_t i = 0; i < aIdx.size(); ++i)
+ 		aIdx[i] = i;
+ 
+ 	while(aIdx.size() > size*(1-split))
+@@ -41,7 +72,5 @@ std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> createSplitD
+ 		bIdx.push_back(aIdx[index]);
+ 		aIdx.erase(aIdx.begin()+index);
+ 	}
+-	out.first = SplitDataset<SourceDataset>(dataset, aIdx);
+-	out.second = SplitDataset<SourceDataset>(dataset, bIdx);
+-	return out;
++	return std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>>(SplitDataset<SourceDataset>(dataset, aIdx), SplitDataset<SourceDataset>(dataset, bIdx));
+ }
+diff --git a/src/train.cpp b/src/train.cpp
+index 7ebfbb1..5c64671 100644
+--- a/src/train.cpp
++++ b/src/train.cpp
+@@ -10,6 +10,7 @@
+ #include "gan/gan.h"
+ #include "log.h"
+ #include "data/print.h"
++#include "data/splitdataset.h"
+ #include "data/generators/eisgendata.h"
+ #include "data/generators/trashgenerator.h"
+ #include "data/generators/extendordataset.h"
+@@ -20,20 +21,37 @@
+ template <typename DataSetType>
+ int train(const Config& config);
+ 
++template <typename DataSetType>
++void trainWithSplitDataset(const Config& config, DataSetType* dataset);
++
+ template <typename DataSetType, typename TestDataSetType = DataSetType>
+ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
+ 
++template <typename DataSetType>
++void trainWithSplitDataset(const Config& config, DataSetType* dataset)
++{
++	std::pair<SplitDataset<DataSetType>, SplitDataset<DataSetType>> datasets = createSplitDataset<DataSetType>(dataset, 0.1);
++	trainSwitch<SplitDataset<DataSetType>, SplitDataset<DataSetType>>(config, &datasets.first, &datasets.second);
++}
++
+ template <> int train<FastDedupDataset>(const Config& config)
+ {
+-	FastDedupDataset dataset(config.fileName);
++	FastDedupDataset* dataset = new FastDedupDataset(config.fileName);
+ 
+-	if(!dataset.isOpen())
++	if(!dataset->isOpen())
+ 	{
+ 		Log(Log::ERROR)<<"Could not load fast deduplicator dataset from "<<config.fileName;
+ 		return 1;
+ 	}
+ 
+-	trainSwitch<FastDedupDataset>(config, &dataset, &dataset);
++	if(!config.testFileName.empty())
++	{
++		Log(Log::WARN)<<"a seperate test dataset cant be used with EisDirDataset,"
++			<<"instead 25% of the training dataset is automaticly used as a testing datastet";
++	}
++
++	trainWithSplitDataset<FastDedupDataset>(config, dataset);
++	delete dataset;
+ 	return 0;
+ }
+ 
+@@ -61,6 +79,10 @@ template <> int train<EisGeneratorDataset>(const Config& config)
+ 	}
+ 
+ 	trainSwitch<EisGeneratorDataset>(config, dataset, testDataset);
++
++	delete dataset;
++	if(testDataset)
++		delete testDataset;
+ 	return 0;
+ }
+ 
+@@ -102,7 +124,6 @@ template <> int train<EisDirDataset>(const Config& config)
+ 	return 0;
+ }
+ 
+-//
+ int main(int argc, char** argv)
+ {
+ 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);

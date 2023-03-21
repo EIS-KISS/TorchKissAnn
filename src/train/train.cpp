@@ -16,7 +16,8 @@
 #include "data/generators/extendordataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
-#include "trainoptions.h"
+#include "options.h"
+#include "trainlog.h"
 
 template <typename DataSetType>
 int train(const Config& config);
@@ -68,7 +69,7 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	if(config.testFileName.empty() && config.fileName.empty())
 		testDataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize/10, config.noise, config.probeModel);
 	else if(!config.testFileName.empty())
-		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
+		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize/10, DATA_WIDTH, config.noise, config.probeModel, false);
 
 	if(testDataset && dataset->classesCount() != testDataset->classesCount())
 	{
@@ -144,6 +145,8 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	TrainLog::initTrainLog();
+
 	switch(config.datasetMode)
 	{
 		case DATASET_GEN:
@@ -168,6 +171,19 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
+
+	{
+		TrainLog::MetaData meta;
+		meta.model = trainModeToStr(config.mode);
+		meta.classNumber = dataset->classesCount();
+		meta.multiClass = dataset->isMulticlass();
+		meta.learingRate = config.learingRate;
+		meta.extraLayers = config.extraLayers;
+		meta.noise = config.noise;
+		meta.dataset = datasetModeToStr(config.datasetMode);
+		meta.datasetSize = dataset->size().value();
+		saveMetadata(meta);
+	}
 
 	switch(config.mode)
 	{

@@ -39,14 +39,14 @@ private:
 
 private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
-	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity);
+	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity, bool rep = true);
 	size_t trueSize() const;
 
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
-	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity);
-	explicit EisGeneratorDataset(std::istream& is, int64_t outputSize, int64_t desiredSize, double noise, bool inductivity);
-	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity);
+	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity, bool rep = true);
+	explicit EisGeneratorDataset(std::istream& is, int64_t outputSize, int64_t desiredSize, double noise, bool inductivity, bool rep = true);
+	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity, bool rep = true);
 
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 	void addModel(const eis::Model& model);

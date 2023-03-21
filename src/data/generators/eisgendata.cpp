@@ -23,7 +23,7 @@
 
 using namespace eis;
 
-INCTXT(Circuits, "../circuits.txt");
+INCTXT(Circuits, MODEL_LISTS_DIR "/circuits.txt");
 
 static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 {
@@ -45,16 +45,18 @@ omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
 }
 
-EisGeneratorDataset::EisGeneratorDataset(std::istream& is, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset::EisGeneratorDataset(std::istream& is, int64_t desiredSize, int64_t outputSize,
+										 double noise, bool inductivity, bool rep):
 EisGeneratorDataset(outputSize, noise)
 {
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("stream dosent contain any circuits");
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize, inductivity, rep);
 }
 
-EisGeneratorDataset::EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset::EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize,
+										 double noise, bool inductivity, bool rep):
 EisGeneratorDataset(outputSize, noise)
 {
 	std::ifstream is(path, std::ios::in);
@@ -63,20 +65,21 @@ EisGeneratorDataset(outputSize, noise)
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("file dosent contain any circuits: " + path.string());
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize, inductivity, rep);
 }
 
-EisGeneratorDataset::EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity):
+EisGeneratorDataset::EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize,
+										 int64_t outputSize, double noise, bool inductivity, bool rep):
 EisGeneratorDataset(outputSize, noise)
 {
 	std::stringstream ss(std::string(cStr, cStrLen));
 	std::vector<std::string> circuits = readCircutsFromStream(ss);
 	if(circuits.empty())
 		throw std::runtime_error("array contains no circuits");
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize, inductivity, rep);
 }
 
-void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity)
+void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity, bool rep)
 {
 	int64_t sizePerModel = desiredSize/modelStrs.size();
 
@@ -105,7 +108,7 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 		addModel(model);
 	}
 
-	if(desiredSize/2 > static_cast<ssize_t>(trueSize()))
+	if(rep && desiredSize/2 > static_cast<ssize_t>(trueSize()))
 	{
 		repetitionCount = desiredSize/trueSize();
 	}
@@ -277,7 +280,7 @@ EisGeneratorDataset* EisGeneratorDataset::newDefaultDataset(int64_t outputSize, 
 {
 	assert(outputSize > 2);
 	assert(desiredSize > 10);
-	EisGeneratorDataset* dataset = new EisGeneratorDataset(rCircuitsData, rCircuitsSize, desiredSize, outputSize, noise, inductivity);
+	EisGeneratorDataset* dataset = new EisGeneratorDataset(rCircuitsData, rCircuitsSize, desiredSize, outputSize, noise, inductivity, false);
 
 	Log(Log::DEBUG)<<__func__<<" with "<<dataset->size().value()<<" examples";
 	return dataset;

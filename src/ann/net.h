@@ -27,6 +27,7 @@ class SimpleNet : public Net
 	torch::nn::Sequential model;
 
 public:
+	std::shared_ptr<torch::nn::Module> operator[](size_t index);
 	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3);
 	virtual torch::Tensor forward(torch::Tensor x) override;
 };
