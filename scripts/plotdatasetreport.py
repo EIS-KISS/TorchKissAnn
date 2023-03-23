@@ -1,5 +1,6 @@
 #!/bin/python
 
+import matplotlib
 import matplotlib.pyplot as plt
 import csv
 import os
@@ -11,6 +12,8 @@ def plotHistogram(buckets, lables, name):
     fig, ax = plt.subplots()
     ax.bar(lables, buckets, width=1, edgecolor="white")
     plt.semilogy()
+    plt.gcf().subplots_adjust(bottom=0.25)
+    plt.xticks(rotation=90)
     ax.set(xlim=(-0.5, len(buckets)-0.5), xticks=lables, ylim=(0.9, max(buckets)+max(buckets)*0.1))
     fig.set_size_inches(14, 8)
     plt.savefig(outDir + '/' + name + ".png")
@@ -37,6 +40,11 @@ if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} [DATASETREPORT] [OUTPUT DIR]")
         exit()
+
+    font = {'family' : 'sans-serif',
+        'weight' : 'normal',
+        'size'   : 22}
+    matplotlib.rc('font', **font)
     outDir = sys.argv[2]
     os.makedirs(outDir, exist_ok=True)
     plotHistrogramFromReport(sys.argv[1])

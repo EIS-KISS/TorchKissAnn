@@ -1,5 +1,6 @@
 #!/bin/python
 
+import matplotlib
 import matplotlib.pyplot as plt
 import csv
 import os
@@ -45,6 +46,11 @@ if __name__ == '__main__':
     os.makedirs(outDir, exist_ok=True)
     entrylist = os.listdir(sys.argv[1])
     dirlist = []
+
+    font = {'family' : 'sans-serif',
+        'weight' : 'normal',
+        'size'   : 14}
+    matplotlib.rc('font', **font)
     for dirent in entrylist:
         path = sys.argv[1] + '/' + dirent
         isDir = os.path.isdir(path)
