@@ -11,7 +11,7 @@ namespace TrainLog
 
 static std::filesystem::path logDir;
 
-std::string getDir()
+std::filesystem::path getDir()
 {
 	return logDir;
 }

@@ -38,7 +38,7 @@ struct MetaData
 
 void saveMetadata(const MetaData& meta);
 
-std::string getDir();
+std::filesystem::path getDir();
 
 class Loss
 {

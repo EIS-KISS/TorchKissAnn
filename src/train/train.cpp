@@ -165,6 +165,24 @@ int main(int argc, char** argv)
 	return 0;
 }
 
+static std::filesystem::path getOutputNetworkPath(TrainMode mode, size_t classesCount, size_t extraLayers)
+{
+	std::filesystem::path dir = TrainLog::getDir()/std::string("weights");
+	if(!std::filesystem::is_directory(dir))
+		std::filesystem::create_directory(dir);
+	if(!std::filesystem::is_directory(dir))
+		Log(Log::ERROR)<<"Could not create "<<dir<<" unable to save weights";
+
+	std::string outputFileName("net");
+	if(mode == MODE_ANN_CONV)
+		outputFileName.append("Conv");
+	outputFileName.append(std::to_string(classesCount));
+	outputFileName.push_back('_');
+	outputFileName.append(std::to_string(extraLayers));
+	outputFileName.append(".vos");
+	return dir/outputFileName;
+}
+
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -193,21 +211,12 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		case MODE_ANN_CONV:
 		{
 			std::shared_ptr<ann::Net> net;
-			std::string outputFileName("net");
+			std::filesystem::path outputPath = getOutputNetworkPath(config.mode, dataset->classesCount(), config.extraLayers);
 			if(config.mode == MODE_ANN_CONV)
-			{
 				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
-				outputFileName.append("Conv");
-			}
 			else
-			{
 				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
-			}
-			outputFileName.append(std::to_string(dataset->classesCount()));
-			outputFileName.push_back('_');
-			outputFileName.append(std::to_string(config.extraLayers));
-			outputFileName.append(".vos");
-			ann::train<DataSetType, TestDataSetType>(outputFileName, net, dataset, testDataset, config.epochs, config.learingRate);
+			ann::train<DataSetType, TestDataSetType>(outputPath, net, dataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_GAN:
