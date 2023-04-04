@@ -1,17 +1,119 @@
 #include "net.h"
 #include "../utils/seqprint.h"
 #include "log.h"
+#include <sstream>
+#include <fstream>
 
 using namespace ann;
 
-int64_t ann::Net::getInputSize()
+int64_t ann::Net::getInputSize() const
 {
 	return inputSize;
 }
 
-int64_t ann::Net::getOutputSize()
+int64_t ann::Net::getOutputSize() const
 {
 	return outputSize;
+}
+
+ann::Net::Net(const Json::Value& node)
+{
+	inputSize = node["inputSize"].asInt64();
+	outputSize = node["outputSize"].asInt64();
+
+	if(node.isMember("outputLabels"))
+	{
+		Json::Value labels = node["outputLabels"];
+		if(!labels.isArray())
+		{
+			Log(Log::WARN)<<"Could not get output labels for network";
+		}
+		else
+		{
+			outputLabels.reserve(labels.size());
+			for(Json::ArrayIndex i = 0; i < labels.size(); ++i)
+				outputLabels.push_back(labels[i].asString());
+		}
+	}
+}
+
+void ann::Net::getConfiguration(Json::Value& node)
+{
+	node["inputSize"] = inputSize;
+	node["outputSize"] = outputSize;
+
+	if(!outputLabels.empty())
+	{
+		Json::Value labels = node["outputLabels"];
+		labels.resize(outputLabels.size());
+		for(size_t i = 0; i < outputLabels.size(); ++i)
+			labels[static_cast<int>(i)] = outputLabels[i];
+	}
+}
+
+const std::vector<std::string>& ann::Net::getOutputLabels() const
+{
+	return outputLabels;
+}
+
+void ann::Net::setOutputLabels(const std::vector<std::string>& outputLabelsI)
+{
+	if(static_cast<int64_t>(outputLabels.size()) != outputSize)
+		Log(Log::WARN)<<outputLabels.size()<<" output labels where set for a network with a output size of "<<outputSize;
+
+	outputLabels = outputLabelsI;
+}
+
+std::shared_ptr<Net> ann::Net::newNetFromConfiguation(const Json::Value& node)
+{
+	std::string type = node["type"].asString();
+	if(type == typeid(ann::ConvNet).name())
+		return std::shared_ptr<Net>(new ann::ConvNet(node));
+	else if(type == typeid(ann::SimpleNet).name())
+		return std::shared_ptr<Net>(new ann::SimpleNet(node));
+	return nullptr;
+}
+
+bool ann::Net::saveToCheckpointDir(const std::filesystem::path &path)
+{
+	if(!std::filesystem::is_directory(path))
+		std::filesystem::create_directories(path);
+	if(!std::filesystem::is_directory(path))
+		return false;
+
+	Json::Value networkMetadata;
+	getConfiguration(networkMetadata);
+	std::ofstream networkMetadataFile;
+	networkMetadataFile.open(path/"meta.json", std::ios_base::out);
+	if(!networkMetadataFile.is_open())
+		return false;
+	Json::StreamWriterBuilder builder;
+	const std::unique_ptr<Json::StreamWriter> writer(builder.newStreamWriter());
+	writer->write(networkMetadata, &networkMetadataFile);
+
+	networkMetadataFile.close();
+	torch::save(shared_from_this(), path/"weights.pt");
+	return true;
+}
+
+std::shared_ptr<Net> ann::Net::newNetFromCheckpointDir(const std::filesystem::path& path)
+{
+	if(!std::filesystem::is_directory(path))
+		return nullptr;
+	std::ifstream file(path/"meta.json", std::ios_base::in);
+	if(!file.is_open())
+		return nullptr;
+
+	Json::Value json;
+	Json::CharReaderBuilder builder;
+	JSONCPP_STRING errs;
+	bool ret = parseFromStream(builder, file, &json, &errs);
+	if(!ret)
+		return nullptr;
+
+	std::shared_ptr<Net> net = newNetFromConfiguation(json);
+	torch::load(net, path/"weights.pt");
+	return net;
 }
 
 static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers, size_t input, size_t output)
@@ -21,8 +123,21 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 	return std::pair<size_t, size_t>(layerIn, layerOut);
 }
 
-ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleSteps, size_t extraSteps):
-Net(inputSizeI, outputSizeI)
+ann::SimpleNet::SimpleNet(const Json::Value& node):
+Net(node)
+{
+	downsampleSteps = node["downsampleSteps"].asUInt64();
+	extraSteps = node["extraSteps"].asUInt64();
+	init();
+}
+
+ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI):
+Net(inputSizeI, outputSizeI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
+{
+	init();
+}
+
+void ann::SimpleNet::init()
 {
 	register_module("SimpleModel", model);
 
@@ -66,8 +181,29 @@ torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
 	return model->forward(x);
 }
 
-ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleSteps, size_t extraSteps):
-Net(inputSizeI, outputSizeI)
+void ann::SimpleNet::getConfiguration(Json::Value& node)
+{
+	node["type"] = typeid(*this).name();
+	node["downsampleSteps"] = downsampleSteps;
+	node["extraSteps"] = extraSteps;
+	ann::Net::getConfiguration(node);
+}
+
+ann::ConvNet::ConvNet(const Json::Value& node):
+Net(node)
+{
+	downsampleSteps = node["downsampleSteps"].asUInt64();
+	extraSteps = node["extraSteps"].asUInt64();
+	init();
+}
+
+ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI):
+Net(inputSizeI, outputSizeI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
+{
+	init();
+}
+
+void ann::ConvNet::init()
 {
 	int64_t size = inputSize;
 	const int conv1Kernel = inputSize/5;
@@ -134,4 +270,17 @@ torch::Tensor ann::ConvNet::forward(torch::Tensor x)
 		x = x.reshape({x.size(0), 1});
 
 	return model->forward(x);
+}
+
+std::shared_ptr<torch::nn::Module> ann::ConvNet::operator[](size_t index)
+{
+	return model->operator[](index);
+}
+
+void ann::ConvNet::getConfiguration(Json::Value& node)
+{
+	node["type"] = typeid(*this).name();
+	node["downsampleSteps"] = downsampleSteps;
+	node["extraSteps"] = extraSteps;
+	ann::Net::getConfiguration(node);
 }

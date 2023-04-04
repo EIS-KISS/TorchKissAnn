@@ -9,7 +9,7 @@ TrashDataset::TrashDataset(int64_t outputSizeIn, int64_t classCountIn): outputSi
 
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> TrashDataset::get(size_t index)
+torch::data::Example<torch::Tensor, torch::Tensor> TrashDataset::getImpl(size_t index)
 {
 	std::default_random_engine rande(index);
 	torch::TensorOptions options;

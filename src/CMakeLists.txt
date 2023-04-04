@@ -24,18 +24,6 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/utils/gitrev.cpp.in" "${CMAKE_CURREN
 
 list(APPEND SRC_FILES "${CMAKE_CURRENT_BINARY_DIR}/utils/gitrev.cpp")
 
-if(DEFINED ARMADILLO_LIBRARIES)
-	message("DRT support enabled")
-	set(SRC_FILES ${SRC_FILES}
-		drt/base_funcs.cpp
-		drt/NNLS.cpp
-		drt/T2_inversion.cpp
-		drt/drt.cpp
-	)
-else()
-	message("DRT support disabled")
-endif(DEFINED ARMADILLO_LIBRARIES)
-
 include_directories(utils .)
 
 add_library(${PROJECT_NAME}_common STATIC ${SRC_FILES})

@@ -18,6 +18,26 @@ private:
 	std::shared_ptr<std::mutex> datasetMutex;
 	size_t _factor;
 
+
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
+	{
+		//datasetMutex->lock();
+		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(index % _dataset->size().value());
+		//datasetMutex->unlock();
+
+		if(index > _dataset->size().value())
+		{
+			torch::TensorOptions options;
+			options = options.dtype(torch::kFloat32);
+			options = options.layout(torch::kStrided);
+			options = options.device(torch::kCPU);
+			torch::Tensor randomNumbers = torch::randn(example.data.sizes(), options);
+			randomNumbers = randomNumbers*0.001f;
+			example.data = example.data + randomNumbers;
+		}
+		return example;
+	}
+
 public:
 
 	ExtendorDataset(EisDataset<ParentType>* dataset, size_t factor):
@@ -38,25 +58,6 @@ public:
 	virtual std::string modelStringForClass(size_t classNum)
 	{
 		return _dataset->modelStringForClass(classNum);
-	}
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
-	{
-		//datasetMutex->lock();
-		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(index % _dataset->size().value());
-		//datasetMutex->unlock();
-
-		if(index > _dataset->size().value())
-		{
-			torch::TensorOptions options;
-			options = options.dtype(torch::kFloat32);
-			options = options.layout(torch::kStrided);
-			options = options.device(torch::kCPU);
-			torch::Tensor randomNumbers = torch::randn(example.data.sizes(), options);
-			randomNumbers = randomNumbers*0.001f;
-			example.data = example.data + randomNumbers;
-		}
-		return example;
 	}
 
 	virtual c10::optional<size_t> size() const override

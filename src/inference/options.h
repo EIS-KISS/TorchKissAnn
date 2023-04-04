@@ -17,6 +17,7 @@ static struct argp_option options[] =
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"network",		'n', "[FILE]",		0,	"Network file name" },
   {"input",			'i', "[FILE]",		0,	"Input file name" },
+  {"dataset", 		'd', "[STRING]",	0,	"directory of a dir dataset to test on"},
   {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, mpt, trash, gan" },
   {"show",			's', 0,				0,	"Show filtered input"},
   {"method",		'm', "[METHOD]",	0,	"select classifier method. Valid options are: ann, knn, anntest"},
@@ -52,6 +53,7 @@ struct Config
 	std::string spectraFileName;
 	std::string filterFileName;
 	std::string exportDir;
+	std::string datasetDir;
 	double outputProb = 0.001;
 	bool show = false;
 	bool trash = false;
@@ -122,6 +124,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'i':
 			config->spectraFileName.assign(arg);
+			break;
+		case 'd':
+			config->datasetDir.assign(arg);
 			break;
 		case 't':
 			config->fileType = parseFileType(arg);

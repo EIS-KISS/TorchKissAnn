@@ -19,6 +19,16 @@ private:
 
 	std::vector<size_t> indexList;
 
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
+	{
+		assert(index < indexList.size());
+
+		datasetMutex->lock();
+		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(indexList[index]);
+		datasetMutex->unlock();
+		return example;
+	}
+
 public:
 
 	ClassExtractorDataset(EisDataset<ParentType>* dataset, size_t classNum):
@@ -55,16 +65,6 @@ public:
 		assert(index < indexList.size());
 
 		return indexList[index];
-	}
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
-	{
-		assert(index < indexList.size());
-
-		datasetMutex->lock();
-		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(indexList[index]);
-		datasetMutex->unlock();
-		return example;
 	}
 
 	virtual c10::optional<size_t> size() const override

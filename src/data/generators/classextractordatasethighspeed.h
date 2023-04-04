@@ -17,6 +17,13 @@ private:
 	size_t _classNum;
 	std::string modelString;
 
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
+	{
+		assert(index < examples.size());
+
+		return examples[index];
+	}
+
 public:
 
 	ClassExtractorDatasetHighSpeed(EisDataset<ParentType>* dataset, size_t classNum): _classNum(classNum)
@@ -54,13 +61,6 @@ public:
 	virtual std::string modelStringForClass(size_t classNum)
 	{
 		return modelString;
-	}
-
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
-	{
-		assert(index < examples.size());
-
-		return examples[index];
 	}
 
 	c10::optional<size_t> size() const override

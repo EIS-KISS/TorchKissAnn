@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <cstdint>
 #include <ios>
 #include <iostream>
@@ -145,7 +144,7 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
-	TrainLog::initTrainLog();
+	TrainLog::setRunsDir("./runs");
 
 	switch(config.datasetMode)
 	{
@@ -165,30 +164,14 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-static std::filesystem::path getOutputNetworkPath(TrainMode mode, size_t classesCount, size_t extraLayers)
-{
-	std::filesystem::path dir = TrainLog::getDir()/std::string("weights");
-	if(!std::filesystem::is_directory(dir))
-		std::filesystem::create_directory(dir);
-	if(!std::filesystem::is_directory(dir))
-		Log(Log::ERROR)<<"Could not create "<<dir<<" unable to save weights";
-
-	std::string outputFileName("net");
-	if(mode == MODE_ANN_CONV)
-		outputFileName.append("Conv");
-	outputFileName.append(std::to_string(classesCount));
-	outputFileName.push_back('_');
-	outputFileName.append(std::to_string(extraLayers));
-	outputFileName.append(".vos");
-	return dir/outputFileName;
-}
-
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset)
 {
 	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
+
+	TrainLog trainLog;
 
 	{
 		TrainLog::MetaData meta;
@@ -202,7 +185,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		meta.datasetSize = dataset->size().value();
 		meta.trainingFile = config.fileName;
 		meta.testingFile = config.testFileName;
-		saveMetadata(meta);
+		trainLog.saveMetadata(meta);
 	}
 
 	switch(config.mode)
@@ -211,12 +194,11 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		case MODE_ANN_CONV:
 		{
 			std::shared_ptr<ann::Net> net;
-			std::filesystem::path outputPath = getOutputNetworkPath(config.mode, dataset->classesCount(), config.extraLayers);
 			if(config.mode == MODE_ANN_CONV)
 				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
 			else
 				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
-			ann::train<DataSetType, TestDataSetType>(outputPath, net, dataset, testDataset, config.epochs, config.learingRate);
+			ann::train<DataSetType, TestDataSetType>(&trainLog, net, dataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_GAN:

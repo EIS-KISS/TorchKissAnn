@@ -35,7 +35,7 @@ public:
 	explicit FastDedupDataset(const std::filesystem::path& fileName);
 	FastDedupDataset(const FastDedupDataset& in);
 
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 	virtual size_t classesCount() const override;
 	virtual torch::Tensor classWeights() override;

@@ -205,7 +205,7 @@ size_t FastDedupDataset::parseOriginalClass(const std::string& line)
 	return classNum;
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::get(size_t index)
+torch::data::Example<torch::Tensor, torch::Tensor> FastDedupDataset::getImpl(size_t index)
 {
 	file.seekg(lineStarts[index]);
 	std::string line;

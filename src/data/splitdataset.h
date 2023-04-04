@@ -12,16 +12,17 @@ public EisDataset<SplitDataset<SourceDataset>>
 {
 	SourceDataset* dataset_;
 	std::vector<size_t> indices_;
+
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
+	{
+		return dataset_->get(indices_.at(index));
+	}
+
 public:
 	SplitDataset(SourceDataset *dataset, const std::vector<size_t>& indices):
 	dataset_(dataset),
 	indices_(indices)
 	{}
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
-	{
-		return dataset_->get(indices_.at(index));
-	}
 
 	virtual size_t classesCount() const override
 	{

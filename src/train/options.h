@@ -19,7 +19,7 @@ static struct argp_option options[] =
   {"verbose",		'v', 0,				0,	"Show debug messages" },
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST},
-  {"dataset", 		'd', "[STRING]",	0,	"model to use for training: " DATASET_LIST},
+  {"dataset", 		'd', "[STRING]",	0,	"dataset type to use for training: " DATASET_LIST},
   {"dataset-size",	's', "[NUMBER]",	0,	"the size of the training dataset to use when using a generated or semi-generated dataset"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"test",			't', "[STRING]",	0,	"filename for the test dataset"},

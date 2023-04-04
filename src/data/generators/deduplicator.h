@@ -27,6 +27,16 @@ private:
 	std::vector<torch::Tensor> targets;
 	bool ready = false;
 
+
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
+	{
+		assert(index < targets.size());
+
+		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(index);
+
+		return torch::data::Example<torch::Tensor, torch::Tensor>(example.data, targets[index]);
+	}
+
 public:
 
 	DeduplatorDataset(EisDataset<ParentType>* dataset, const std::filesystem::path& fileName):
@@ -179,15 +189,6 @@ public:
 	}
 
 	virtual bool isMulticlass() {return true;}
-
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override
-	{
-		assert(index < targets.size());
-
-		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(index);
-
-		return torch::data::Example<torch::Tensor, torch::Tensor>(example.data, targets[index]);
-	}
 
 	bool save(const std::filesystem::path& path)
 	{

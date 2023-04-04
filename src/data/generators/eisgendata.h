@@ -42,6 +42,8 @@ private:
 	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity, bool rep = true);
 	size_t trueSize() const;
 
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
+
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
 	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise, bool inductivity, bool rep = true);
@@ -56,7 +58,6 @@ public:
 	void setOmegaRange(eis::Range range);
 	size_t singleSweepCount();
 
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 	virtual torch::Tensor classWeights() override;
 	virtual torch::Tensor classCounts() override;
 	virtual size_t classesCount() const override;

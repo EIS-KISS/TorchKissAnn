@@ -10,10 +10,11 @@ class TrashDataset : public EisDataset<TrashDataset>
 {
 	int64_t outputSize;
 	int64_t classCount;
+
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
+
 public:
 	explicit TrashDataset(int64_t outputSizeIn = 100, int64_t classCountIn = 6);
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
 	virtual c10::optional<size_t> size() const override;
 

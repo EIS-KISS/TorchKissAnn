@@ -173,7 +173,7 @@ std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t 
 	return std::pair<size_t, size_t>(model, index);
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::get(size_t index)
+torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::getImpl(size_t index)
 {
 	index = index % trueSize();
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);

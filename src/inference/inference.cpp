@@ -11,6 +11,7 @@
 #include "options.h"
 #include "data/loaders/mpt.h"
 #include "data/generators/trashgenerator.h"
+#include "data/loaders/dirloader.h"
 #include "data/eistotorch.h"
 #include "data/generators/eisgendata.h"
 #include "nearest/nearest.h"
@@ -119,24 +120,24 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	return pass;
 }
 
-torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string networkFileName,
-					   size_t outputSize, size_t extraLayers, const std::string exportDir, double exportProb)
+torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
+{
+	EisDirDataset dataset(datasetDir);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(BATCH_SIZE).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return test(network, *dataLoader, dataset.size().value(),
+				   dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
+}
+
+torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_ptr<ann::Net> net)
 {
 	torch::Tensor output;
-
-	if(networkFileName.empty() && (mode == MODE_ANN))
-	{
-		Log(Log::ERROR)<<"A network file name must be specified";
-		return torch::Tensor();
-	}
 
 	switch(mode)
 	{
 		case MODE_ANN:
-			output = ann::use(input, ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers));
-			break;
-		case MODE_ANN_TEST:
-			//output = ann::testOnGenNeis(ann::load(networkFileName, DATA_WIDTH, outputSize, 4, extraLayers), exportDir, exportProb);
+			output = ann::use(input, net);
 			break;
 		case MODE_NN:
 		{
@@ -153,37 +154,42 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::string ne
 	return output;
 }
 
-int main(int argc, char** argv)
+int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
-	Config config;
-	argp_parse(&argp, argc, argv, 0, 0, &config);
-
-	std::vector<eis::DataPoint> data;
-
-	if(config.mode != MODE_ANN_TEST)
+	if(config.datasetDir.empty())
 	{
-		data = grabData(config.spectraFileName, config.fileType);
+		Log(Log::ERROR)<<"You must specify a dataset to test on\n";
+		return 1;
+	}
 
-		if(data.empty())
-		{
-			Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
-			return 3;
-		}
+	testOnDir(config.datasetDir, net);
 
-		filterData(data, DATA_WIDTH);
+	return 0;
+}
 
-		if(config.show)
-		{
-			printDataVect(data);
-			return 0;
-		}
+int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
+{
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
 
-		if(config.reexport)
-		{
-			torch::Tensor input = eisToTorch(data);
-			eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
-			return 0;
-		}
+	if(data.empty())
+	{
+		Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
+		return 3;
+	}
+
+	filterData(data, DATA_WIDTH);
+
+	if(config.show)
+	{
+		printDataVect(data);
+		return 0;
+	}
+
+	if(config.reexport)
+	{
+		torch::Tensor input = eisToTorch(data);
+		eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
+		return 0;
 	}
 
 	torch::Tensor input = eisToTorch(data);
@@ -191,21 +197,18 @@ int main(int argc, char** argv)
 	if(!filter(input, config.filterFileName, config.filterMode))
 		return 4;
 
-	torch::Tensor output = classify(input, config.mode, config.networkFileName, config.outputSize,
-									config.extraLayers, config.exportDir, config.outputProb);
+	torch::Tensor output = classify(input, config.mode, net);
 
 	if(output.numel() == 0)
 		return 5;
 
-	std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 1e6));
-
 	Log(Log::INFO)<<std::setprecision(3)<<std::fixed<<std::setw(3)<<"Classes:\nNumber\tModel String\tLikelyhood";
 
-	for(int64_t i = 0; i < std::min(static_cast<int64_t>(dataset->classesCount()), output.size(0)); ++i)
+	for(int64_t i = 0; i < output.size(0); ++i)
 	{
 		std::string model;
-		if(static_cast<int64_t>(dataset->classesCount()) == output.size(0))
-			model = dataset->modelStringForClass(i);
+		if(i < static_cast<int64_t>(net->getOutputLabels().size()))
+			model = net->getOutputLabels()[i];
 		else
 			model = std::string("Unkown");
 		Log(Log::INFO)<<i<<'\t'<<model<<(model.size() >= 8 ? "\t" : "\t\t")<<output[i].item().to<float>();
@@ -216,13 +219,27 @@ int main(int argc, char** argv)
 		if(output[i].item().to<float>() > 0.15)
 		{
 			std::string model;
-			if(static_cast<int64_t>(dataset->classesCount()) == output.size(0))
-				model = dataset->modelStringForClass(i);
+			if(i < static_cast<int64_t>(net->getOutputLabels().size()))
+				model = net->getOutputLabels()[i];
 			else
 				model = std::to_string(i);
 			std::cout<<"Could be: "<<model<<" confidence "<<output[i].item().to<float>()<<std::endl;
 		}
 	}
+
+	return 0;
+}
+
+int main(int argc, char** argv)
+{
+	Config config;
+	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	std::shared_ptr<ann::Net> net = ann::Net::newNetFromCheckpointDir(config.networkFileName);
+	if(config.mode != MODE_ANN_TEST)
+		return classifyPipeline(config, net);
+	else
+		return testPipe(config, net);
 
 	return 0;
 }

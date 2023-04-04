@@ -49,7 +49,7 @@ outputSize(outputSizeI)
 		Log(Log::WARN)<<"found few valid files in "<<directoryPath;
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::get(size_t index)
+torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t index)
 {
 	if(fileNames.size() < index)
 	{

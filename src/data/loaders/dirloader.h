@@ -23,11 +23,11 @@ private:
 	size_t outputSize;
 	std::vector<std::string> modelStrs;
 
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
+
 public:
 	explicit EisDirDataset(const std::string& dirName, int64_t outputSizeI = 100);
 	EisDirDataset(const EisDirDataset& in) = default;
-
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 
 	torch::Tensor modelWeights();
 

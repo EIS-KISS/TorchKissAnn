@@ -20,7 +20,6 @@
 #include "ann/net.h"
 #include "utils/tensoroperators.h"
 #include "data/loaders/deduploader.h"
-#include "drt/drt.h"
 #include "data/loaders/dirloader.h"
 
 template<typename Dataset>
@@ -86,20 +85,6 @@ void testfs(const std::string& str, const std::string& prefix)
 		}
 	}
 }
-
-#ifdef DRT_ENABLED
-void testDrt()
-{
-	eis::Model model("rc");
-
-	std::vector<eis::DataPoint> inSpectra = model.executeSweep(eis::Range(0.001, 1e6, 6000, true));
-	std::vector<fvalue> drt = calcDrt(inSpectra);
-
-	std::cout<<"Drt: \n";
-	for(const fvalue value : drt)
-		std::cout<<value<<'\n';
-}
-#endif
 
 bool testEisGeneratorDataset()
 {
