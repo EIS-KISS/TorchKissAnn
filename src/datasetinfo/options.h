@@ -9,8 +9,8 @@
 #define MODE_LIST "ann, conv, gan"
 #define DATASET_LIST "gen, fdedup, dir, trash"
 
-const char *argp_program_version = "TorchKissAnnTrain";
-const char *argp_program_bug_address = "<carl@uvos.xyz>";
+const inline char *argp_program_version = "TorchKissAnnTrain";
+const inline char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that trains models for TorchKissAnn";
 static char args_doc[] = "";
 
