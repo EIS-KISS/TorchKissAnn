@@ -10,16 +10,9 @@
 
 #include "data/generators/eisgendata.h"
 #include "log.h"
-#include "gan/simplenet.h"
-#include "constants.h"
 #include "utils/tokenize.h"
 #include "data/dataexport.h"
-#include "data/generators/classextractordataset.h"
-#include "data/filterdata.h"
-#include "data/generators/deduplicator.h"
 #include "ann/net.h"
-#include "utils/tensoroperators.h"
-#include "data/loaders/deduploader.h"
 #include "data/loaders/dirloader.h"
 
 template<typename Dataset>

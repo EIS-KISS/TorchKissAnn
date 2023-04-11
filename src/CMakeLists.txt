@@ -2,6 +2,7 @@ set(SRC_FILES
 	data/generators/classextractordataset.cpp
 	data/generators/eisgendata.cpp
 	data/generators/trashgenerator.cpp
+	data/generators/parameterregressiondataset.cpp
 	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
 	data/loaders/deduploader.cpp
@@ -16,7 +17,8 @@ set(SRC_FILES
 	gan/simplenet.cpp
 	gan/gan.cpp
 	ann/net.cpp
-	ann/ann.cpp
+	ann/classification.cpp
+	ann/regression.cpp
 	nearest/nearest.cpp
 )
 

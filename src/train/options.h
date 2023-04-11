@@ -6,8 +6,8 @@
 #include <filesystem>
 #include "utils/log.h"
 
-#define MODE_LIST "ann, conv, gan"
-#define DATASET_LIST "gen, fdedup, dir, trash"
+#define MODE_LIST "ann, conv, gan, regression"
+#define DATASET_LIST "gen, fdedup, dir, trash, genregression"
 
 const char *argp_program_version = "TorchKissAnnTrain";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -39,7 +39,8 @@ typedef enum
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
 	MODE_ANN_CONV,
-	MODE_GAN
+	MODE_GAN,
+	MODE_REGRESSION
 } TrainMode;
 
 typedef enum
@@ -48,7 +49,8 @@ typedef enum
 	DATASET_GEN = 0,
 	DATASET_FDUP,
 	DATASET_DIR,
-	DATASET_TRASH
+	DATASET_TRASH,
+	DATASET_GEN_REGRESSION
 } DatasetMode;
 
 static std::string trainModeToStr(const TrainMode mode)
@@ -56,11 +58,13 @@ static std::string trainModeToStr(const TrainMode mode)
 	switch(mode)
 	{
 		case MODE_ANN:
-			return "ANN";
+			return "ann";
 		case MODE_ANN_CONV:
-			return "CONV";
+			return "conv";
 		case MODE_GAN:
-			return "GAN";
+			return "gan";
+		case MODE_REGRESSION:
+			return "regression";
 		default:
 			return "Invalid";
 	}
@@ -68,13 +72,14 @@ static std::string trainModeToStr(const TrainMode mode)
 
 static TrainMode parseTrainMode(const std::string& in)
 {
-	if(in.empty() || in == "ann")
+	if(in.empty() || in == trainModeToStr(MODE_ANN))
 		return MODE_ANN;
-	else if(in == "conv")
+	else if(in == trainModeToStr(MODE_ANN_CONV))
 		return MODE_ANN_CONV;
-	else if(in == "gan")
+	else if(in == trainModeToStr(MODE_GAN))
 		return MODE_GAN;
-
+	else if(in == trainModeToStr(MODE_REGRESSION))
+		return MODE_REGRESSION;
 	return MODE_INVALID;
 }
 
@@ -83,29 +88,32 @@ static std::string datasetModeToStr(const DatasetMode mode)
 	switch(mode)
 	{
 		case DATASET_GEN:
-			return "Generated";
+			return "gen";
 		case DATASET_FDUP:
-			return "Fast deduplicator";
+			return "fdedup";
 		case DATASET_DIR:
-			return "Directory";
+			return "dir";
 		case DATASET_TRASH:
-			return "Trash";
+			return "trash";
+		case DATASET_GEN_REGRESSION:
+			return "genregression";
 		default:
-			return "Invalid";
+			return "invalid";
 	}
 }
 
 static DatasetMode parseDatasetMode(const std::string& in)
 {
-	if(in.empty() || in == "gen")
+	if(in.empty() || in == datasetModeToStr(DATASET_GEN))
 		return DATASET_GEN;
-	else if(in == "fdedup")
+	else if(in == datasetModeToStr(DATASET_FDUP))
 		return DATASET_FDUP;
-	else if(in == "dir")
+	else if(in == datasetModeToStr(DATASET_DIR))
 		return DATASET_DIR;
-	else if(in == "trash")
+	else if(in == datasetModeToStr(DATASET_TRASH))
 		return DATASET_TRASH;
-
+	else if(in == datasetModeToStr(DATASET_GEN_REGRESSION))
+		return DATASET_GEN_REGRESSION;
 	return DATASET_INVALID;
 }
 

@@ -5,7 +5,8 @@
 #include <memory>
 #include <vector>
 
-#include "ann/ann.h"
+#include "ann/classification.h"
+#include "ann/regression.h"
 #include "gan/gan.h"
 #include "log.h"
 #include "data/print.h"
@@ -13,6 +14,7 @@
 #include "data/generators/eisgendata.h"
 #include "data/generators/trashgenerator.h"
 #include "data/generators/extendordataset.h"
+#include "data/generators/parameterregressiondataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
 #include "options.h"
@@ -124,6 +126,31 @@ template <> int train<EisDirDataset>(const Config& config)
 	return 0;
 }
 
+template <> int train<ParameterRegressionDataset>(const Config& config)
+{
+	if(config.fileName.empty())
+	{
+		Log(Log::ERROR)<<"Please specify a model as the filename for this dataset type";
+		return 1;
+	}
+	if(!config.testFileName.empty())
+	{
+		Log(Log::ERROR)<<"You can not specify a different model as the train dataset for this dataset type";
+		return 1;
+	}
+
+	ParameterRegressionDataset dataset(config.fileName);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
+	}
+
+	trainSwitch<ParameterRegressionDataset, ParameterRegressionDataset>(config, &dataset, nullptr);
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
@@ -135,13 +162,19 @@ int main(int argc, char** argv)
 	if(config.mode == MODE_INVALID)
 	{
 		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
-		return -1;
+		return 3;
 	}
 
 	if(config.datasetMode == DATASET_INVALID)
 	{
 		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
-		return -1;
+		return 3;
+	}
+
+	if(config.datasetMode != DATASET_GEN_REGRESSION && config.mode == MODE_REGRESSION)
+	{
+		Log(Log::ERROR)<<"The regression mode can only be trained with the regression dataset";
+		return 3;
 	}
 
 	TrainLog::setRunsDir("./runs");
@@ -154,6 +187,8 @@ int main(int argc, char** argv)
 			return train<FastDedupDataset>(config);
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
+		case DATASET_GEN_REGRESSION:
+			return train<ParameterRegressionDataset>(config);
 		case DATASET_TRASH:
 			//return train<TrashDataset>(config);
 		case DATASET_INVALID:
@@ -165,24 +200,24 @@ int main(int argc, char** argv)
 }
 
 template <typename DataSetType, typename TestDataSetType>
-void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset)
+void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
-	Log(Log::INFO)<<"Training with"<<(dataset->isMulticlass() ? " muliclass" : "")<<
-		" dataset of size "<<dataset->size().value()<<" with "<<dataset->classesCount()<<" classes";
-	Log(Log::INFO)<<" Using weights:\n"<<dataset->classWeights()<<'\n';
+	Log(Log::INFO)<<"Training with"<<(trainDataset->isMulticlass() ? " muliclass" : "")<<
+		" dataset of size "<<trainDataset->size().value()<<" with "<<trainDataset->classesCount()<<" classes";
+	Log(Log::INFO)<<" Using weights:\n"<<trainDataset->classWeights()<<'\n';
 
 	TrainLog trainLog;
 
 	{
 		TrainLog::MetaData meta;
 		meta.model = trainModeToStr(config.mode);
-		meta.classNumber = dataset->classesCount();
-		meta.multiClass = dataset->isMulticlass();
+		meta.classNumber = trainDataset->classesCount();
+		meta.multiClass = trainDataset->isMulticlass();
 		meta.learingRate = config.learingRate;
 		meta.extraLayers = config.extraLayers;
 		meta.noise = config.noise;
 		meta.dataset = datasetModeToStr(config.datasetMode);
-		meta.datasetSize = dataset->size().value();
+		meta.datasetSize = trainDataset->size().value();
 		meta.trainingFile = config.fileName;
 		meta.testingFile = config.testFileName;
 		trainLog.saveMetadata(meta);
@@ -195,16 +230,22 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 		{
 			std::shared_ptr<ann::Net> net;
 			if(config.mode == MODE_ANN_CONV)
-				net.reset(new ann::ConvNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
+				net.reset(new ann::ConvNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
 			else
-				net.reset(new ann::SimpleNet(DATA_WIDTH, dataset->classesCount(), 4, config.extraLayers));
-			ann::train<DataSetType, TestDataSetType>(&trainLog, net, dataset, testDataset, config.epochs, config.learingRate);
+				net.reset(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
+			ann::classification::train<DataSetType, TestDataSetType>(&trainLog, net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_GAN:
 			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
 			break;
 		break;
+		case MODE_REGRESSION:
+		{
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, false));
+			ann::regression::train(&trainLog, net, trainDataset, testDataset, config.epochs, config.learingRate);
+			break;
+		}
 		case MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"invalid model";

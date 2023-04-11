@@ -1,39 +1,9 @@
-#include "ann.h"
+#include "classification.h"
 #include "log.h"
 
-using namespace ann;
+using namespace ann::classification;
 
-std::shared_ptr<Net> ann::load(const std::string& fileName, int64_t inputSize, int64_t outputSize, size_t downsampleSteps, size_t extraSteps)
-{
-	std::shared_ptr<SimpleNet> simpleNet(new SimpleNet(inputSize, outputSize, downsampleSteps, extraSteps));
-	std::shared_ptr<ConvNet> convNet(new ConvNet(inputSize, outputSize, downsampleSteps, extraSteps));
-
-	try
-	{
-		torch::load(simpleNet, fileName);
-		Log(Log::DEBUG)<<fileName<<" is a simple network";
-		return simpleNet;
-	}
-	catch(torch::Error& error)
-	{
-		Log(Log::INFO)<<fileName<<" is not a simple network";
-	}
-
-	try
-	{
-		torch::load(convNet, fileName);
-		Log(Log::DEBUG)<<fileName<<" is a conv network";
-		return convNet;
-	}
-	catch(torch::Error& error)
-	{
-		Log(Log::ERROR)<<fileName<<" is not a conv network or simple network with output size "<<outputSize
-			<<" and "<<extraSteps<<" extra hidden layers";
-		return nullptr;
-	}
-}
-
-torch::Tensor ann::multiClassHits(const torch::Tensor& prediction, torch::Tensor targets, double thresh)
+torch::Tensor ann::classification::multiClassHits(const torch::Tensor& prediction, torch::Tensor targets, double thresh)
 {
 	torch::Tensor hits = torch::ones({prediction.size(0)},
 		torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU));
@@ -52,7 +22,7 @@ torch::Tensor ann::multiClassHits(const torch::Tensor& prediction, torch::Tensor
 	return hits;
 }
 
-torch::Tensor ann::use(torch::Tensor input, std::shared_ptr<Net> net)
+torch::Tensor ann::classification::use(torch::Tensor input, std::shared_ptr<Net> net)
 {
 	net->eval();
 	torch::Tensor output = torch::exp(net->forward(input.reshape({1, net->getInputSize()})));
@@ -66,7 +36,7 @@ static const std::string getSampleOutputFileName(const std::string& dir, bool su
 			std::to_string(classNum) + std::string("_") + std::to_string(rd::uid()) + ".spc";
 }
 
-void ann::exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
+void ann::classification::exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
 						 const torch::Tensor& hits, const std::filesystem::path& outDir,
 						 bool outputProb)
 {

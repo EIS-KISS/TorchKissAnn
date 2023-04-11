@@ -6,7 +6,9 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <eisgenerator/model.h>
 
+#include "tokenize.h"
 #include "utils/log.h"
 #include "options.h"
 #include "data/loaders/mpt.h"
@@ -16,7 +18,8 @@
 #include "data/generators/eisgendata.h"
 #include "nearest/nearest.h"
 #include "utils/log.h"
-#include "ann/ann.h"
+#include "ann/classification.h"
+#include "ann/regression.h"
 #include "gan/gan.h"
 #include "data/print.h"
 #include "data/filterdata.h"
@@ -47,6 +50,24 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 
 	switch(type)
 	{
+		case FILE_TYPE_GENERATE:
+			try
+			{
+				eis::Model model(fileName, false);
+				Log(Log::INFO)<<"Generateing spectra for "<<model.getModelStrWithParam();
+				if(model.isParamSweep())
+				{
+					Log(Log::WARN)<<fileName<<" is a sweep. "
+						<<"This is not supported, only the first element of the sweep will be used";
+				}
+				eis::Range omega(1, 1e6, DATA_WIDTH, true);
+				return model.executeSweep(omega);
+			}
+			catch(const eis::parse_errror& err)
+			{
+				Log(Log::ERROR)<<"Could not load parse "<<fileName<<": "<<err.what();
+				return std::vector<eis::DataPoint>();
+			}
 		case FILE_TYPE_CSV:
 			try
 			{
@@ -126,7 +147,7 @@ torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net>
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(BATCH_SIZE).workers(JOBS);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return test(network, *dataLoader, dataset.size().value(),
+	return ann::classification::test(network, *dataLoader, dataset.size().value(),
 				   dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
 }
 
@@ -137,7 +158,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_pt
 	switch(mode)
 	{
 		case MODE_ANN:
-			output = ann::use(input, net);
+			output = ann::classification::use(input, net);
 			break;
 		case MODE_NN:
 		{
@@ -145,7 +166,6 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_pt
 			output = NearestNeighbor::use(input, dataset.get());
 			break;
 		}
-		case MODE_KNN:
 		default:
 			Log(Log::ERROR)<<"Not implemented";
 			return torch::Tensor();
@@ -172,18 +192,9 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
 
 	if(data.empty())
-	{
-		Log(Log::ERROR)<<"Could not load spectrum file from "<<config.spectraFileName;
 		return 3;
-	}
 
 	filterData(data, DATA_WIDTH);
-
-	if(config.show)
-	{
-		printDataVect(data);
-		return 0;
-	}
 
 	if(config.reexport)
 	{
@@ -230,16 +241,78 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	return 0;
 }
 
+int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
+{
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+
+	if(data.empty())
+		return 3;
+
+	std::vector<std::string> purposeTokens = tokenize(net->getPurpose(), ' ');
+	if(purposeTokens[0] != "Regression")
+	{
+		Log(Log::ERROR)<<"The loaded model dosent report to be a regression model";
+		return 1;
+	}
+
+	std::string targetModelStr = "Unkown";
+	if(purposeTokens.size() >= 3)
+		targetModelStr = purposeTokens[2];
+
+	Log(Log::INFO)<<"Running parameter regression for "<<targetModelStr;
+
+	torch::Tensor input = eisToTorch(data);
+
+	torch::Tensor output = ann::regression::use(input, net);
+
+	if(output.numel() == 0)
+		return 5;
+
+	for(int64_t i = 0; i < output.size(0); ++i)
+	{
+		std::string parameter;
+		if(i < static_cast<int64_t>(net->getOutputLabels().size()))
+			parameter = net->getOutputLabels()[i];
+		else
+			parameter = std::string("Unkown");
+		Log(Log::INFO)<<i<<'\t'<<parameter<<(parameter.size() >= 8 ? "\t" : "\t\t")<<output[i].item().to<float>();
+	}
+
+	return 0;
+}
+
+int showPipe(const Config& config)
+{
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	if(data.empty())
+		return 3;
+	printDataVect(data);
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
 	std::shared_ptr<ann::Net> net = ann::Net::newNetFromCheckpointDir(config.networkFileName);
-	if(config.mode != MODE_ANN_TEST)
-		return classifyPipeline(config, net);
-	else
-		return testPipe(config, net);
+
+	switch(config.mode)
+	{
+		case MODE_NN:
+		case MODE_ANN:
+			return classifyPipeline(config, net);
+		case MODE_ANN_TEST:
+			return testPipe(config, net);
+		case MODE_REGRESSION:
+			return regressionPipe(config, net);
+		case MODE_SHOW:
+			return showPipe(config);
+		case MODE_INVALID:
+		default:
+			Log(Log::ERROR)<<"An invalid mode was specified";
+			return 1;
+	}
 
 	return 0;
 }

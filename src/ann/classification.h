@@ -16,7 +16,8 @@
 namespace ann
 {
 
-std::shared_ptr<Net> load(const std::string& fileName, int64_t inputSize, int64_t outputSize, size_t downsampleSteps, size_t extraSteps);
+namespace classification
+{
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
@@ -166,6 +167,8 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		assert(trainDataset->isMulticlass() == testDataset->isMulticlass());
 	}
 
+	net->setPurpose("Classifier");
+
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;
 	for(int64_t i = 0; i < net->getOutputSize(); ++i)
@@ -210,6 +213,8 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	}
 
 	trainLog->saveNetwork(net);
+}
+
 }
 
 }
