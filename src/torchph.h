@@ -8,4 +8,4 @@
 #include <torch/data/dataloader_options.h>
 #include <torch/data/transforms.h>
 
-template class torch::data::Example<torch::Tensor, torch::Tensor>;
+//template class torch::data::Example<torch::Tensor, torch::Tensor>;
