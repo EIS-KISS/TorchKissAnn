@@ -18,12 +18,9 @@ private:
 	std::shared_ptr<std::mutex> datasetMutex;
 	size_t _factor;
 
-
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override
 	{
-		//datasetMutex->lock();
 		torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(index % _dataset->size().value());
-		//datasetMutex->unlock();
 
 		if(index > _dataset->size().value())
 		{
