@@ -1,6 +1,5 @@
 #include "net.h"
 #include "../utils/seqprint.h"
-#include "log.h"
 #include <sstream>
 #include <fstream>
 
@@ -16,10 +15,17 @@ int64_t ann::Net::getOutputSize() const
 	return outputSize;
 }
 
+bool ann::Net::hasSoftmaxOutput() const
+{
+	return softmax;
+}
+
 ann::Net::Net(const Json::Value& node)
 {
 	inputSize = node["inputSize"].asInt64();
 	outputSize = node["outputSize"].asInt64();
+	softmax = node.get("softmax", "true").asBool();
+	purpose = node.get("purpose", "Unkown").asString();
 
 	if(node.isMember("outputLabels"))
 	{
@@ -41,6 +47,8 @@ void ann::Net::getConfiguration(Json::Value& node)
 {
 	node["inputSize"] = inputSize;
 	node["outputSize"] = outputSize;
+	node["softmax"] = softmax;
+	node["purpose"] = purpose;
 
 	if(!outputLabels.empty())
 	{
@@ -116,6 +124,16 @@ std::shared_ptr<Net> ann::Net::newNetFromCheckpointDir(const std::filesystem::pa
 	return net;
 }
 
+const std::string& ann::Net::getPurpose() const
+{
+	return purpose;
+}
+
+void ann::Net::setPurpose(const std::string& str)
+{
+	purpose = str;
+}
+
 static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers, size_t input, size_t output)
 {
 	size_t layerIn = (input*(leyers-layer)/leyers)+output*(layer)/leyers;
@@ -131,8 +149,8 @@ Net(node)
 	init();
 }
 
-ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI):
-Net(inputSizeI, outputSizeI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
+ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI, bool softmaxI):
+Net(inputSizeI, outputSizeI, softmaxI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
 {
 	init();
 }
@@ -168,7 +186,8 @@ void ann::SimpleNet::init()
 	}
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
+	if(softmax)
+		model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
 }
 
 std::shared_ptr<torch::nn::Module> ann::SimpleNet::operator[](size_t index)
@@ -197,8 +216,8 @@ Net(node)
 	init();
 }
 
-ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI):
-Net(inputSizeI, outputSizeI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
+ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI, bool softmaxI):
+Net(inputSizeI, outputSizeI, softmaxI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
 {
 	init();
 }
@@ -258,7 +277,8 @@ void ann::ConvNet::init()
 
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, size, outputSize);
 	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
+	if(softmax)
+		model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
 }
 
 torch::Tensor ann::ConvNet::forward(torch::Tensor x)

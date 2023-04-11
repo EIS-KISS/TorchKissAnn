@@ -5,6 +5,8 @@
 #include <json/json.h>
 #include <filesystem>
 
+#include "log.h"
+
 namespace ann
 {
 
@@ -14,17 +16,22 @@ protected:
 	int64_t inputSize;
 	int64_t outputSize;
 	std::vector<std::string> outputLabels;
+	std::string purpose = "Unkown";
+	bool softmax;
 
 public:
 	Net(const Json::Value& node);
-	Net(int64_t inputSizeI, int64_t outputSizeI):
-	inputSize(inputSizeI), outputSize(outputSizeI)
+	Net(int64_t inputSizeI, int64_t outputSizeI, bool softmaxI = true):
+	inputSize(inputSizeI), outputSize(outputSizeI), softmax(softmaxI)
 	{}
 
 	virtual torch::Tensor forward(torch::Tensor x) = 0;
 
 	int64_t getInputSize() const;
 	int64_t getOutputSize() const;
+	bool hasSoftmaxOutput() const;
+	const std::string& getPurpose() const;
+	void setPurpose(const std::string& str);
 	const std::vector<std::string>& getOutputLabels() const;
 	void setOutputLabels(const std::vector<std::string>& outputLabels);
 	virtual void getConfiguration(Json::Value& node);
@@ -32,7 +39,27 @@ public:
 	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) = 0;
 	static std::shared_ptr<Net> newNetFromConfiguation(const Json::Value& node);
 	static std::shared_ptr<Net> newNetFromCheckpointDir(const std::filesystem::path& path);
+	template <typename DatasetType> bool setOutputLabelsFromDataset(DatasetType* dataset);
 };
+
+template <typename DatasetType> bool Net::setOutputLabelsFromDataset(DatasetType* dataset)
+{
+	if(getOutputSize() != static_cast<int64_t>(dataset->classesCount()))
+		Log(Log::WARN)<<"This dataset has the wrong number of classes, cant set the output lables from this dataset";
+	std::vector<std::string> outputLablesTmp(getOutputSize());
+	for(int64_t i = 0; i < getOutputSize(); ++i)
+	{
+		std::string label = dataset->modelStringForClass(i);
+		if(label == "Unkown")
+		{
+			Log(Log::WARN)<<"This dataset dosent provide output labels";
+			return false;
+		}
+		outputLablesTmp[i] = dataset->modelStringForClass(i);
+	}
+	setOutputLabels(outputLablesTmp);
+	return true;
+}
 
 class SimpleNet : public Net
 {
@@ -44,10 +71,10 @@ class SimpleNet : public Net
 
 public:
 	SimpleNet(const Json::Value& node);
-	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3);
+	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3, bool softmax = true);
 	virtual torch::Tensor forward(torch::Tensor x) override;
 	virtual void getConfiguration(Json::Value& node) override;
-	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index);
+	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) override;
 };
 
 class ConvNet : public Net
@@ -60,10 +87,10 @@ class ConvNet : public Net
 
 public:
 	ConvNet(const Json::Value& node);
-	ConvNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleStepsI = 4, size_t extraStepsI = 3);
+	ConvNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleStepsI = 4, size_t extraStepsI = 3, bool softmax = true);
 	virtual torch::Tensor forward(torch::Tensor x) override;
-	virtual void getConfiguration(Json::Value& node);
-	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index);
+	virtual void getConfiguration(Json::Value& node) override;
+	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) override;
 };
 
 }
