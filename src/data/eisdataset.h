@@ -86,7 +86,7 @@ torch::Tensor EisDataset<DataSelf>::classCounts()
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	return torch::zeros({static_cast<int64_t>(classesCount())}, options);
+	return torch::ones({static_cast<int64_t>(classesCount())}, options);
 }
 
 template <typename DataSelf>
