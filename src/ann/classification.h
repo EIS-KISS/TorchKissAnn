@@ -51,18 +51,22 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		torch::Tensor loss;
 
 		torch::Tensor acc;
-		if(!isMulticlass)
-		{
-			targets = targets.view({-1});
-			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
-			acc = prediction.argmax(1).eq(targets).sum();
-		}
-		else
-		{
-			targets = targets.reshape({prediction.size(0), prediction.size(1)});
 
-			loss = lossBCE->forward(prediction, targets.to(torch::kFloat32));
-			acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum();
+		{
+			torch::NoGradGuard noGrad;
+			if(!isMulticlass)
+			{
+				targets = targets.view({-1});
+				loss = lossNll->forward(prediction, targets.to(torch::kInt64));
+				acc = prediction.argmax(1).eq(targets).sum();
+			}
+			else
+			{
+				targets = targets.reshape({prediction.size(0), prediction.size(1)});
+
+				loss = lossBCE->forward(prediction, targets.to(torch::kFloat32));
+				acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum();
+			}
 		}
 		assert(!std::isnan(loss.template item<float>()));
 

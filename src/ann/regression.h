@@ -49,9 +49,12 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		loss.backward();
 		optimizer.step();
 
-		lossAccumulator += loss.template item<float>();
-		torch::Tensor batchAccum = (prediction-targets).square().sum(0);
-		distanceAccumulator += batchAccum;
+		{
+			torch::NoGradGuard noGrad;
+			lossAccumulator += loss.template item<float>();
+			torch::Tensor batchAccum = (prediction-targets).square().sum(0);
+			distanceAccumulator += batchAccum;
+		}
 
 		if(log && index++ % loginterval == 0 && index / loginterval > 1)
 		{
@@ -67,7 +70,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 				   int64_t classesCount, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
-	torch::NoGradGuard no_grad;
+	torch::NoGradGuard noGrad;
 
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32));
@@ -109,6 +112,8 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		assert(trainDataset->classesCount() == testDataset->classesCount());
 		assert(testDataset->isMulticlass());
 	}
+
+	Log(Log::WARN)<<"No test dataset provided!";
 
 	net->setPurpose("Regression for " + trainDataset->modelStringForClass(trainDataset->classesCount()+1));
 
