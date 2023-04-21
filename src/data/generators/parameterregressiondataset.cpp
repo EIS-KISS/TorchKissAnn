@@ -8,8 +8,8 @@ model(modelStr), omega(10, 1e6, outputSize/2, true), noise(noiseI)
 	sweepCount = model.getRequiredStepsForSweeps();
 	if(sweepCount < 1e6)
 		model.setParamSweepCountClosestTotal(1e6);
-	else if(sweepCount > 100e6)
-		model.setParamSweepCountClosestTotal(1e6);
+	else if(sweepCount > 10e6)
+		model.setParamSweepCountClosestTotal(10e6);
 	sweepCount = model.getRequiredStepsForSweeps();
 	parameterCount = model.getParameterCount();
 }
