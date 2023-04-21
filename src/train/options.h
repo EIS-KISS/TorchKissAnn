@@ -23,14 +23,13 @@ static struct argp_option options[] =
   {"dataset-size",	's', "[NUMBER]",	0,	"the size of the training dataset to use when using a generated or semi-generated dataset"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"test",			't', "[STRING]",	0,	"filename for the test dataset"},
-  {"export-dir",	'e', "[DIRECTORY]",	0,	"directory to save diagonistic data too"},
-  {"export-prob",	'o', "[NUMMBER]",	0,	"probability that a data will be logged."},
   {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the training batch"},
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"probe-model",	'p', 0,				0,	"use probe model (l{5e-7})"},
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
-  {"learing-rate",	'r', "[NUMBER]",	0,	"sgd lering rate, default: 0.005"},
+  {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
+  {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   { 0 }
 };
 
@@ -121,9 +120,9 @@ struct Config
 {
 	TrainMode mode = MODE_INVALID;
 	DatasetMode datasetMode = DATASET_INVALID;
-	std::string exportDirectory;
 	std::filesystem::path fileName;
 	std::filesystem::path testFileName;
+	std::filesystem::path outputDir;
 	double noise = 0;
 	double learingRate = 0.005;
 	size_t batchSize = 100;
@@ -175,8 +174,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			else
 				config->noise = 0.02;
 			break;
-		case 'e':
-			config->exportDirectory.assign(arg);
+		case 'o':
+			config->outputDir.assign(arg);
 			break;
 		case 'b':
 			config->batchSize = std::stoul(std::string(arg));

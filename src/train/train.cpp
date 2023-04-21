@@ -206,7 +206,12 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		" dataset of size "<<trainDataset->size().value()<<" with "<<trainDataset->classesCount()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<trainDataset->classWeights()<<'\n';
 
-	TrainLog trainLog;
+	std::unique_ptr<TrainLog> trainLog;
+
+	if(!config.outputDir.empty())
+		trainLog.reset(new TrainLog(config.outputDir));
+	else
+		trainLog.reset(new TrainLog());
 
 	{
 		TrainLog::MetaData meta;
@@ -220,7 +225,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		meta.datasetSize = trainDataset->size().value();
 		meta.trainingFile = config.fileName;
 		meta.testingFile = config.testFileName;
-		trainLog.saveMetadata(meta);
+		trainLog->saveMetadata(meta);
 	}
 
 	switch(config.mode)
@@ -233,7 +238,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				net.reset(new ann::ConvNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
 			else
 				net.reset(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
-			ann::classification::train<DataSetType, TestDataSetType>(&trainLog, net, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_GAN:
@@ -243,7 +248,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		case MODE_REGRESSION:
 		{
 			std::shared_ptr<ann::Net> net(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, false));
-			ann::regression::train(&trainLog, net, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::regression::train(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_INVALID:
@@ -252,4 +257,3 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			break;
 	}
 }
-
