@@ -53,14 +53,15 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 		case FILE_TYPE_GENERATE:
 			try
 			{
-				eis::Model model(fileName, false);
+				Log(Log::DEBUG)<<"Data width: "<<DATA_WIDTH;
+				eis::Model model(fileName, 0, false);
 				Log(Log::INFO)<<"Generateing spectra for "<<model.getModelStrWithParam();
 				if(model.isParamSweep())
 				{
 					Log(Log::WARN)<<fileName<<" is a sweep. "
 						<<"This is not supported, only the first element of the sweep will be used";
 				}
-				eis::Range omega(1, 1e6, DATA_WIDTH, true);
+				eis::Range omega(1, 1e6, DATA_WIDTH/2, true);
 				return model.executeSweep(omega);
 			}
 			catch(const eis::parse_errror& err)
@@ -196,13 +197,6 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 
 	filterData(data, DATA_WIDTH);
 
-	if(config.reexport)
-	{
-		torch::Tensor input = eisToTorch(data);
-		eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
-		return 0;
-	}
-
 	torch::Tensor input = eisToTorch(data);
 
 	if(!filter(input, config.filterFileName, config.filterMode))
@@ -263,7 +257,11 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 	torch::Tensor input = eisToTorch(data);
 
+	Log(Log::DEBUG)<<"data size: "<<data.size()<<" tensor size "<<input.sizes();
+
 	torch::Tensor output = ann::regression::use(input, net);
+
+	Log(Log::DEBUG)<<"output shape: "<<output.sizes();
 
 	if(output.numel() == 0)
 		return 5;
@@ -290,12 +288,66 @@ int showPipe(const Config& config)
 	return 0;
 }
 
+int reexportPipe(const Config& config)
+{
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	if(data.empty())
+		return 3;
+	filterData(data, DATA_WIDTH);
+	torch::Tensor input = eisToTorch(data);
+	eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
+	return 0;
+}
+
+bool requiresNetwork(PredictionMode mode)
+{
+	switch(mode)
+	{
+		case MODE_NN:
+		case MODE_ANN:
+		case MODE_ANN_TEST:
+		case MODE_REGRESSION:
+			return true;
+		case MODE_SHOW:
+		case MODE_REEXPORT:
+		case MODE_INVALID:
+		default:
+			return false;
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
-	std::shared_ptr<ann::Net> net = ann::Net::newNetFromCheckpointDir(config.networkFileName);
+	std::shared_ptr<ann::Net> net;
+
+	if(requiresNetwork(config.mode))
+	{
+		if(config.networkFileName.empty())
+		{
+			Log(Log::ERROR)<<"A network filename is required for this mode";
+			return 2;
+		}
+
+		net = ann::Net::newNetFromCheckpointDir(config.networkFileName);
+
+		if(!net)
+		{
+			Log(Log::ERROR)<<"Could not load network from "<<config.networkFileName;
+			return 2;
+		}
+
+		Log(Log::INFO)<<"Loaded network with "<<net->getOutputSize()<<" outputs. Purpose: "<<net->getPurpose();
+		const std::vector<std::string>& outputLabels = net->getOutputLabels();
+		if(!outputLabels.empty())
+		{
+			Log(Log::INFO)<<"Output labels:";
+			for(const std::string& label : outputLabels)
+				Log(Log::INFO)<<label;
+		}
+	}
 
 	switch(config.mode)
 	{
@@ -308,6 +360,8 @@ int main(int argc, char** argv)
 			return regressionPipe(config, net);
 		case MODE_SHOW:
 			return showPipe(config);
+		case MODE_REEXPORT:
+			return reexportPipe(config);
 		case MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"An invalid mode was specified";
