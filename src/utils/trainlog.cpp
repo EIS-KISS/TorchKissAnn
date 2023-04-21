@@ -59,6 +59,16 @@ TrainLog::TrainLog()
 	lossFileTest = createLossFile("lossValidate.csv");
 }
 
+TrainLog::TrainLog(const std::filesystem::path& path)
+{
+	if(!std::filesystem::is_directory(path))
+		std::filesystem::create_directory(path);
+	logDir = path;
+
+	lossFileTrain = createLossFile("lossTrain.csv");
+	lossFileTest = createLossFile("lossValidate.csv");
+}
+
 void TrainLog::saveMetadata(const MetaData& meta)
 {
 	std::filesystem::path path(logDir/"metadata.json");

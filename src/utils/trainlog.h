@@ -49,6 +49,7 @@ public:
 
 public:
 	TrainLog();
+	TrainLog(const std::filesystem::path& path);
 	~TrainLog();
 	void saveMetadata(const MetaData& meta);
 
