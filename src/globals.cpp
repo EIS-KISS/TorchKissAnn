@@ -1,0 +1,80 @@
+#include <c10/core/DeviceType.h>
+#include <cstddef>
+#include <torch/cuda.h>
+#include <torch/torch.h>
+#include <limits>
+
+#if (defined(CUDA_VERSION) && CUDA_VERSION >= 11000) || defined(USE_ROCM)
+#include <ATen/hip/HIPContext.h>
+#else
+#include <ATen/cuda/CUDAContext.h>
+#endif
+
+
+#include "log.h"
+
+torch::DeviceType offload_type;
+torch::Device* offload_device;
+
+static size_t print_device_proparties(size_t deviceIndex, bool newline = true)
+{
+#if (defined(CUDA_VERSION) && CUDA_VERSION >= 11000) || defined(USE_ROCM)
+	hipDeviceProp_t* deviceProparties = at::cuda::getDeviceProperties(deviceIndex);
+	if(!deviceProparties)
+	{
+		Log(Log::ERROR, newline)<<"Could not get proparties for device "<<deviceIndex;
+		return 0;
+	}
+	Log(Log::INFO, newline)<<"Hip device "<<deviceIndex<<" \""<<deviceProparties->name<<"\" with "
+		<<deviceProparties->totalGlobalMem/(1024*1024)<<"MiB vram, architecture: "
+		<<deviceProparties->gcnArchName;
+	return deviceProparties->totalGlobalMem;
+#else
+		cudaDeviceProp* deviceProparties = at::cuda::getDeviceProperties(i);
+		Log(Log::INFO, newline)<<"Cuda device "<<deviceIndex<<" \""<<deviceProparties->name<<"\" with "
+			<<deviceProparties->totalGlobalMem/(1024*1024)<<"MiB vram";
+	return deviceProparties->totalGlobalMem;
+#endif
+	return 0;
+}
+
+void choose_device(bool forceCpu)
+{
+	if(torch::cuda::is_available() && !forceCpu)
+	{
+		Log(Log::INFO)<<"Training on GPU";
+		offload_type = torch::kCUDA;
+
+		Log(Log::INFO)<<"Found "<<torch::cuda::device_count()<<" GPUs";
+		size_t maxMemory = 0;
+		size_t maxMemoryIndex = 0;
+		for(size_t i = 0; i < torch::cuda::device_count(); ++i)
+		{
+			size_t memory = print_device_proparties(i);
+			if(memory > maxMemory)
+			{
+				maxMemory = memory;
+				maxMemoryIndex = i;
+			}
+		}
+
+		Log(Log::INFO, false)<<"Will use ";
+		print_device_proparties(maxMemoryIndex, false);
+		Log(Log::INFO)<<" because this device has the most memory\n"
+			<<"if this is not desirable please set the HIP_VISIBLE_DEVICES or CUDA_VISIBLE_DEVICES envvar";
+
+		offload_device = new torch::Device(offload_type, maxMemoryIndex);
+	}
+	else
+	{
+		Log(Log::INFO)<<"Training on CPU";
+		offload_type = torch::kCPU;
+		offload_device = new torch::Device(offload_type, 0);
+	}
+}
+
+void free_device()
+{
+	if(offload_device)
+		delete offload_device;
+}
