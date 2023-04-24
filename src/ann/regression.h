@@ -5,7 +5,7 @@
 #include <string>
 
 #include "net.h"
-#include "constants.h"
+#include "globals.h"
 #include "../data/generators/eisgendata.h"
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
@@ -31,7 +31,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 	network->train();
 
 	float lossAccumulator = 0;
-	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32));
+	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
 	torch::nn::HuberLoss lossHuber(torch::nn::HuberLossOptions().delta(1));
 
@@ -39,8 +39,8 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(DATA_LOCATION);
-		torch::Tensor targets = batch.target.to(DATA_LOCATION);
+		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device);
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss = lossHuber->forward(prediction, targets);
@@ -60,6 +60,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		{
 			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
 			torch::Tensor distance = torch::sum(torch::sqrt(distanceAccumulator/static_cast<double>(end)));
+			distance = distance.to(torch::kCPU);
 			log->logTrainLoss(epoch, end, (lossAccumulator/end)*100, distance.template item<float>(), data_size);
 		}
 	}
@@ -79,8 +80,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 	for(const auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(DATA_LOCATION);
-		torch::Tensor targets = batch.target.to(DATA_LOCATION);
+		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device);
 
 		torch::Tensor output = network->forward(data);
 
@@ -116,6 +117,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	Log(Log::WARN)<<"No test dataset provided!";
 
 	net->setPurpose("Regression for " + trainDataset->modelStringForClass(trainDataset->classesCount()+1));
+	net->to(*offload_device);
 
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;

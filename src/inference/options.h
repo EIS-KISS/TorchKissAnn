@@ -3,7 +3,7 @@
 #include <vector>
 #include <argp.h>
 #include <iostream>
-#include "constants.h"
+#include "globals.h"
 #include "utils/log.h"
 
 const inline char *argp_program_version = "TorchKissAnn";

@@ -23,7 +23,7 @@
 #include "gan/gan.h"
 #include "data/print.h"
 #include "data/filterdata.h"
-#include "constants.h"
+#include "globals.h"
 
 bool yesNoPrompt(std::string msg)
 {
@@ -321,6 +321,8 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	choose_device(true);
+
 	std::shared_ptr<ann::Net> net;
 
 	if(requiresNetwork(config.mode))
@@ -368,5 +370,6 @@ int main(int argc, char** argv)
 			return 1;
 	}
 
+	free_device();
 	return 0;
 }

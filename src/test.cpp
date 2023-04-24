@@ -112,8 +112,10 @@ void testModelGrad()
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
+	choose_device(true);
 
 	//testEisGeneratorDataset();
 	//reexportDirDataset();
+	free_device();
 	return 0;
 }

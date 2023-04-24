@@ -30,6 +30,7 @@ static struct argp_option options[] =
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
+  {"no-gpu",		'n', 0,				0,	"don't use gpu even if one is available"},
   { 0 }
 };
 
@@ -130,6 +131,7 @@ struct Config
 	size_t datasetSize = 2e6;
 	size_t extraLayers = 3;
 	bool probeModel = false;
+	bool noGpu = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -194,6 +196,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'r':
 			config->learingRate = std::stod(std::string(arg));
+			break;
+		case 'n':
+			config->noGpu = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

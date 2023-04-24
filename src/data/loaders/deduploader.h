@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include "constants.h"
+#include "globals.h"
 #include "data/eisdataset.h"
 
 class FastDedupDataset : public EisDataset<FastDedupDataset>

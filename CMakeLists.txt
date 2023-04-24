@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(torchkissann)
+project(torchkissann CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
@@ -17,6 +17,8 @@ pkg_search_module(JSONCPP REQUIRED jsoncpp)
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
 
+option(GPU_COMPUTE "Build with gpu support" OFF)
+
 set(COMMON_LINK_LIBRARIES pthread ${JSONCPP_LIBRARIES} ${TORCH_LIBRARIES} ${ARMADILLO_LIBRARIES} eisgenerator)
 set(COMMON_INCLUDE_DIRECTORYS ${JSONCPP_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-Wall -O2 -march=native -g -Wfatal-errors")
@@ -24,5 +26,9 @@ message("Linking: " "${COMMON_LINK_LIBRARIES}")
 message("Includeing: " "${COMMON_INCLUDE_DIRECTORYS}")
 
 add_compile_definitions(MODEL_LISTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/modellists")
+
+if(GPU_COMPUTE)
+	add_compile_definitions(GPU_COMPUTE="Y")
+endif(GPU_COMPUTE)
 
 add_subdirectory(src)

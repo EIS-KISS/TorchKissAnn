@@ -1,11 +1,12 @@
 #pragma once
+#include <c10/core/DeviceType.h>
 #include <cstddef>
 #include <cstdint>
 #include <torch/optim.h>
 #include <string>
 
 #include "net.h"
-#include "constants.h"
+#include "globals.h"
 #include "../data/generators/eisgendata.h"
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
@@ -44,29 +45,26 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(DATA_LOCATION);
-		torch::Tensor targets = batch.target.to(DATA_LOCATION);
+		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device);
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss;
 
 		torch::Tensor acc;
 
+		if(!isMulticlass)
 		{
-			torch::NoGradGuard noGrad;
-			if(!isMulticlass)
-			{
-				targets = targets.view({-1});
-				loss = lossNll->forward(prediction, targets.to(torch::kInt64));
-				acc = prediction.argmax(1).eq(targets).sum();
-			}
-			else
-			{
-				targets = targets.reshape({prediction.size(0), prediction.size(1)});
+			targets = targets.view({-1});
+			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
+			acc = prediction.argmax(1).eq(targets).sum().to(torch::kCPU);
+		}
+		else
+		{
+			targets = targets.reshape({prediction.size(0), prediction.size(1)});
 
-				loss = lossBCE->forward(prediction, targets.to(torch::kFloat32));
-				acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum();
-			}
+			loss = lossBCE->forward(prediction, targets.to(torch::kFloat32)).to(torch::kCPU);
+			acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum().to(torch::kCPU);
 		}
 		assert(!std::isnan(loss.template item<float>()));
 
@@ -104,8 +102,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 	for(const auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(DATA_LOCATION);
-		torch::Tensor targets = batch.target.to(DATA_LOCATION).view({-1});
+		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
@@ -172,6 +170,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	}
 
 	net->setPurpose("Classifier");
+	net->to(*offload_device);
 
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;

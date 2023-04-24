@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include "constants.h"
+#include "globals.h"
 #include "classextractordatasethighspeed.h"
 #include "log.h"
 #include "../csvBackend.h"

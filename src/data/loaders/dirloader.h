@@ -5,7 +5,7 @@
 #include <string>
 #include <filesystem>
 
-#include "constants.h"
+#include "globals.h"
 #include "data/eisdataset.h"
 
 class EisDirDataset : public EisDataset<EisDirDataset>

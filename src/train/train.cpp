@@ -4,21 +4,22 @@
 #include <eisgenerator/model.h>
 #include <memory>
 #include <vector>
+#include <torch/torch.h>
 
 #include "ann/classification.h"
 #include "ann/regression.h"
 #include "gan/gan.h"
 #include "log.h"
-#include "data/print.h"
 #include "data/splitdataset.h"
 #include "data/generators/eisgendata.h"
-#include "data/generators/trashgenerator.h"
 #include "data/generators/extendordataset.h"
 #include "data/generators/parameterregressiondataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
 #include "options.h"
 #include "trainlog.h"
+#include "globals.h"
+
 
 template <typename DataSetType>
 int train(const Config& config);
@@ -159,6 +160,8 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	choose_device(config.noGpu);
+
 	if(config.mode == MODE_INVALID)
 	{
 		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
@@ -196,6 +199,7 @@ int main(int argc, char** argv)
 			break;
 	}
 
+	free_device();
 	return 0;
 }
 

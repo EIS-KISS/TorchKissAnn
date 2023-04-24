@@ -5,7 +5,7 @@
 
 #include "log.h"
 #include "simplenet.h"
-#include "constants.h"
+#include "globals.h"
 
 static constexpr int Z_SIZE = 10;
 
@@ -44,10 +44,10 @@ void gan::train(std::string fileName, size_t exampleCount, double noise)
 		for(auto& batch : *dataLoader)
 		{
 
-			torch::Tensor inputLabel = torch::full({batch.data.size(0)}, 1, torch::TensorOptions().dtype(torch::kFloat)).to(DATA_LOCATION);
+			torch::Tensor inputLabel = torch::full({batch.data.size(0)}, 1, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device);
 			torch::Tensor input = batch.data;
 
-			torch::Tensor fakeLabel = torch::full({batch.data.size(0)}, 0, torch::TensorOptions().dtype(torch::kFloat)).to(DATA_LOCATION);
+			torch::Tensor fakeLabel = torch::full({batch.data.size(0)}, 0, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device);
 			torch::Tensor generatedFake = gen->forward(torch::randn({batch.data.size(0), Z_SIZE}));
 
 			torch::Tensor fakePrediction = dis->forward(generatedFake.detach()).first.view({-1});
