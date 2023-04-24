@@ -31,15 +31,16 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDataset::g
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kFloat32);
-	torch::Tensor output = torch::zeros({static_cast<int64_t>(model.getParameterCount())}, options);
+	torch::Tensor output = torch::empty({static_cast<int64_t>(model.getParameterCount())}, options);
 
 	size_t i = 0;
+	auto tensorAccessor = output.accessor<float, 1>();
 	for(eis::Componant * const componant : componants)
 	{
 		std::vector<eis::Range> ranges = componant->getParamRanges();
 		for(const eis::Range& range : ranges)
 		{
-			output[i] = range.stepValue();
+			tensorAccessor[i] = range.stepValue();
 			++i;
 		}
 	}
