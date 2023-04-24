@@ -1,12 +1,12 @@
 #pragma once
 #include "torchph.h"
 
-static constexpr int BATCH_SIZE = 256;
 static constexpr int DATA_WIDTH = 100;
 static constexpr int JOBS = 64;
 
 extern torch::DeviceType offload_type;
 extern torch::Device* offload_device;
+extern int batch_size;
 
 typedef enum
 {

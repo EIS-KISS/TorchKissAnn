@@ -19,7 +19,7 @@ template <typename ParentType>
 class DeduplatorDataset :
 public EisDataset<DeduplatorDataset<ParentType>>
 {
-	static constexpr size_t BATCH_SIZE = 100000;
+	static constexpr size_t batch_size = 100000;
 	static constexpr float epsilon = 0.001;
 private:
 	EisDataset<ParentType>* _dataset;
@@ -113,7 +113,7 @@ public:
 		}
 
 		torch::data::DataLoaderOptions loaderOptions;
-		loaderOptions = loaderOptions.batch_size(BATCH_SIZE);
+		loaderOptions = loaderOptions.batch_size(batch_size);
 		loaderOptions = loaderOptions.workers(JOBS);
 		loaderOptions = loaderOptions.max_jobs(JOBS*2);
 
@@ -124,7 +124,7 @@ public:
 
 		for(size_t i = 0; i < _dataset->classesCount(); ++i)
 		{
-			loaderOptions = loaderOptions.batch_size(std::min(classExtractorDatasets[i]->size().value()/(JOBS*2), BATCH_SIZE));
+			loaderOptions = loaderOptions.batch_size(std::min(classExtractorDatasets[i]->size().value()/(JOBS*2), batch_size));
 			classLoaders.push_back(torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
 				classExtractorDatasets[i]->map(torch::data::transforms::Stack<>()), loaderOptions));
 		}

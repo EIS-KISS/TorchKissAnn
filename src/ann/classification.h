@@ -77,7 +77,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 		if (index++ % 100 == 0 && index / 100 > 1)
 		{
-			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
+			auto end = std::min(data_size, (index + 1) * batch_size);
 			if(log)
 				log->logTrainLoss(epoch, end, (lossF/end)*100, accF/end, data_size);
 		}
@@ -189,7 +189,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		net->setOutputLabels(outputLables);
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(BATCH_SIZE).workers(JOBS);
+	options = options.batch_size(batch_size).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>
 		(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;

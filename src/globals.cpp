@@ -15,6 +15,7 @@
 
 torch::DeviceType offload_type;
 torch::Device* offload_device;
+int batch_size = 256;
 
 static size_t print_device_proparties(size_t deviceIndex, bool newline = true)
 {

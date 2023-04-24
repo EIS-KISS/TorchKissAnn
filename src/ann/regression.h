@@ -58,7 +58,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 		if(log && index++ % loginterval == 0 && index / loginterval > 1)
 		{
-			auto end = std::min(data_size, (index + 1) * BATCH_SIZE);
+			auto end = std::min(data_size, (index + 1) * batch_size);
 			torch::Tensor distance = torch::sum(torch::sqrt(distanceAccumulator/static_cast<double>(end)));
 			distance = distance.to(torch::kCPU);
 			log->logTrainLoss(epoch, end, (lossAccumulator/end)*100, distance.template item<float>(), data_size);
@@ -136,7 +136,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		net->setOutputLabels(outputLables);
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(BATCH_SIZE).workers(JOBS);
+	options = options.batch_size(batch_size).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>
 		(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader =

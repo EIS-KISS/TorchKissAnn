@@ -146,7 +146,7 @@ torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net>
 {
 	EisDirDataset dataset(datasetDir);
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(BATCH_SIZE).workers(JOBS);
+	options = options.batch_size(batch_size).workers(JOBS);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 	return ann::classification::test(network, *dataLoader, dataset.size().value(),
 				   dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());

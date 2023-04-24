@@ -126,7 +126,7 @@ struct Config
 	std::filesystem::path outputDir;
 	double noise = 0;
 	double learingRate = 0.005;
-	size_t batchSize = 100;
+	size_t batchSize = 256;
 	size_t epochs = 30;
 	size_t datasetSize = 2e6;
 	size_t extraLayers = 3;

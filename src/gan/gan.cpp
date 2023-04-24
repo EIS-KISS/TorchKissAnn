@@ -81,7 +81,7 @@ void gan::train(std::string fileName, size_t exampleCount, double noise)
 				std::cout<<"realPrediction:\n"<<realPrediction<<'\n';
 				std::cout<<"fakePrediction:\n"<<fakePrediction<<'\n';
 				size_t data_size = eisData->size().value();
-				int64_t end = std::min(data_size, (index + 1) * BATCH_SIZE);
+				int64_t end = std::min(data_size, (index + 1) * batch_size);
 				std::cout<<"Train Epoch: "<< epoch <<' '<<end<<'/'<<data_size<<"\tDis Loss: "<<(disLoss/torch::Scalar(end)).item<float>()<<"\tGen Loss: "<<(genLoss/torch::Scalar(end)).item<float>()<<"\tAcc: "<<(accReal+accFake).item<float>()<<'\n';
 				torch::save(dis, fileName + ".dis.vos.uf");
 				torch::save(gen, fileName + ".gen.vos.uf");
