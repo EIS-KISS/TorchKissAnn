@@ -66,8 +66,8 @@ const std::vector<std::string>& ann::Net::getOutputLabels() const
 
 void ann::Net::setOutputLabels(const std::vector<std::string>& outputLabelsI)
 {
-	if(static_cast<int64_t>(outputLabels.size()) != outputSize)
-		Log(Log::WARN)<<outputLabels.size()<<" output labels where set for a network with a output size of "<<outputSize;
+	if(static_cast<int64_t>(outputLabelsI.size()) != outputSize)
+		Log(Log::WARN)<<"Attempted to set output labels of size "<<outputLabelsI.size()<<" for a network with a output size of "<<outputSize<<" ignoreing";
 
 	outputLabels = outputLabelsI;
 }
