@@ -3,15 +3,50 @@
 #include <cmath>
 #include <cstdint>
 
+#include "tensoroptions.h"
+
+torch::Tensor eisToComplexTensor(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs)
+{
+	torch::TensorOptions options = tensorOptCpu<fvalue>();
+
+	if constexpr(std::is_same<fvalue, float>::value)
+		options = options.dtype(torch::kComplexFloat);
+	else
+		options = options.dtype(torch::kComplexDouble);
+	torch::Tensor output = torch::empty({static_cast<long int>(data.size())}, options);
+	if(freqs)
+		*freqs = torch::empty({static_cast<long int>(data.size())}, tensorOptCpu<fvalue>());
+
+	torch::Tensor real = torch::real(output);
+	torch::Tensor imag = torch::imag(output);
+
+	auto realAccessor = real.accessor<fvalue, 1>();
+	auto imagAccessor = imag.accessor<fvalue, 1>();
+	float* tensorFreqDataPtr = freqs ? freqs->contiguous().data_ptr<float>() : nullptr;
+
+	for(size_t i = 0; i < data.size(); ++i)
+	{
+		fvalue real = data[i].im.real();
+		fvalue imag = data[i].im.imag();
+		if(std::isnan(real) || std::isinf(real))
+			real = 0;
+		if(std::isnan(imag) || std::isinf(imag))
+			real = 0;
+
+		realAccessor[i] = real;
+		imagAccessor[i] = imag;
+		if(tensorFreqDataPtr)
+			tensorFreqDataPtr[i] = data[i % data.size()].omega;
+	}
+
+	return output;
+}
+
 torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs)
 {
-	torch::TensorOptions options;
-	options = options.dtype(torch::kFloat32);
-	options = options.layout(torch::kStrided);
-	options = options.device(torch::kCPU);
-	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, options);
+	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>());
 	if(freqs)
-		*freqs = torch::empty({static_cast<long int>(data.size()*2)}, options);
+		*freqs = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>());
 
 	float* tensorDataPtr = input.contiguous().data_ptr<float>();
 	float* tensorFreqDataPtr = freqs ? freqs->contiguous().data_ptr<float>() : nullptr;
@@ -46,4 +81,9 @@ std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input)
 	}
 
 	return output;
+}
+
+torch::Tensor fvalueVectorToTensor(std::vector<fvalue>& vect)
+{
+	return torch::from_blob(vect.data(), {static_cast<int64_t>(vect.size())}, tensorOptCpu<fvalue>());
 }
