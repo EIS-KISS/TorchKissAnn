@@ -10,10 +10,13 @@
 
 #include "data/generators/eisgendata.h"
 #include "log.h"
+#include "tensoroperators.h"
 #include "utils/tokenize.h"
 #include "data/dataexport.h"
 #include "ann/net.h"
 #include "data/loaders/dirloader.h"
+#include "data/generators/parameterregressiondataset.h"
+#include "tensoroptions.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -109,6 +112,33 @@ void testModelGrad()
 	//Log(Log::DEBUG)<<net[0].weights
 }
 
+bool testLinearToComplex()
+{
+	torch::Tensor data = torch::randn({100}, tensorOptCpu<fvalue>());
+	torch::Tensor complex = linearToComplex(data);
+	if(complex.numel() != data.numel()/2)
+		return false;
+	torch::Tensor linear = complexToLinear(complex);
+	if(torch::sum(data-linear).item().toDouble() > 0.001)
+		return false;
+	return true;
+}
+
+bool testParaDataset()
+{
+	ParameterRegressionDataset noDrtDds ("r{100}-r{100}c{1e-6}-r{100}c{1e-4}", 100, 0, false);
+	ParameterRegressionDataset drtDds("r{100}-r{100}c{1e-6}-r{100}c{1e-4}", 100, 0, true);
+
+	torch::data::Example<torch::Tensor, torch::Tensor> example = noDrtDds.get(23);
+	torch::data::Example<torch::Tensor, torch::Tensor> exampleDrt = drtDds.get(23);
+
+	Log(Log::INFO)<<__func__<<" Parameters: "<<example.target;
+	Log(Log::INFO)<<__func__<<" Spectra: "<<linearToComplex(example.target);
+
+
+	return true;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
@@ -116,6 +146,10 @@ int main(int argc, char** argv)
 
 	//testEisGeneratorDataset();
 	//reexportDirDataset();
+
+	testLinearToComplex();
+	testParaDataset();
+
 	free_device();
 	return 0;
 }

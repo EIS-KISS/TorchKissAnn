@@ -140,7 +140,7 @@ template <> int train<ParameterRegressionDataset>(const Config& config)
 		return 1;
 	}
 
-	ParameterRegressionDataset dataset(config.fileName);
+	ParameterRegressionDataset dataset(config.fileName, 100, 0, true);
 
 	if(dataset.size().value() == 0)
 	{

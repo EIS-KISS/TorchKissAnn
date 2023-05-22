@@ -17,7 +17,7 @@ pkg_search_module(JSONCPP REQUIRED jsoncpp)
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
 
-set(COMMON_LINK_LIBRARIES pthread ${JSONCPP_LIBRARIES} ${TORCH_LIBRARIES} eisgenerator)
+set(COMMON_LINK_LIBRARIES pthread ${JSONCPP_LIBRARIES} ${TORCH_LIBRARIES} eisgenerator eisdrt_torch)
 set(COMMON_INCLUDE_DIRECTORYS ${JSONCPP_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})
 set(COMMON_COMPILE_FLAGS "-Wall -O2 -march=native -g -Wfatal-errors")
 message("Linking: " "${COMMON_LINK_LIBRARIES}")

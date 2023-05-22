@@ -1,7 +1,9 @@
 #include "tensoroperators.h"
 
+#include <c10/core/ScalarType.h>
 #include <fstream>
 #include <sstream>
+#include <torch/types.h>
 
 #include "log.h"
 
@@ -149,5 +151,18 @@ std::string tensorToString(const torch::Tensor& tensor)
 		return "";
 	}
 	return ss.str();
+}
+
+torch::Tensor linearToComplex(torch::Tensor& in)
+{
+	assert((in.dtype() == torch::kFloat32 || in.dtype() == torch::kFloat64) && in.numel() % 2 == 0);
+	return torch::view_as_complex(in.reshape({in.numel()/2, 2}));
+}
+
+torch::Tensor complexToLinear(torch::Tensor& in)
+{
+	assert(in.dtype() == torch::kComplexFloat || in.dtype() == torch::kComplexDouble);
+	torch::Tensor real = torch::view_as_real(in);
+	return real.reshape({real.numel()});
 }
 

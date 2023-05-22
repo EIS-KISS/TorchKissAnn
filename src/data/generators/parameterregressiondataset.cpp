@@ -1,9 +1,10 @@
-#include "parameterregressiondataset.h"
+#include <eisdrt/eistorchdrt.h>
 
+#include "parameterregressiondataset.h"
 #include "data/eistotorch.h"
 
-ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t outputSize, double noiseI):
-model(modelStr), omega(10, 1e6, outputSize/2, true), noise(noiseI)
+ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t outputSize, double noiseI, bool drtI):
+model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
 	sweepCount = model.getRequiredStepsForSweeps();
 	if(sweepCount < 1e6)
@@ -25,7 +26,16 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDataset::g
 	std::vector<eis::Componant*> componants = model.getFlatComponants();
 
 	assert(data.size());
-	torch::Tensor input = eisToTorch(data);
+	torch::Tensor input;
+	if(!drt)
+	{
+		input = eisToTorch(data);
+	}
+	else
+	{
+		FitMetics fm;
+		input = calcDrtTorch(data, fm,  FitParameters(1000));
+	}
 
 	torch::TensorOptions options;
 	options = options.layout(torch::kStrided);

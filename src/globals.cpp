@@ -6,7 +6,7 @@
 
 #if (defined(CUDA_VERSION) && CUDA_VERSION >= 11000) || defined(USE_ROCM)
 #include <ATen/hip/HIPContext.h>
-#else
+#elif defined(CUDA_VERSION)
 #include <ATen/cuda/CUDAContext.h>
 #endif
 
@@ -30,7 +30,7 @@ static size_t print_device_proparties(size_t deviceIndex, bool newline = true)
 		<<deviceProparties->totalGlobalMem/(1024*1024)<<"MiB vram, architecture: "
 		<<deviceProparties->gcnArchName;
 	return deviceProparties->totalGlobalMem;
-#else
+#elif defined(CUDA_VERSION)
 		cudaDeviceProp* deviceProparties = at::cuda::getDeviceProperties(i);
 		Log(Log::INFO, newline)<<"Cuda device "<<deviceIndex<<" \""<<deviceProparties->name<<"\" with "
 			<<deviceProparties->totalGlobalMem/(1024*1024)<<"MiB vram";

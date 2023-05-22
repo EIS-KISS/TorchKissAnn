@@ -18,12 +18,13 @@ private:
 	double noise;
 	size_t sweepCount;
 	size_t parameterCount;
+	bool drt;
 
 private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 public:
-	explicit ParameterRegressionDataset(const std::string& model, int64_t outputSize = 100, double noiseI = 0);
+	explicit ParameterRegressionDataset(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
 	ParameterRegressionDataset(const ParameterRegressionDataset& in) = default;
 
 	void setOmegaRange(eis::Range range);
