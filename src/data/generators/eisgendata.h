@@ -57,6 +57,7 @@ public:
 	size_t frequencies();
 	void setOmegaRange(eis::Range range);
 	size_t singleSweepCount();
+	void compileModels();
 
 	virtual torch::Tensor classWeights() override;
 	virtual torch::Tensor classCounts() override;

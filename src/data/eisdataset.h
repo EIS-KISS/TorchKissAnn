@@ -82,6 +82,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::get(siz
 template <typename DataSelf>
 torch::Tensor EisDataset<DataSelf>::classCounts()
 {
+	assert(classesCount() > 0);
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);

@@ -8,6 +8,7 @@
 
 #include "ann/classification.h"
 #include "ann/regression.h"
+#include "data/loaders/regressionloader.h"
 #include "gan/gan.h"
 #include "log.h"
 #include "data/splitdataset.h"
@@ -127,7 +128,7 @@ template <> int train<EisDirDataset>(const Config& config)
 	return 0;
 }
 
-template <> int train<ParameterRegressionDataset>(const Config& config)
+template <> int train<ParameterRegressionDatasetGenerator>(const Config& config)
 {
 	if(config.fileName.empty())
 	{
@@ -140,7 +141,7 @@ template <> int train<ParameterRegressionDataset>(const Config& config)
 		return 1;
 	}
 
-	ParameterRegressionDataset dataset(config.fileName, 100, 0, true);
+	ParameterRegressionDatasetGenerator dataset(config.fileName, 100, 0, true);
 
 	if(dataset.size().value() == 0)
 	{
@@ -148,7 +149,32 @@ template <> int train<ParameterRegressionDataset>(const Config& config)
 		return 2;
 	}
 
-	trainSwitch<ParameterRegressionDataset, ParameterRegressionDataset>(config, &dataset, nullptr);
+	trainSwitch<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(config, &dataset, nullptr);
+	return 0;
+}
+
+template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
+{
+	if(config.fileName.empty())
+	{
+		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
+		return 1;
+	}
+	if(!config.testFileName.empty())
+	{
+		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type";
+		return 1;
+	}
+
+	ParameterRegressionDatasetLoader dataset(config.fileName, true);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
+	}
+
+	trainSwitch<ParameterRegressionDatasetLoader, ParameterRegressionDatasetLoader>(config, &dataset, nullptr);
 	return 0;
 }
 
@@ -175,9 +201,9 @@ int main(int argc, char** argv)
 		return 3;
 	}
 
-	if(config.datasetMode != DATASET_GEN_REGRESSION && config.mode == MODE_REGRESSION)
+	if((config.datasetMode != DATASET_GEN_REGRESSION && config.datasetMode != DATASET_TAR_REGRESSION) && config.mode == MODE_REGRESSION)
 	{
-		Log(Log::ERROR)<<"The regression mode can only be trained with the regression dataset";
+		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
 		return 3;
 	}
 
@@ -192,9 +218,11 @@ int main(int argc, char** argv)
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
 		case DATASET_GEN_REGRESSION:
-			return train<ParameterRegressionDataset>(config);
+			return train<ParameterRegressionDatasetGenerator>(config);
+		case DATASET_TAR_REGRESSION:
+			return train<ParameterRegressionDatasetLoader>(config);
 		case DATASET_TRASH:
-			//return train<TrashDataset>(config);
+		case DATASET_TAR:
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;
@@ -238,6 +266,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		case MODE_ANN:
 		case MODE_ANN_CONV:
 		{
+			Log(Log::INFO)<<"Training classification network";
 			std::shared_ptr<ann::Net> net;
 			if(config.mode == MODE_ANN_CONV)
 				net.reset(new ann::ConvNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
@@ -252,6 +281,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		break;
 		case MODE_REGRESSION:
 		{
+			Log(Log::INFO)<<"Training regression network";
 			std::shared_ptr<ann::Net> net(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, false));
 			ann::regression::train(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;

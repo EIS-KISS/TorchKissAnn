@@ -156,13 +156,13 @@ std::string tensorToString(const torch::Tensor& tensor)
 torch::Tensor linearToComplex(torch::Tensor& in)
 {
 	assert((in.dtype() == torch::kFloat32 || in.dtype() == torch::kFloat64) && in.numel() % 2 == 0);
-	return torch::view_as_complex(in.reshape({in.numel()/2, 2}));
+	return torch::complex(torch::slice(in, 0, 0, in.numel()/2), torch::slice(in, 0, in.numel()/2, in.numel()));
 }
 
 torch::Tensor complexToLinear(torch::Tensor& in)
 {
 	assert(in.dtype() == torch::kComplexFloat || in.dtype() == torch::kComplexDouble);
 	torch::Tensor real = torch::view_as_real(in);
-	return real.reshape({real.numel()});
+	return real.transpose(0, 1).reshape({real.numel()});
 }
 

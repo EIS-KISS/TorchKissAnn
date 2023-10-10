@@ -5,8 +5,8 @@
 
 #include "data/eisdataset.h"
 
-class ParameterRegressionDataset :
-public EisDataset<ParameterRegressionDataset>
+class ParameterRegressionDatasetGenerator :
+public EisDataset<ParameterRegressionDatasetGenerator>
 {
 public:
 	static constexpr size_t DEFAULT_EXAMPLE_COUNT = 1e8;
@@ -24,8 +24,8 @@ private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 public:
-	explicit ParameterRegressionDataset(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
-	ParameterRegressionDataset(const ParameterRegressionDataset& in) = default;
+	explicit ParameterRegressionDatasetGenerator(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
+	ParameterRegressionDatasetGenerator(const ParameterRegressionDatasetGenerator& in) = default;
 
 	void setOmegaRange(eis::Range range);
 

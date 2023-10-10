@@ -7,7 +7,7 @@
 #include "utils/log.h"
 
 #define MODE_LIST "ann, conv, gan, regression"
-#define DATASET_LIST "gen, fdedup, dir, trash, genregression"
+#define DATASET_LIST "gen, fdedup, dir, tar, trash, genregression, tarregression"
 
 const char *argp_program_version = "TorchKissAnnTrain";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -49,8 +49,10 @@ typedef enum
 	DATASET_GEN = 0,
 	DATASET_FDUP,
 	DATASET_DIR,
+	DATASET_TAR,
 	DATASET_TRASH,
-	DATASET_GEN_REGRESSION
+	DATASET_GEN_REGRESSION,
+	DATASET_TAR_REGRESSION
 } DatasetMode;
 
 static std::string trainModeToStr(const TrainMode mode)
@@ -93,10 +95,14 @@ static std::string datasetModeToStr(const DatasetMode mode)
 			return "fdedup";
 		case DATASET_DIR:
 			return "dir";
+		case DATASET_TAR:
+			return "trash";
 		case DATASET_TRASH:
 			return "trash";
 		case DATASET_GEN_REGRESSION:
 			return "genregression";
+		case DATASET_TAR_REGRESSION:
+			return "tarregression";
 		default:
 			return "invalid";
 	}
@@ -110,10 +116,14 @@ static DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_FDUP;
 	else if(in == datasetModeToStr(DATASET_DIR))
 		return DATASET_DIR;
+	else if(in == datasetModeToStr(DATASET_TAR))
+		return DATASET_TAR;
 	else if(in == datasetModeToStr(DATASET_TRASH))
 		return DATASET_TRASH;
 	else if(in == datasetModeToStr(DATASET_GEN_REGRESSION))
 		return DATASET_GEN_REGRESSION;
+	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
+		return DATASET_TAR_REGRESSION;
 	return DATASET_INVALID;
 }
 

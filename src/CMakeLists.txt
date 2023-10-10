@@ -6,6 +6,7 @@ set(SRC_FILES
 	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
 	data/loaders/deduploader.cpp
+	data/loaders/regressionloader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
 	utils/tokenize.cpp
@@ -13,12 +14,15 @@ set(SRC_FILES
 	utils/trainlog.cpp
 	utils/randomgen.cpp
 	utils/tensoroperators.cpp
+	utils/microtar.cpp
+	utils/modelscript.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
 	ann/net.cpp
 	ann/classification.cpp
 	ann/regression.cpp
+	ann/eisdistanceloss.cpp
 	nearest/nearest.cpp
 	globals.cpp
 )

@@ -1,17 +1,17 @@
 #pragma once
+#include <ATen/ops/logspace.h>
 #include <cstddef>
 #include <cstdint>
 #include <torch/optim.h>
 #include <string>
+#include <eisgenerator/model.h>
 
 #include "net.h"
 #include "globals.h"
-#include "../data/generators/eisgendata.h"
-#include "../utils/randomgen.h"
-#include "../data/eistotorch.h"
 #include "log.h"
 #include "trainlog.h"
-#include "tensoroperators.h"
+#include "eisdistanceloss.h"
+#include "data/eisdataset.h"
 
 namespace ann
 {
@@ -23,8 +23,8 @@ torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 template <typename DatasetType>
 void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
 
-template <typename DataLoader>
-void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
+template <typename DataLoader, typename LossFn>
+void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, const LossFn& lossFn, torch::optim::Optimizer& optimizer,
 		   size_t epoch, size_t data_size, int64_t classesCount, TrainLog* log = nullptr)
 {
 	size_t index = 0;
@@ -32,8 +32,6 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
-
-	torch::nn::HuberLoss lossHuber(torch::nn::HuberLossOptions().delta(1));
 
 	int64_t loginterval = data_size/10000;
 
@@ -43,7 +41,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		torch::Tensor targets = batch.target.to(*offload_device);
 
 		torch::Tensor prediction = network->forward(data);
-		torch::Tensor loss = lossHuber->forward(prediction, targets);
+		torch::Tensor loss = lossFn(prediction, targets);
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -66,8 +64,8 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 	}
 }
 
-template <typename DataLoader>
-torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
+template <typename DataLoader, typename LossFn>
+torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, const LossFn& lossFn, size_t data_size,
 				   int64_t classesCount, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
@@ -76,8 +74,6 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32));
 
-	torch::nn::HuberLoss lossHuber(torch::nn::HuberLossOptions().delta(1));
-
 	for(const auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
@@ -85,7 +81,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 		torch::Tensor output = network->forward(data);
 
-		torch::Tensor loss = lossHuber->forward(output, targets);
+		torch::Tensor loss = lossFn(output, targets);
 		lossAccumulator += loss.template item<float>();
 
 		distanceAccumulator += torch::pow(output-targets, 2*torch::ones({100, classesCount}, torch::TensorOptions().dtype(torch::kFloat32)));
@@ -105,6 +101,10 @@ template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
 		   size_t epochs, double learingRate)
 {
+	static constexpr double LOSS_START_DECADE = -2;
+	static constexpr double LOSS_FINISH_DECADE = 6;
+	static constexpr int64_t LOSS_POINT_COUNT = 100;
+
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->classesCount()));
 	assert(trainDataset->isMulticlass());
 	assert(!net->hasSoftmaxOutput());
@@ -113,11 +113,22 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		assert(trainDataset->classesCount() == testDataset->classesCount());
 		assert(testDataset->isMulticlass());
 	}
+	else
+	{
+		Log(Log::WARN)<<"No test dataset provided!";
+	}
 
-	Log(Log::WARN)<<"No test dataset provided!";
+	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
 
-	net->setPurpose("Regression for " + trainDataset->modelStringForClass(trainDataset->classesCount()+1));
+	net->setPurpose("Regression for " + modelString);
 	net->to(*offload_device);
+
+	Log(Log::INFO)<<"Training "<<net->getPurpose();
+
+	Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
+		<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps";
+	torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
+	EisDistanceLoss loss(modelString, omega);
 
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;
@@ -146,9 +157,9 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
-		trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(), trainDataset->classesCount(), trainLog);
+		trainImpl(net, *trainDataLoader, loss, optimizer, i, trainDataset->size().value(), trainDataset->classesCount(), trainLog);
 		if(testDataset)
-			test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount(), i, trainLog);
+			test(net, *testDataLoader, loss, testDataset->size().value(), trainDataset->classesCount(), i, trainLog);
 
 		trainLog->saveNetwork(net);
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;

@@ -1,14 +1,27 @@
 #include <cstddef>
 #include <cstdint>
+#include <eisgenerator/eistype.h>
+#include <filesystem>
 #include <iostream>
+#include <sciplot/Canvas.hpp>
+#include <sciplot/Figure.hpp>
+#include <sciplot/Plot2D.hpp>
+#include <sciplot/Vec.hpp>
 #include <sstream>
 #include <fstream>
+#include <sciplot/sciplot.hpp>
+#include <string>
+#include <torch/types.h>
+#include <vector>
+#include <limits>
 
 #include "log.h"
 #include "data/generators/eisgendata.h"
 #include "data/generators/trashgenerator.h"
+#include "data/generators/classextractordataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
+#include "data/eistotorch.h"
 #include "options.h"
 #include "tensoroperators.h"
 
@@ -17,26 +30,73 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 {
 	std::stringstream ss;
 
-	ss<<"Name,\tSize,\tClasses Count,\tMulitclass\n";
-	ss<<typeid(DataSetType).name()<<",\t"<<dataset->size().value()
-	  <<",\t"<<dataset->classesCount()<<",\t"<<dataset->isMulticlass()<<'\n';
+	ss<<"Name, Size, Classes Count, Mulitclass\n";
+	ss<<typeid(DataSetType).name()<<", "<<dataset->size().value()
+	  <<", "<<dataset->classesCount()<<", "<<dataset->isMulticlass()<<'\n';
 
 	for(size_t i = 0; i < dataset->classesCount(); ++i)
 	{
 		ss<<i;
 		if(i+1 < dataset->classesCount())
-			ss<<",\t";
+			ss<<", ";
 	}
 	ss<<'\n';
 	for(size_t i = 0; i < dataset->classesCount(); ++i)
 	{
 		ss<<dataset->modelStringForClass(i);
 		if(i+1 < dataset->classesCount())
-			ss<<",\t";
+			ss<<", ";
 	}
 	ss<<'\n';
 	ss<<tensorToString(dataset->classCounts())<<'\n';
 	return ss.str();
+}
+
+template <typename DataSetType>
+bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& outDir)
+{
+	if(!std::filesystem::is_directory(outDir))
+	{
+		if(!std::filesystem::create_directory(outDir))
+			return false;
+	}
+	size_t classesCount = dataset->classesCount();
+
+	for(size_t i = 0; i < classesCount; ++i)
+	{
+		ClassExtractorDataset<DataSetType> extractedClass(dataset, i);
+
+		sciplot::Plot2D plot;
+		plot.xlabel("Re");
+		plot.ylabel("Im");
+
+		double min = std::numeric_limits<double>::max();
+		double max = std::numeric_limits<double>::min();
+
+		for(size_t j = 0; j < extractedClass.size().value(); ++j)
+		{
+			torch::data::Example<torch::Tensor, torch::Tensor> example = extractedClass.get(j);
+			std::pair<std::valarray<double>, std::valarray<double>> data = torchToValarray<double>(example.data.to(torch::kFloat64));
+
+
+			double lmin = torch::min(example.data).item().toDouble();
+			lmin = lmin - std::abs(min*0.05);
+			double lmax = torch::max(example.data).item().toDouble();
+			lmax = lmax + std::abs(max*0.05);
+			if(lmin < min)
+				min = lmin;
+			else if(lmax > max)
+				max = lmax;
+			plot.xrange(min, max);
+			plot.yrange(min, max);
+
+			plot.drawCurve(data.first, data.second);
+		}
+		sciplot::Figure fig({{plot}});
+		sciplot::Canvas canvas({{fig}});
+		canvas.save(outDir/(dataset->modelStringForClass(i)+ ".png"));
+	}
+	return true;
 }
 
 int main(int argc, char** argv)
@@ -64,6 +124,8 @@ int main(int argc, char** argv)
 			else
 				dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, 100, 0, false, false);
 			report = generateReport<EisGeneratorDataset>(dataset);
+			if(!config.imageOutput.empty())
+				saveImages<EisGeneratorDataset>(dataset, config.imageOutput);
 			delete dataset;
 			break;
 		}
@@ -76,6 +138,8 @@ int main(int argc, char** argv)
 			}
 			FastDedupDataset dataset(config.fileName);
 			report = generateReport<FastDedupDataset>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<FastDedupDataset>(&dataset, config.imageOutput);
 			break;
 		}
 		case DATASET_DIR:
@@ -87,12 +151,16 @@ int main(int argc, char** argv)
 			}
 			EisDirDataset dataset(config.fileName);
 			report = generateReport<EisDirDataset>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<EisDirDataset>(&dataset, config.imageOutput);
 			break;
 		}
 		case DATASET_TRASH:
 		{
 			TrashDataset dataset;
 			report = generateReport<TrashDataset>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<TrashDataset>(&dataset, config.imageOutput);
 			break;
 		}
 		default:
@@ -101,6 +169,8 @@ int main(int argc, char** argv)
 	}
 
 	Log(Log::INFO)<<report;
+	if(!config.imageOutput.empty())
+		Log(Log::INFO)<<"Images saved to "<<config.imageOutput;
 
 	if(!config.reportFileName.empty())
 	{

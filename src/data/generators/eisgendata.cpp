@@ -10,7 +10,7 @@
 #include <eisgenerator/basicmath.h>
 #include <sstream>
 #include <fstream>
-#include <istream>
+#include <future>
 
 #include "../eistotorch.h"
 #include "log.h"
@@ -106,6 +106,7 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 		Log(Log::DEBUG)<<"got "<<model->getRequiredStepsForSweeps();
 
 		addModel(model);
+		compileModels();
 	}
 
 	if(rep && desiredSize/2 > static_cast<ssize_t>(trueSize()))
@@ -157,6 +158,15 @@ void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model)
 
 	modelData.classNum = index;
 	models.push_back(modelData);
+}
+
+void EisGeneratorDataset::compileModels()
+{
+	std::vector<std::future<bool>> futures;
+	for(ModelData& model : models)
+		futures.push_back(std::async(std::launch::async, &eis::Model::compile, model.model));
+	for(std::future<bool>& future : futures)
+		future.wait();
 }
 
 std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index) const

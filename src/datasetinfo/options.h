@@ -22,6 +22,7 @@ static struct argp_option options[] =
   {"dataset-size",	's', "[NUMBER]",	0,	"the size of the training dataset to use when using a generated or semi-generated dataset"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"report",		'r', "[FILENAME]",	0,	"filename for the report"},
+  {"images",		'i', "[DIRECTORY]",	0,	"directory to save class images into"},
   { 0 }
 };
 
@@ -54,6 +55,7 @@ struct Config
 	std::filesystem::path reportFileName;
 	std::filesystem::path fileName;
 	std::filesystem::path testFileName;
+	std::filesystem::path imageOutput;
 	size_t datasetSize = 2e6;
 };
 
@@ -87,6 +89,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'r':
 			config->reportFileName.assign(arg);
+			break;
+		case 'i':
+			config->imageOutput.assign(arg);
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

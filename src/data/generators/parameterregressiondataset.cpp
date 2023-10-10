@@ -1,9 +1,10 @@
 #include <eisdrt/eistorchdrt.h>
+#include <eisdrt/types.h>
 
 #include "parameterregressiondataset.h"
 #include "data/eistotorch.h"
 
-ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t outputSize, double noiseI, bool drtI):
+ParameterRegressionDatasetGenerator::ParameterRegressionDatasetGenerator(const std::string& modelStr, int64_t outputSize, double noiseI, bool drtI):
 model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
 	sweepCount = model.getRequiredStepsForSweeps();
@@ -15,12 +16,12 @@ model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(n
 	parameterCount = model.getParameterCount();
 }
 
-bool ParameterRegressionDataset::isMulticlass()
+bool ParameterRegressionDatasetGenerator::isMulticlass()
 {
 	return true;
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDataset::getImpl(size_t index)
+torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetGenerator::getImpl(size_t index)
 {
 	std::vector<eis::DataPoint> data = model.executeSweep(omega, index);
 	std::vector<eis::Componant*> componants = model.getFlatComponants();
@@ -34,7 +35,17 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDataset::g
 	else
 	{
 		FitMetics fm;
-		input = calcDrtTorch(data, fm,  FitParameters(1000));
+		try {
+			input = calcDrtTorch(data, fm,  FitParameters(1000));
+		}
+		catch (const drt_errror& ex)
+		{
+			Log(Log::DEBUG)<<"Drt calculation failed! using next index";
+			index++;
+			if(index >= size().value())
+				index = 0;
+			return getImpl(index);
+		}
 	}
 
 	torch::TensorOptions options;
@@ -58,23 +69,23 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDataset::g
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t ParameterRegressionDataset::classesCount() const
+size_t ParameterRegressionDatasetGenerator::classesCount() const
 {
 	return parameterCount;
 }
 
-c10::optional<size_t> ParameterRegressionDataset::size() const
+c10::optional<size_t> ParameterRegressionDatasetGenerator::size() const
 {
 	return sweepCount;
 }
 
-size_t ParameterRegressionDataset::classForIndex(size_t index)
+size_t ParameterRegressionDatasetGenerator::classForIndex(size_t index)
 {
 	(void)index;
 	return 0;
 }
 
-std::string ParameterRegressionDataset::modelStringForClass(size_t classNum)
+std::string ParameterRegressionDatasetGenerator::modelStringForClass(size_t classNum)
 {
 	std::vector<eis::Componant*> componants = model.getFlatComponants();
 	for(eis::Componant* componant : componants)

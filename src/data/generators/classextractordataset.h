@@ -32,7 +32,7 @@ private:
 public:
 
 	ClassExtractorDataset(EisDataset<ParentType>* dataset, size_t classNum):
-	_dataset(dataset), _classNum(classNum), datasetMutex(new std::mutex)
+	_dataset(dataset), datasetMutex(new std::mutex), _classNum(classNum)
 	{
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
@@ -55,7 +55,7 @@ public:
 		return _classNum;
 	}
 
-	virtual size_t modelStringForClass(size_t classNum)
+	virtual std::string modelStringForClass(size_t classNum)
 	{
 		return _dataset->modelStringForClass(_classNum);
 	}

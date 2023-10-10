@@ -5,9 +5,11 @@
 #include <eisgenerator/model.h>
 #include <libsvm/svm.h>
 #include <random>
+#include <torch/csrc/autograd/generated/variable_factories.h>
 #include <torch/optim.h>
 #include <filesystem>
 
+#include "data/eistotorch.h"
 #include "data/generators/eisgendata.h"
 #include "log.h"
 #include "tensoroperators.h"
@@ -17,6 +19,7 @@
 #include "data/loaders/dirloader.h"
 #include "data/generators/parameterregressiondataset.h"
 #include "tensoroptions.h"
+#include "ann/eisdistanceloss.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -126,15 +129,64 @@ bool testLinearToComplex()
 
 bool testParaDataset()
 {
-	ParameterRegressionDataset noDrtDds ("r{100}-r{100}c{1e-6}-r{100}c{1e-4}", 100, 0, false);
-	ParameterRegressionDataset drtDds("r{100}-r{100}c{1e-6}-r{100}c{1e-4}", 100, 0, true);
+	ParameterRegressionDatasetGenerator noDrtDds ("r{100}-r{100~1000}c{1e-6~1e-5}-r{100}c{1e-4~100e-4}", 100, 0, false);
+	ParameterRegressionDatasetGenerator drtDds("r{100}-r{100~1000}c{1e-6~1e-5}-r{100}c{1e-4~100e-4}", 100, 0, true);
 
 	torch::data::Example<torch::Tensor, torch::Tensor> example = noDrtDds.get(23);
 	torch::data::Example<torch::Tensor, torch::Tensor> exampleDrt = drtDds.get(23);
 
 	Log(Log::INFO)<<__func__<<" Parameters: "<<example.target;
-	Log(Log::INFO)<<__func__<<" Spectra: "<<linearToComplex(example.target);
+	Log(Log::INFO)<<__func__<<" Spectra: "<<linearToComplex(example.data);
 
+	return true;
+}
+
+bool testEisDistanceLoss()
+{
+	eis::Model model("r{100}-r{100}c{1e-4}");
+	model.compile();
+
+	torch::Tensor omegas = torch::logspace(-2, 6, 100);
+
+	EisDistanceLoss loss(model, omegas);
+	std::vector<fvalue> paramVect = model.getFlatParameters();
+	Log(Log::INFO)<<"Parameters: "<<paramVect.size();
+	if(paramVect.size() != 3)
+	{
+		Log(Log::ERROR)<<"wrong nummber of parameters! should be 3";
+		return false;
+	}
+	torch::Tensor parameters = fvalueVectorToTensor(paramVect).set_requires_grad(false);
+	torch::Tensor parametersAdj = parameters.clone();
+
+	parametersAdj[2] = 2e-4;
+
+	Log(Log::INFO)<<"Parameters:\n"<<parameters<<"\nParametersAdj:\n"<<parametersAdj;
+
+	if(parameters.numel() != static_cast<int64_t>(paramVect.size()))
+	{
+		Log(Log::ERROR)<<"fvalueVectorToTensor is return a tensor with numel "<<parameters.numel()
+			<<" for a input vector of size "<<paramVect.size();
+		return false;
+	}
+
+	torch::Tensor autoloss = loss.forward(parameters, parameters);
+	Log(Log::INFO)<<__func__<<" Autoloss: "<<autoloss;
+	if(autoloss.numel() != 1 || autoloss.item().toDouble() > 0.01)
+		return false;
+
+	std::vector<eis::DataPoint> spectra = model.executeSweep(eis::Range(1e-2, 1e6, 100, true));
+	torch::Tensor spectraTensor = eisToTorch(spectra);
+
+	torch::Tensor sanityloss = loss.distance(parameters, spectraTensor);
+	Log(Log::INFO)<<__func__<<" Sanity loss: "<<sanityloss;
+	if(sanityloss.numel() != 1 || sanityloss.item().toDouble() > 0.01)
+		return false;
+
+	torch::Tensor adjloss = loss.forward(parametersAdj, parameters);
+	Log(Log::INFO)<<__func__<<" Adj loss (expect high): "<<adjloss;
+	if(adjloss.numel() != 1 || adjloss.item().toDouble() < 1)
+		return false;
 
 	return true;
 }
@@ -148,7 +200,8 @@ int main(int argc, char** argv)
 	//reexportDirDataset();
 
 	testLinearToComplex();
-	testParaDataset();
+	testEisDistanceLoss();
+	//testParaDataset();
 
 	free_device();
 	return 0;
