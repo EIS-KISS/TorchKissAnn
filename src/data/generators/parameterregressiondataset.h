@@ -24,7 +24,7 @@ private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 public:
-	explicit ParameterRegressionDatasetGenerator(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
+	explicit ParameterRegressionDatasetGenerator(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true, size_t targetSize = 0);
 	ParameterRegressionDatasetGenerator(const ParameterRegressionDatasetGenerator& in) = default;
 
 	void setOmegaRange(eis::Range range);

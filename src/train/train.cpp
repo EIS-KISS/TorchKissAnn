@@ -141,7 +141,7 @@ template <> int train<ParameterRegressionDatasetGenerator>(const Config& config)
 		return 1;
 	}
 
-	ParameterRegressionDatasetGenerator dataset(config.fileName, 100, 0, true);
+	ParameterRegressionDatasetGenerator dataset(config.fileName, 100, 0, false, config.datasetSize);
 
 	if(dataset.size().value() == 0)
 	{
@@ -282,7 +282,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		case MODE_REGRESSION:
 		{
 			Log(Log::INFO)<<"Training regression network";
-			std::shared_ptr<ann::Net> net(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, false));
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->get(0).data.size(0),
+															 trainDataset->classesCount(), 4, config.extraLayers, false));
 			ann::regression::train(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}

@@ -4,16 +4,20 @@
 #include "parameterregressiondataset.h"
 #include "data/eistotorch.h"
 
-ParameterRegressionDatasetGenerator::ParameterRegressionDatasetGenerator(const std::string& modelStr, int64_t outputSize, double noiseI, bool drtI):
+ParameterRegressionDatasetGenerator::ParameterRegressionDatasetGenerator(const std::string& modelStr, int64_t outputSize,
+																		 double noiseI, bool drtI, size_t targetSize):
 model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
 	sweepCount = model.getRequiredStepsForSweeps();
-	if(sweepCount < 1e6)
+	if(sweepCount < 1e6 && targetSize == 0)
 		model.setParamSweepCountClosestTotal(1e6);
-	else if(sweepCount > 10e6)
+	else if(sweepCount > 10e6 && targetSize == 0)
 		model.setParamSweepCountClosestTotal(10e6);
+	else if(targetSize != 0)
+		model.setParamSweepCountClosestTotal(targetSize);
 	sweepCount = model.getRequiredStepsForSweeps();
 	parameterCount = model.getParameterCount();
+	model.compile();
 }
 
 bool ParameterRegressionDatasetGenerator::isMulticlass()

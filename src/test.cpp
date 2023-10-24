@@ -20,6 +20,7 @@
 #include "data/generators/parameterregressiondataset.h"
 #include "tensoroptions.h"
 #include "ann/eisdistanceloss.h"
+#include "modelscript.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -141,6 +142,25 @@ bool testParaDataset()
 	return true;
 }
 
+bool testEisScript()
+{
+	eis::Model model("r{100}-r{100}c{1e-4}");
+	std::shared_ptr<torch::CompilationUnit> modelScript = compileModel(model);
+
+	torch::Tensor omegas = torch::logspace(-2, 6, 5);
+
+	std::vector<fvalue> paramVect = model.getFlatParameters();
+	torch::Tensor parameters = fvalueVectorToTensor(paramVect).set_requires_grad(false);
+	parameters = parameters.repeat({2, 1}).t();
+
+	torch::Tensor spectra = runScriptModel(model, modelScript, parameters, omegas.reshape({omegas.numel(), -1})).t();
+
+	Log(Log::INFO)<<"parameters\n"<<parameters;
+	Log(Log::INFO)<<"spectra\n"<<spectra;
+
+	return true;
+}
+
 bool testEisDistanceLoss()
 {
 	eis::Model model("r{100}-r{100}c{1e-4}");
@@ -157,18 +177,18 @@ bool testEisDistanceLoss()
 		return false;
 	}
 	torch::Tensor parameters = fvalueVectorToTensor(paramVect).set_requires_grad(false);
-	torch::Tensor parametersAdj = parameters.clone();
-
-	parametersAdj[2] = 2e-4;
-
-	Log(Log::INFO)<<"Parameters:\n"<<parameters<<"\nParametersAdj:\n"<<parametersAdj;
 
 	if(parameters.numel() != static_cast<int64_t>(paramVect.size()))
 	{
-		Log(Log::ERROR)<<"fvalueVectorToTensor is return a tensor with numel "<<parameters.numel()
-			<<" for a input vector of size "<<paramVect.size();
+		Log(Log::ERROR)<<"fvalueVectorToTensor returned a tensor with numel "<<parameters.numel()
+		<<" for a input vector of size "<<paramVect.size();
 		return false;
 	}
+
+	torch::Tensor parametersAdj = parameters.clone();
+	parametersAdj[2] = 2e-4;
+
+	Log(Log::INFO)<<"Parameters:\n"<<parameters<<"\nParametersAdj:\n"<<parametersAdj;
 
 	torch::Tensor autoloss = loss.forward(parameters, parameters);
 	Log(Log::INFO)<<__func__<<" Autoloss: "<<autoloss;
@@ -202,6 +222,7 @@ int main(int argc, char** argv)
 	testLinearToComplex();
 	testEisDistanceLoss();
 	//testParaDataset();
+	testEisScript();
 
 	free_device();
 	return 0;
