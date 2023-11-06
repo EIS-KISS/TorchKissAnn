@@ -54,9 +54,9 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor ta
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
 		//data = torch::sign(data) * torch::log(torch::abs(data));
-		torch::Tensor targets = batch.target.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device)/targetScalars;
 
-		torch::Tensor prediction = network->forward(data)*targetScalars;
+		torch::Tensor prediction = network->forward(data)+0.5;
 
 		parameters.push_back(network->named_parameters(true));
 		for(torch::OrderedDict<std::string, torch::Tensor>::Item& parameter : parameters.back())

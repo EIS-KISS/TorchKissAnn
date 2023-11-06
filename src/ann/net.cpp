@@ -161,29 +161,23 @@ void ann::SimpleNet::init()
 
 	std::pair<size_t, size_t> sizes = layerWidthFunction(0, downsampleSteps, inputSize, outputSize);
 	torch::nn::Linear linear(sizes.first, sizes.first);
-	torch::nn::init::constant_(linear->weight, 0.001);
-	torch::nn::init::constant_(linear->bias, 1);
 	model->push_back(linear);
 	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 	for(size_t i = 0; i < downsampleSteps-1; ++i)
 	{
 		sizes = layerWidthFunction(i, downsampleSteps, inputSize, outputSize);
 		torch::nn::Linear linear(sizes.first, sizes.second);
-		torch::nn::init::constant_(linear->weight, 0.001);
-		torch::nn::init::constant_(linear->bias, 1);
 		model->push_back(linear);
 		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.1).inplace(true)));
 		/*if(i % 2 == 0)
 			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.2)));*/
 		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(1e-3).momentum(0.1).affine(true));
-		//model->push_back(bn);
+		model->push_back(bn);
 		if(i == 0)
 		{
 			for(size_t j = 0; j < extraSteps; ++j)
 			{
 				torch::nn::Linear linear(sizes.second, sizes.second);
-				torch::nn::init::constant_(linear->weight, 0.001);
-				torch::nn::init::constant_(linear->bias, 1);
 				model->push_back(linear);
 				model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
 			}
@@ -191,8 +185,6 @@ void ann::SimpleNet::init()
 	}
 	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
 	linear = torch::nn::Linear(sizes.first, sizes.second);
-	torch::nn::init::constant_(linear->weight, 0.001);
-	torch::nn::init::constant_(linear->bias, 1);
 	model->push_back(linear);
 	if(softmax)
 		model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
