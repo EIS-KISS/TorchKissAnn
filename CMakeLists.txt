@@ -12,7 +12,7 @@ set (CMAKE_CXX_STANDARD 20)
 
 find_package(Torch REQUIRED)
 find_package(PkgConfig REQUIRED)
-find_package(sciplot REQUIRED)
+#find_package(sciplot REQUIRED)
 pkg_search_module(JSONCPP REQUIRED jsoncpp)
 
 include(GetGitRevisionDescription)
