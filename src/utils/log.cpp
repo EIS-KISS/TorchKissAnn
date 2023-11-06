@@ -32,7 +32,10 @@ Log::~Log()
 {
 	if(opened && endline)
 	{
-		std::cout<<'\n';
+		if(msglevel != ERROR)
+			std::cout<<'\n';
+		else
+			std::cerr<<'\n';
 	}
 	opened = false;
 }

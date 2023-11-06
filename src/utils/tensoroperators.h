@@ -40,6 +40,7 @@ double integrateFn(std::function<double(double)> fn, double start, double stop, 
 torch::Tensor unargmax(const torch::Tensor& in, int64_t size);
 
 bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& tensor, const std::string& name);
+bool saveTensorForPytorch(const std::filesystem::path& path, const torch::Tensor& tensor);
 
 std::string tensorToString(const torch::Tensor& tensor);
 

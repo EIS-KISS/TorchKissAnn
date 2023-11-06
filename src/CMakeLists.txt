@@ -3,6 +3,7 @@ set(SRC_FILES
 	data/generators/eisgendata.cpp
 	data/generators/trashgenerator.cpp
 	data/generators/parameterregressiondataset.cpp
+	data/generators/fakeregressiondataset.cpp
 	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
 	data/loaders/deduploader.cpp

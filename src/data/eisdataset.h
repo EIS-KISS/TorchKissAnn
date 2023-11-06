@@ -14,7 +14,7 @@ private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) = 0;
 
 public:
-	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index);
+	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 	virtual size_t classesCount() const = 0;
 	virtual c10::optional<size_t> size() const override = 0;
 	virtual size_t classForIndex(size_t index) = 0;

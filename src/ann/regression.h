@@ -2,10 +2,15 @@
 #include <ATen/ops/logspace.h>
 #include <cstddef>
 #include <cstdint>
+#include <torch/csrc/autograd/anomaly_mode.h>
+#include <torch/nn/modules/loss.h>
+#include <torch/nn/options/loss.h>
 #include <torch/optim.h>
 #include <string>
 #include <eisgenerator/model.h>
 #include <torch/optim/adamw.h>
+#include <torch/optim/sgd.h>
+#include <torch/ordered_dict.h>
 
 #include "net.h"
 #include "globals.h"
@@ -13,6 +18,8 @@
 #include "trainlog.h"
 #include "eisdistanceloss.h"
 #include "data/eisdataset.h"
+#include "tensoroptions.h"
+#include "tensoroperators.h"
 
 namespace ann
 {
@@ -24,9 +31,12 @@ torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 template <typename DatasetType>
 void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
 
+torch::Tensor getTargetScalar(const std::string& modelString);
+
 template <typename DataLoader, typename LossFn>
-void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer,
-		   size_t epoch, size_t data_size, int64_t classesCount, TrainLog* log = nullptr)
+int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor targetScalars,
+			LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
+			size_t data_size, int64_t classesCount, TrainLog* log = nullptr)
 {
 	size_t index = 0;
 	network->train();
@@ -34,40 +44,106 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn,
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
-	int64_t loginterval = data_size/10000 ?: 1;
+	int64_t loginterval = data_size/10000 ?: data_size/batch_size-1;
+
+	std::vector<torch::OrderedDict<std::string, torch::Tensor>> parameters;
+
+	torch::Tensor prevLoss;
 
 	for(auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
+		//data = torch::sign(data) * torch::log(torch::abs(data));
 		torch::Tensor targets = batch.target.to(*offload_device);
 
-		torch::Tensor prediction = network->forward(data);
+		torch::Tensor prediction = network->forward(data)*targetScalars;
+
+		parameters.push_back(network->named_parameters(true));
+		for(torch::OrderedDict<std::string, torch::Tensor>::Item& parameter : parameters.back())
+			parameter.value() = parameter.value().clone();
+		if(parameters.size() > 3)
+			parameters.erase(parameters.begin());
+
+		if(torch::isnan(torch::sum(prediction)).item().to<bool>())
+		{
+			for(torch::OrderedDict<std::string, torch::Tensor> dict : parameters)
+			{
+				Log(Log::ERROR)<<"STEP";
+				for(torch::OrderedDict<std::string, torch::Tensor>::Item& parameter : dict)
+				{
+					Log(Log::ERROR)<<parameter.key()<<'\n'<<parameter.value();
+				}
+			}
+			Log(Log::ERROR)<<prediction<<"\nPrediction contains NAN!\nData:\n"<<data;
+			return -1;
+		}
+
+		torch::Tensor predictionOrig = prediction.clone();
+		//prediction = prediction.clamp(-10, 10);
+		torch::Tensor base = torch::ones(prediction.sizes(), tensorOptCpu<float>().device(*offload_device))*10;
+		//prediction = torch::pow(base, prediction);
+		if(torch::isnan(torch::sum(prediction)).item().to<bool>())
+		{
+			Log(Log::ERROR)<<prediction<<"\nPrediction after scaleing contains NAN!\nData:\n"<<data;
+			return -1;
+		}
+
 		torch::Tensor loss = lossFn(prediction, targets);
+		/*if(prevLoss.numel() == 1 && (loss/prevLoss).item().toDouble() > 100)
+		{
+			Log(Log::ERROR)<<loss.item().toDouble()<<" loss increased massively over "<<prevLoss.item().toDouble();
+			std::cout<<"targets:\n"<<targets<<'\n';
+			std::cout<<"prediction:\n"<<predictionOrig<<'\n';
+			std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
+			std::cout<<"prediction pow:\n"<<prediction<<'\n';
+			std::cout<<"loss:\n"<<loss<<'\n';
+			saveTensorForPytorch("pred.zip", predictionOrig);
+			return -1;
+		}*/
+
+		if(torch::isnan(torch::sum(loss)).item().to<bool>())
+		{
+			Log(Log::ERROR)<<loss<<"\nloss contains NAN!";
+			std::cout<<"targets:\n"<<targets<<'\n';
+			std::cout<<"prediction:\n"<<predictionOrig<<'\n';
+			std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
+			std::cout<<"prediction pow:\n"<<prediction<<'\n';
+			std::cout<<"loss:\n"<<loss<<'\n';
+			saveTensorForPytorch("pred.zip", predictionOrig);
+			return -1;
+		}
 
 		/*std::cout<<"data:\n"<<data<<'\n';
 		std::cout<<"targets:\n"<<targets<<'\n';
-		std::cout<<"prediction:\n"<<prediction<<'\n';
-		std::cout<<"loss:\n"<<loss<<'\n';*/
+		std::cout<<"prediction:\n"<<predictionOrig<<'\n';
+		std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
+		std::cout<<"prediction pow:\n"<<prediction<<'\n';
+		std::cout<<"loss:\n"<<loss<<'\n';
+		exit(0);*/
 
 		optimizer.zero_grad();
 		loss.backward();
 		optimizer.step();
 
+		lossAccumulator += loss.template item<float>();
+
+		if(log && index % loginterval == 0)
 		{
-			torch::NoGradGuard noGrad;
-			lossAccumulator += loss.template item<float>();
-			torch::Tensor batchAccum = (prediction-targets).square().sum(0);
-			distanceAccumulator += batchAccum;
+			std::cout<<"data:\n"<<data[0]<<'\n';
+			std::cout<<"targets:\n"<<targets[0]<<'\n';
+			std::cout<<"prediction:\n"<<prediction[0]<<'\n';
+			auto end = std::min(data_size, (index + 1) * batch_size);
+			log->logTrainLoss(epoch, end, loss.template item<float>(), 0, data_size);
 		}
 
-		if(log && index++ % loginterval == 0 && index / loginterval > 1)
-		{
-			auto end = std::min(data_size, (index + 1) * batch_size);
-			torch::Tensor distance = torch::sum(torch::sqrt(distanceAccumulator/static_cast<double>(end)));
-			distance = distance.to(torch::kCPU);
-			log->logTrainLoss(epoch, end, (lossAccumulator/end)*100, distance.template item<float>(), data_size);
-		}
+		prevLoss = loss;
+
+		index++;
 	}
+
+	log->logTrainLoss(epoch, data_size, lossAccumulator/index, 0, data_size);
+
+	return 0;
 }
 
 template <typename DataLoader, typename LossFn>
@@ -104,7 +180,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& los
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
+int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
 		   size_t epochs, double learingRate)
 {
 	static constexpr double LOSS_START_DECADE = -2;
@@ -127,16 +203,19 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 
 	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
 
+	torch::Tensor targetScalars = getTargetScalar(modelString).to(*offload_device);
+
 	net->setPurpose("Regression for " + modelString);
 	net->to(*offload_device);
 
 	Log(Log::INFO)<<"Training "<<net->getPurpose();
 
 	Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
-		<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps";
+		<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
+		<<" And will be based on "<<modelString;
 	torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
-	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean));
-	EisDistanceLoss loss(modelString, omega);
+	torch::nn::MSELoss lossMse(torch::nn::MSELossOptions().reduction(torch::kMean));
+	EisDistanceLoss lossEis(modelString, omega);
 
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;
@@ -161,19 +240,26 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	auto testDataLoader =
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
-	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate));
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
+	//torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).weight_decay(0));
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
-		trainImpl(net, *trainDataLoader, loss, optimizer, i, trainDataset->size().value(), trainDataset->classesCount(), trainLog);
+		int ret = trainImpl(net, *trainDataLoader, targetScalars,
+			lossMse, optimizer, i, trainDataset->size().value(),
+			trainDataset->classesCount(), trainLog);
+		if(ret != 0)
+			return -1;
+
 		if(testDataset)
-			test(net, *testDataLoader, loss, testDataset->size().value(), trainDataset->classesCount(), i, trainLog);
+			test(net, *testDataLoader, lossMse, testDataset->size().value(), trainDataset->classesCount(), i, trainLog);
 
 		trainLog->saveNetwork(net);
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 
 	trainLog->saveNetwork(net);
+	return 0;
 }
 
 }

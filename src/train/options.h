@@ -21,6 +21,7 @@ static struct argp_option options[] =
   {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST},
   {"dataset", 		'd', "[STRING]",	0,	"dataset type to use for training: " DATASET_LIST},
   {"dataset-size",	's', "[NUMBER]",	0,	"the size of the training dataset to use when using a generated or semi-generated dataset"},
+  {"data-width",	'w', "[NUMBER]",	0,	"the width of the sweep used"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"test",			't', "[STRING]",	0,	"filename for the test dataset"},
   {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
@@ -52,7 +53,8 @@ typedef enum
 	DATASET_TAR,
 	DATASET_TRASH,
 	DATASET_GEN_REGRESSION,
-	DATASET_TAR_REGRESSION
+	DATASET_TAR_REGRESSION,
+	DATASET_FAKE_REGRESSION
 } DatasetMode;
 
 static std::string trainModeToStr(const TrainMode mode)
@@ -103,6 +105,8 @@ static std::string datasetModeToStr(const DatasetMode mode)
 			return "genregression";
 		case DATASET_TAR_REGRESSION:
 			return "tarregression";
+		case DATASET_FAKE_REGRESSION:
+			return "fakeregression";
 		default:
 			return "invalid";
 	}
@@ -124,6 +128,8 @@ static DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_GEN_REGRESSION;
 	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
 		return DATASET_TAR_REGRESSION;
+	else if(in == datasetModeToStr(DATASET_FAKE_REGRESSION))
+		return DATASET_FAKE_REGRESSION;
 	return DATASET_INVALID;
 }
 
@@ -139,6 +145,7 @@ struct Config
 	size_t batchSize = 256;
 	size_t epochs = 30;
 	size_t datasetSize = 2e6;
+	size_t dataWidth = 100;
 	size_t extraLayers = 3;
 	bool probeModel = false;
 	bool noGpu = false;
@@ -209,6 +216,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'n':
 			config->noGpu = true;
+			break;
+		case 'w':
+			config->dataWidth = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

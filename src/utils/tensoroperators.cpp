@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <torch/types.h>
+#include <torch/script.h>
 
 #include "log.h"
 
@@ -122,6 +123,22 @@ bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& ten
 		Log(Log::ERROR)<<"can not save "<<tensor.dim()<<" dimentional tensor\n";
 		return false;
 	}
+	file.close();
+	return true;
+}
+
+bool saveTensorForPytorch(const std::filesystem::path& path, const torch::Tensor& tensor)
+{
+	std::fstream file;
+	file.open(path, std::ios_base::out | std::ios_base::binary);
+	if(!file.is_open())
+	{
+		Log(Log::ERROR)<<"can not open "<<path<<" for writing\n";
+		return false;
+	}
+
+	std::vector<char> tensorBinary = torch::jit::pickle_save(tensor);
+	file.write(tensorBinary.data(), tensorBinary.size());
 	file.close();
 	return true;
 }

@@ -8,6 +8,7 @@
 
 #include "ann/classification.h"
 #include "ann/regression.h"
+#include "data/generators/fakeregressiondataset.h"
 #include "data/loaders/regressionloader.h"
 #include "gan/gan.h"
 #include "log.h"
@@ -15,6 +16,7 @@
 #include "data/generators/eisgendata.h"
 #include "data/generators/extendordataset.h"
 #include "data/generators/parameterregressiondataset.h"
+#include "data/generators/fakeregressiondataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
 #include "options.h"
@@ -65,14 +67,14 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	EisGeneratorDataset* testDataset = nullptr;
 
 	if(config.fileName.empty())
-		dataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize, config.noise, config.probeModel);
+		dataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize, config.noise, config.probeModel);
 	else
-		dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, DATA_WIDTH, config.noise, config.probeModel);
+		dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, config.dataWidth, config.noise, config.probeModel);
 
 	if(config.testFileName.empty() && config.fileName.empty())
-		testDataset = EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, config.datasetSize/10, config.noise, config.probeModel);
+		testDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize/10, config.noise, config.probeModel);
 	else if(!config.testFileName.empty())
-		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize/10, DATA_WIDTH, config.noise, config.probeModel, false);
+		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize/10, config.dataWidth, config.noise, config.probeModel, false);
 
 	if(testDataset && dataset->classesCount() != testDataset->classesCount())
 	{
@@ -141,7 +143,7 @@ template <> int train<ParameterRegressionDatasetGenerator>(const Config& config)
 		return 1;
 	}
 
-	ParameterRegressionDatasetGenerator dataset(config.fileName, 100, 0, false, config.datasetSize);
+	ParameterRegressionDatasetGenerator dataset(config.fileName, config.dataWidth, 0, false, config.datasetSize);
 
 	if(dataset.size().value() == 0)
 	{
@@ -178,6 +180,14 @@ template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
 	return 0;
 }
 
+template <> int train<FakeRegressionDatasetGenerator>(const Config& config)
+{
+	FakeRegressionDatasetGenerator dataset(config.dataWidth);
+
+	trainSwitch<FakeRegressionDatasetGenerator, FakeRegressionDatasetGenerator>(config, &dataset, nullptr);
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
@@ -201,7 +211,10 @@ int main(int argc, char** argv)
 		return 3;
 	}
 
-	if((config.datasetMode != DATASET_GEN_REGRESSION && config.datasetMode != DATASET_TAR_REGRESSION) && config.mode == MODE_REGRESSION)
+	if((config.datasetMode != DATASET_GEN_REGRESSION &&
+		config.datasetMode != DATASET_TAR_REGRESSION &&
+		config.datasetMode != DATASET_FAKE_REGRESSION) &&
+		config.mode == MODE_REGRESSION)
 	{
 		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
 		return 3;
@@ -221,6 +234,8 @@ int main(int argc, char** argv)
 			return train<ParameterRegressionDatasetGenerator>(config);
 		case DATASET_TAR_REGRESSION:
 			return train<ParameterRegressionDatasetLoader>(config);
+		case DATASET_FAKE_REGRESSION:
+			return train<FakeRegressionDatasetGenerator>(config);
 		case DATASET_TRASH:
 		case DATASET_TAR:
 		case DATASET_INVALID:
@@ -269,9 +284,9 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			Log(Log::INFO)<<"Training classification network";
 			std::shared_ptr<ann::Net> net;
 			if(config.mode == MODE_ANN_CONV)
-				net.reset(new ann::ConvNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
+				net.reset(new ann::ConvNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
 			else
-				net.reset(new ann::SimpleNet(DATA_WIDTH, trainDataset->classesCount(), 4, config.extraLayers, true));
+				net.reset(new ann::SimpleNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
