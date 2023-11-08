@@ -34,7 +34,7 @@ void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool con
 torch::Tensor getTargetScalar(const std::string& modelString);
 
 template <typename DataLoader, typename LossFn>
-int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor targetScalars,
+int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
 			size_t data_size, int64_t classesCount, TrainLog* log = nullptr)
 {
@@ -53,8 +53,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor ta
 	for(auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
-		//data = torch::sign(data) * torch::log(torch::abs(data));
-		torch::Tensor targets = batch.target.to(*offload_device)/targetScalars;
+		torch::Tensor targets = batch.target.to(*offload_device)/network->getOutputScalars();
 
 		torch::Tensor prediction = network->forward(data)+0.5;
 
@@ -79,9 +78,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor ta
 		}
 
 		torch::Tensor predictionOrig = prediction.clone();
-		//prediction = prediction.clamp(-10, 10);
 		torch::Tensor base = torch::ones(prediction.sizes(), tensorOptCpu<float>().device(*offload_device))*10;
-		//prediction = torch::pow(base, prediction);
 		if(torch::isnan(torch::sum(prediction)).item().to<bool>())
 		{
 			Log(Log::ERROR)<<prediction<<"\nPrediction after scaleing contains NAN!\nData:\n"<<data;
@@ -89,37 +86,18 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor ta
 		}
 
 		torch::Tensor loss = lossFn(prediction, targets);
-		/*if(prevLoss.numel() == 1 && (loss/prevLoss).item().toDouble() > 100)
-		{
-			Log(Log::ERROR)<<loss.item().toDouble()<<" loss increased massively over "<<prevLoss.item().toDouble();
-			std::cout<<"targets:\n"<<targets<<'\n';
-			std::cout<<"prediction:\n"<<predictionOrig<<'\n';
-			std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
-			std::cout<<"prediction pow:\n"<<prediction<<'\n';
-			std::cout<<"loss:\n"<<loss<<'\n';
-			saveTensorForPytorch("pred.zip", predictionOrig);
-			return -1;
-		}*/
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
 			Log(Log::ERROR)<<loss<<"\nloss contains NAN!";
-			std::cout<<"targets:\n"<<targets<<'\n';
-			std::cout<<"prediction:\n"<<predictionOrig<<'\n';
-			std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
-			std::cout<<"prediction pow:\n"<<prediction<<'\n';
-			std::cout<<"loss:\n"<<loss<<'\n';
+			Log(Log::DEBUG)<<"targets:\n"<<targets<<'\n';
+			Log(Log::DEBUG)<<"prediction:\n"<<predictionOrig<<'\n';
+			Log(Log::DEBUG)<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
+			Log(Log::DEBUG)<<"prediction pow:\n"<<prediction<<'\n';
+			Log(Log::DEBUG)<<"loss:\n"<<loss<<'\n';
 			saveTensorForPytorch("pred.zip", predictionOrig);
 			return -1;
 		}
-
-		/*std::cout<<"data:\n"<<data<<'\n';
-		std::cout<<"targets:\n"<<targets<<'\n';
-		std::cout<<"prediction:\n"<<predictionOrig<<'\n';
-		std::cout<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
-		std::cout<<"prediction pow:\n"<<prediction<<'\n';
-		std::cout<<"loss:\n"<<loss<<'\n';
-		exit(0);*/
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -129,9 +107,8 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor ta
 
 		if(log && index % loginterval == 0)
 		{
-			std::cout<<"data:\n"<<data[0]<<'\n';
-			std::cout<<"targets:\n"<<targets[0]<<'\n';
-			std::cout<<"prediction:\n"<<prediction[0]<<'\n';
+			Log(Log::INFO)<<"last targets:\n"<<targets[0];
+			Log(Log::INFO)<<"last prediction:\n"<<prediction[0];
 			auto end = std::min(data_size, (index + 1) * batch_size);
 			log->logTrainLoss(epoch, end, loss.template item<float>(), 0, data_size);
 		}
@@ -203,16 +180,29 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 
 	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
 
-	torch::Tensor targetScalars = getTargetScalar(modelString).to(*offload_device);
+	net->setOutputScalars(getTargetScalar(modelString).to(*offload_device));
 
-	net->setPurpose("Regression for " + modelString);
+
+	std::stringstream purpose("Regression,");
+	purpose<<modelString<<std::scientific;
+	if(trainDataset->freqRange().has_value())
+	{
+		torch::Tensor freqs = trainDataset->freqRange().value();
+		purpose<<','<<freqs[0].item().toDouble()<<','<<freqs[1].item().toDouble()<<','<<freqs[2].item().toDouble();
+	}
+	else
+	{
+		Log(Log::WARN)<<"Dataset dosent give a frequency range";
+	}
+	net->setPurpose(purpose.str());
+
 	net->to(*offload_device);
 
 	Log(Log::INFO)<<"Training "<<net->getPurpose();
 
 	Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
 		<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
-		<<" And will be based on "<<modelString;
+		<<"and will be based on "<<modelString;
 	torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
 	torch::nn::MSELoss lossMse(torch::nn::MSELossOptions().reduction(torch::kMean));
 	EisDistanceLoss lossEis(modelString, omega);
@@ -243,19 +233,19 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
 	//torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).weight_decay(0));
 
-	for (size_t i = 0; i < epochs; ++i)
+	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{
-		int ret = trainImpl(net, *trainDataLoader, targetScalars,
-			lossMse, optimizer, i, trainDataset->size().value(),
+		int ret = trainImpl(net, *trainDataLoader,
+			lossMse, optimizer, epoch, trainDataset->size().value(),
 			trainDataset->classesCount(), trainLog);
 		if(ret != 0)
 			return -1;
 
 		if(testDataset)
-			test(net, *testDataLoader, lossMse, testDataset->size().value(), trainDataset->classesCount(), i, trainLog);
+			test(net, *testDataLoader, lossMse, testDataset->size().value(), trainDataset->classesCount(), epoch, trainLog);
 
 		trainLog->saveNetwork(net);
-		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
+		Log(Log::INFO)<<"Epoch "<<epoch<<'/'<<epochs;
 	}
 
 	trainLog->saveNetwork(net);

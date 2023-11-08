@@ -1,9 +1,21 @@
 #include "net.h"
 #include "../utils/seqprint.h"
+#include <cstdint>
+#include <json/value.h>
 #include <sstream>
 #include <fstream>
 
+#include "tensoroptions.h"
+#include "simplenet.h"
+#include "convnet.h"
+
 using namespace ann;
+
+ann::Net::Net(int64_t inputSizeI, int64_t outputSizeI, bool softmaxI):
+inputSize(inputSizeI), outputSize(outputSizeI), softmax(softmaxI)
+{
+	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
+}
 
 int64_t ann::Net::getInputSize() const
 {
@@ -22,17 +34,22 @@ bool ann::Net::hasSoftmaxOutput() const
 
 ann::Net::Net(const Json::Value& node)
 {
+	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
+
 	inputSize = node["inputSize"].asInt64();
 	outputSize = node["outputSize"].asInt64();
 	softmax = node.get("softmax", "true").asBool();
 	purpose = node.get("purpose", "Unkown").asString();
+	inputLabel = node.get("inputLabel", "EIS").asString();
 
 	if(node.isMember("outputLabels"))
 	{
 		Json::Value labels = node["outputLabels"];
-		if(!labels.isArray())
+		if(!labels.isArray() || labels.size() != outputSize)
 		{
 			Log(Log::WARN)<<"Could not get output labels for network";
+			if(labels.size() != outputSize)
+				Log(Log::WARN)<<"The array has the wrong size at "<<labels.size();
 		}
 		else
 		{
@@ -41,6 +58,33 @@ ann::Net::Net(const Json::Value& node)
 				outputLabels.push_back(labels[i].asString());
 		}
 	}
+
+	if(node.isMember("outputScalars"))
+	{
+		Json::Value scalars = node["outputLabels"];
+		if(!scalars.isArray() || scalars.size() != outputSize)
+		{
+			Log(Log::WARN)<<"Could not get output scalars for network";
+			if(scalars.size() != outputSize)
+				Log(Log::WARN)<<"The array has the wrong size at "<<scalars.size();
+		}
+		else
+		{
+			for(Json::ArrayIndex i = 0; i < scalars.size(); ++i)
+				outputScalars[i] = scalars[i].asFloat();
+		}
+	}
+}
+
+void ann::Net::setOutputScalars(const torch::Tensor& tensor)
+{
+	assert(tensor.size(0) == getOutputSize());
+	outputScalars = tensor;
+}
+
+torch::Tensor ann::Net::getOutputScalars()
+{
+	return outputScalars;
 }
 
 void ann::Net::getConfiguration(Json::Value& node)
@@ -49,14 +93,23 @@ void ann::Net::getConfiguration(Json::Value& node)
 	node["outputSize"] = outputSize;
 	node["softmax"] = softmax;
 	node["purpose"] = purpose;
+	node["inputLabel"] = inputLabel;
 
 	if(!outputLabels.empty())
 	{
-		Json::Value labels = node["outputLabels"];
+		Json::Value labels(Json::ValueType::arrayValue);
 		labels.resize(outputLabels.size());
 		for(size_t i = 0; i < outputLabels.size(); ++i)
 			labels[static_cast<int>(i)] = outputLabels[i];
+		node["outputLabels"] = labels;
 	}
+
+	Json::Value scalars(Json::ValueType::arrayValue);
+	scalars.resize(outputSize);
+	assert(outputSize == outputScalars.size(0));
+	for(int64_t i = 0; i < outputSize; ++i)
+		scalars[static_cast<int>(i)] = outputScalars[i].item().toFloat();
+	node["outputScalars"] = scalars;
 }
 
 const std::vector<std::string>& ann::Net::getOutputLabels() const
@@ -75,6 +128,7 @@ void ann::Net::setOutputLabels(const std::vector<std::string>& outputLabelsI)
 std::shared_ptr<Net> ann::Net::newNetFromConfiguation(const Json::Value& node)
 {
 	std::string type = node["type"].asString();
+
 	if(type == typeid(ann::ConvNet).name())
 		return std::shared_ptr<Net>(new ann::ConvNet(node));
 	else if(type == typeid(ann::SimpleNet).name())
@@ -132,175 +186,4 @@ const std::string& ann::Net::getPurpose() const
 void ann::Net::setPurpose(const std::string& str)
 {
 	purpose = str;
-}
-
-static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers, size_t input, size_t output)
-{
-	size_t layerIn = (input*(leyers-layer)/leyers)+output*(layer)/leyers;
-	size_t layerOut = (input*(leyers-layer-1)/leyers)+output*(layer+1)/leyers;
-	return std::pair<size_t, size_t>(layerIn, layerOut);
-}
-
-ann::SimpleNet::SimpleNet(const Json::Value& node):
-Net(node)
-{
-	downsampleSteps = node["downsampleSteps"].asUInt64();
-	extraSteps = node["extraSteps"].asUInt64();
-	init();
-}
-
-ann::SimpleNet::SimpleNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI, bool softmaxI):
-Net(inputSizeI, outputSizeI, softmaxI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
-{
-	init();
-}
-
-void ann::SimpleNet::init()
-{
-	register_module("SimpleModel", model);
-
-	std::pair<size_t, size_t> sizes = layerWidthFunction(0, downsampleSteps, inputSize, outputSize);
-	torch::nn::Linear linear(sizes.first, sizes.first);
-	model->push_back(linear);
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-	for(size_t i = 0; i < downsampleSteps-1; ++i)
-	{
-		sizes = layerWidthFunction(i, downsampleSteps, inputSize, outputSize);
-		torch::nn::Linear linear(sizes.first, sizes.second);
-		model->push_back(linear);
-		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.1).inplace(true)));
-		/*if(i % 2 == 0)
-			model->push_back(torch::nn::Dropout(torch::nn::DropoutOptions().p(0.2)));*/
-		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(1e-3).momentum(0.1).affine(true));
-		model->push_back(bn);
-		if(i == 0)
-		{
-			for(size_t j = 0; j < extraSteps; ++j)
-			{
-				torch::nn::Linear linear(sizes.second, sizes.second);
-				model->push_back(linear);
-				model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-			}
-		}
-	}
-	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, inputSize, outputSize);
-	linear = torch::nn::Linear(sizes.first, sizes.second);
-	model->push_back(linear);
-	if(softmax)
-		model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
-}
-
-std::shared_ptr<torch::nn::Module> ann::SimpleNet::operator[](size_t index)
-{
-	return model->operator[](index);
-}
-
-torch::Tensor ann::SimpleNet::forward(torch::Tensor x)
-{
-	return model->forward(x);
-}
-
-void ann::SimpleNet::getConfiguration(Json::Value& node)
-{
-	node["type"] = typeid(*this).name();
-	node["downsampleSteps"] = downsampleSteps;
-	node["extraSteps"] = extraSteps;
-	ann::Net::getConfiguration(node);
-}
-
-ann::ConvNet::ConvNet(const Json::Value& node):
-Net(node)
-{
-	downsampleSteps = node["downsampleSteps"].asUInt64();
-	extraSteps = node["extraSteps"].asUInt64();
-	init();
-}
-
-ann::ConvNet::ConvNet(int64_t inputSizeI, int64_t outputSizeI, size_t downsampleStepsI, size_t extraStepsI, bool softmaxI):
-Net(inputSizeI, outputSizeI, softmaxI), downsampleSteps(downsampleStepsI), extraSteps(extraStepsI)
-{
-	init();
-}
-
-void ann::ConvNet::init()
-{
-	int64_t size = inputSize;
-	const int conv1Kernel = inputSize/5;
-	const int maxPool1Devisor = 2;
-	const int conv2Kernel = inputSize/10;
-	const int maxPool2Devisor = 2;
-
-	register_module("ConvModel", model);
-
-	//conv part
-	//model->push_back(SeqPrint());
-	torch::nn::Conv1d conv1d0(torch::nn::Conv1dOptions(1, 3, conv1Kernel).stride(1).bias(false));
-	torch::nn::init::xavier_uniform_(conv1d0->weight);
-	model->push_back(conv1d0);
-	size = size-conv1Kernel+1;
-	//model->push_back(SeqPrint());
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-	model->push_back(torch::nn::MaxPool1d(torch::nn::MaxPool1dOptions(maxPool1Devisor)));
-	size = size/maxPool1Devisor;
-	//model->push_back(SeqPrint());
-	model->push_back(torch::nn::Conv1d(torch::nn::Conv1dOptions(3, 6, conv2Kernel).stride(1).bias(false)));
-	size = size-conv2Kernel+1;
-	//model->push_back(SeqPrint());
-	model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-	model->push_back(torch::nn::MaxPool1d(torch::nn::MaxPool1dOptions(maxPool2Devisor)));
-	size = size/2;
-	//model->push_back(SeqPrint());
-	model->push_back(torch::nn::Flatten());
-	size = size*6;
-	//model->push_back(SeqPrint());
-
-	//fully connected layers
-	std::pair<size_t, size_t> sizes;
-	for(size_t i = 0; i < downsampleSteps-1; ++i)
-	{
-		torch::nn::BatchNorm1d bn(torch::nn::BatchNorm1dOptions(sizes.second).eps(0.5).momentum(0.1).affine(false));
-		model->push_back(bn);
-
-		sizes = layerWidthFunction(i, downsampleSteps, size, outputSize);
-		model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-		model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-
-		if(i == 0)
-		{
-			for(size_t j = 0; j < extraSteps; ++j)
-			{
-				model->push_back(torch::nn::Linear(sizes.second, sizes.second));
-				model->push_back(torch::nn::LeakyReLU(torch::nn::LeakyReLUOptions().negative_slope(0.2).inplace(true)));
-			}
-		}
-	}
-
-	sizes = layerWidthFunction(downsampleSteps-1, downsampleSteps, size, outputSize);
-	model->push_back(torch::nn::Linear(sizes.first, sizes.second));
-	if(softmax)
-		model->push_back(torch::nn::LogSoftmax(torch::nn::LogSoftmaxOptions(1)));
-}
-
-torch::Tensor ann::ConvNet::forward(torch::Tensor x)
-{
-	assert(x.dim() < 3);
-	if(x.dim() == 2)
-		x = x.reshape({x.size(0), 1, x.size(1)});
-	else
-		x = x.reshape({x.size(0), 1});
-
-	return model->forward(x);
-}
-
-std::shared_ptr<torch::nn::Module> ann::ConvNet::operator[](size_t index)
-{
-	return model->operator[](index);
-}
-
-void ann::ConvNet::getConfiguration(Json::Value& node)
-{
-	node["type"] = typeid(*this).name();
-	node["downsampleSteps"] = downsampleSteps;
-	node["extraSteps"] = extraSteps;
-	ann::Net::getConfiguration(node);
 }

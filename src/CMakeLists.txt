@@ -21,6 +21,8 @@ set(SRC_FILES
 	gan/simplenet.cpp
 	gan/gan.cpp
 	ann/net.cpp
+	ann/simplenet.cpp
+	ann/convnet.cpp
 	ann/classification.cpp
 	ann/regression.cpp
 	ann/eisdistanceloss.cpp

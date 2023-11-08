@@ -15,15 +15,15 @@ class Net : public torch::nn::Module
 protected:
 	int64_t inputSize;
 	int64_t outputSize;
+	std::string inputLabel = "EIS";
 	std::vector<std::string> outputLabels;
 	std::string purpose = "Unkown";
+	torch::Tensor outputScalars;
 	bool softmax;
 
 public:
 	Net(const Json::Value& node);
-	Net(int64_t inputSizeI, int64_t outputSizeI, bool softmaxI = true):
-	inputSize(inputSizeI), outputSize(outputSizeI), softmax(softmaxI)
-	{}
+	Net(int64_t inputSizeI, int64_t outputSizeI, bool softmaxI = true);
 
 	virtual torch::Tensor forward(torch::Tensor x) = 0;
 
@@ -34,6 +34,9 @@ public:
 	void setPurpose(const std::string& str);
 	const std::vector<std::string>& getOutputLabels() const;
 	void setOutputLabels(const std::vector<std::string>& outputLabels);
+	void setInputLabel(const std::string& inputLabel);
+	void setOutputScalars(const torch::Tensor& tensor);
+	torch::Tensor getOutputScalars();
 	virtual void getConfiguration(Json::Value& node);
 	bool saveToCheckpointDir(const std::filesystem::path& path);
 	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) = 0;
@@ -60,37 +63,5 @@ template <typename DatasetType> bool Net::setOutputLabelsFromDataset(DatasetType
 	setOutputLabels(outputLablesTmp);
 	return true;
 }
-
-class SimpleNet : public Net
-{
-	torch::nn::Sequential model;
-	size_t downsampleSteps;
-	size_t extraSteps;
-
-	void init();
-
-public:
-	SimpleNet(const Json::Value& node);
-	SimpleNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleSteps = 4, size_t extraSteps = 3, bool softmax = true);
-	virtual torch::Tensor forward(torch::Tensor x) override;
-	virtual void getConfiguration(Json::Value& node) override;
-	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) override;
-};
-
-class ConvNet : public Net
-{
-	torch::nn::Sequential model;
-	size_t downsampleSteps;
-	size_t extraSteps;
-
-	void init();
-
-public:
-	ConvNet(const Json::Value& node);
-	ConvNet(int64_t inputSizeI = 100, int64_t outputSizeI = 6, size_t downsampleStepsI = 4, size_t extraStepsI = 3, bool softmax = true);
-	virtual torch::Tensor forward(torch::Tensor x) override;
-	virtual void getConfiguration(Json::Value& node) override;
-	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) override;
-};
 
 }

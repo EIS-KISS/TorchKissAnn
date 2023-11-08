@@ -1,5 +1,6 @@
 #pragma once
 
+#include <eisgenerator/eistype.h>
 #include <eisgenerator/model.h>
 #include <string>
 #include <filesystem>
@@ -20,6 +21,8 @@ private:
 	mtar_t tar;
 	std::vector<int64_t> dataSizes = {};
 
+	eis::EisSpectra loadSpectra(size_t index);
+
 
 public:
 	explicit ParameterRegressionDatasetLoader(const std::filesystem::path& pathI, bool drtI = true);
@@ -32,4 +35,6 @@ public:
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual c10::optional<size_t> size() const override;
 	virtual bool isMulticlass() override;
+	virtual std::string dataLabel() const override;
+	virtual c10::optional<torch::Tensor> freqRange() override;
 };

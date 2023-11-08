@@ -47,5 +47,29 @@ size_t FakeRegressionDatasetGenerator::classForIndex(size_t index)
 std::string FakeRegressionDatasetGenerator::modelStringForClass(size_t classNum)
 {
 	(void)classNum;
-	return "r-rc-rc";
+
+	switch (classNum)
+	{
+		case 0:
+			return "r-0";
+		case 1:
+			return "r-1";
+		case 2:
+			return "c-2";
+		case 3:
+			return "r-3";
+		case 4:
+			return "c-4";
+		default:
+			return "r-rc-rc";
+	}
+}
+
+c10::optional<torch::Tensor> FakeRegressionDatasetGenerator::freqRange()
+{
+	torch::Tensor out = torch::zeros({3}, tensorOptCpu<fvalue>(false));
+	out[0] = 0;
+	out[1] = 1;
+	out[2] = static_cast<double>(outputSize);
+	return out;
 }

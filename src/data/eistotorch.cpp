@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <torch/csrc/autograd/generated/variable_factories.h>
 
 #include "tensoroptions.h"
 
@@ -86,4 +87,24 @@ std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input)
 torch::Tensor fvalueVectorToTensor(std::vector<fvalue>& vect)
 {
 	return torch::from_blob(vect.data(), {static_cast<int64_t>(vect.size())}, tensorOptCpu<fvalue>());
+}
+
+torch::Tensor rangeToTensor(const eis::Range& range)
+{
+	torch::Tensor out = torch::zeros({3}, tensorOptCpu<fvalue>(false));
+
+	out[0] = range.start;
+	out[1] = range.end;
+	out[2] = static_cast<fvalue>(range.count);
+
+	return out;
+}
+
+eis::Range tensorToRange(const torch::Tensor& tensor)
+{
+	assert(tensor.numel() == 3);
+	assert(tensor.size(0) == 3);
+
+	eis::Range out(tensor[0].item().toDouble(), tensor[1].item().toDouble(), tensor[2].item().toDouble());
+	return out;
 }

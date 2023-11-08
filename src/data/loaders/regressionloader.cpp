@@ -7,6 +7,7 @@
 
 #include "microtar.h"
 #include "../eistotorch.h"
+#include "tensoroptions.h"
 #include "tokenize.h"
 #include "loaderror.h"
 
@@ -62,7 +63,12 @@ ParameterRegressionDatasetLoader::~ParameterRegressionDatasetLoader()
 	mtar_close(&tar);
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoader::getImpl(size_t index)
+std::string ParameterRegressionDatasetLoader::dataLabel() const
+{
+	return "DRT";
+}
+
+eis::EisSpectra ParameterRegressionDatasetLoader::loadSpectra(size_t index)
 {
 	mtar_header_t header;
 	int ret = mtar_find(&tar, files[index].first.c_str(), &header);
@@ -85,6 +91,13 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoa
 
 	eis::EisSpectra spectra = eis::EisSpectra::loadFromStream(ss);
 	delete[] filebuffer;
+
+	return spectra;
+}
+
+torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoader::getImpl(size_t index)
+{
+	eis::EisSpectra spectra = loadSpectra(index);
 
 	if(parameterCount == 0)
 	{
@@ -179,10 +192,32 @@ std::string ParameterRegressionDatasetLoader::modelStringForClass(size_t classNu
 	Log(Log::ERROR)<<modelStr;
 	eis::Model model(modelStr);
 
+	std::vector<eis::Componant*> componants = model.getFlatComponants();
+	for(eis::Componant* componant : componants)
+	{
+		if(classNum >= componant->paramCount())
+			classNum -= componant->paramCount();
+		else
+			return std::string(1, componant->getComponantChar()) + std::string("-") + std::to_string(classNum);
+	}
 	return model.getModelStr();
 }
 
 bool ParameterRegressionDatasetLoader::isMulticlass()
 {
 	return true;
+}
+
+c10::optional<torch::Tensor> ParameterRegressionDatasetLoader::freqRange()
+{
+	eis::EisSpectra spectra = loadSpectra(0);
+	fvalue front = spectra.data.front().omega;
+	fvalue back = spectra.data.back().omega;
+
+	torch::Tensor out = torch::zeros({3}, tensorOptCpu<fvalue>(false));
+
+	out[0] = std::min(front, back);
+	out[1] = std::max(front, back);
+	out[2] = static_cast<fvalue>(spectra.data.size());
+	return out;
 }

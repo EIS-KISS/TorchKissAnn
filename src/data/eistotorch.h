@@ -10,6 +10,9 @@ torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor*
 std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input);
 torch::Tensor fvalueVectorToTensor(std::vector<fvalue>& vect);
 
+torch::Tensor rangeToTensor(const eis::Range& range);
+eis::Range tensorToRange(const torch::Tensor& tensor);
+
 template<typename fv>
 std::pair<std::valarray<fv>, std::valarray<fv>> torchToValarray(torch::Tensor tensor)
 {

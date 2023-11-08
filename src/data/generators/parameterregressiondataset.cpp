@@ -73,6 +73,11 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetGen
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
+std::string ParameterRegressionDatasetGenerator::dataLabel() const
+{
+	return drt ? "DRT" : EisDataset::dataLabel();
+}
+
 size_t ParameterRegressionDatasetGenerator::classesCount() const
 {
 	return parameterCount;
@@ -94,10 +99,15 @@ std::string ParameterRegressionDatasetGenerator::modelStringForClass(size_t clas
 	std::vector<eis::Componant*> componants = model.getFlatComponants();
 	for(eis::Componant* componant : componants)
 	{
-		if(classNum > componant->paramCount())
+		if(classNum >= componant->paramCount())
 			classNum -= componant->paramCount();
 		else
-			return std::to_string(componant->getComponantChar()) + "p" + std::to_string(classNum);
+			return std::string(1, componant->getComponantChar()) + std::string("-") + std::to_string(classNum);
 	}
 	return model.getModelStr();
+}
+
+c10::optional<torch::Tensor> ParameterRegressionDatasetGenerator::freqRange()
+{
+	return rangeToTensor(omega);
 }

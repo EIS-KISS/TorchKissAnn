@@ -23,7 +23,15 @@ public:
 	bool createLabelMap(const ann::Net& net);
 	virtual torch::Tensor classCounts();
 	virtual torch::Tensor classWeights();
+	virtual c10::optional<torch::Tensor> freqRange();
+	virtual std::string dataLabel() const;
 };
+
+template <typename DataSelf>
+std::string EisDataset<DataSelf>::dataLabel() const
+{
+	return "EIS";
+}
 
 template <typename DataSelf>
 std::string EisDataset<DataSelf>::modelStringForClass(size_t classNum)
@@ -101,4 +109,10 @@ torch::Tensor EisDataset<DataSelf>::classWeights()
 
 	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	return output;
+}
+
+template <typename DataSelf>
+c10::optional<torch::Tensor> EisDataset<DataSelf>::freqRange()
+{
+	return c10::optional<torch::Tensor>();
 }

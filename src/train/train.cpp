@@ -2,12 +2,15 @@
 #include <ios>
 #include <iostream>
 #include <eisgenerator/model.h>
+#include <eisgenerator/log.h>
 #include <memory>
 #include <vector>
 #include <torch/torch.h>
 
 #include "ann/classification.h"
 #include "ann/regression.h"
+#include "ann/simplenet.h"
+#include "ann/convnet.h"
 #include "data/generators/fakeregressiondataset.h"
 #include "data/loaders/regressionloader.h"
 #include "gan/gan.h"
@@ -22,7 +25,6 @@
 #include "options.h"
 #include "trainlog.h"
 #include "globals.h"
-
 
 template <typename DataSetType>
 int train(const Config& config);
@@ -192,6 +194,7 @@ int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
 	Log::level = Log::INFO;
+	eis::Log::level = eis::Log::ERROR;
 
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);

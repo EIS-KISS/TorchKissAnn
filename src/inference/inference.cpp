@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdio>
+#include <eisgenerator/basicmath.h>
 #include <eisgenerator/eistype.h>
 #include <iostream>
 #include <memory>
@@ -192,6 +193,12 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
 
+	if(net->getPurpose() != "Classifier")
+	{
+		Log(Log::ERROR)<<"The loaded model dosent report to be a classifier";
+		return 1;
+	}
+
 	if(data.empty())
 		return 3;
 
@@ -242,7 +249,7 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 	if(data.empty())
 		return 3;
 
-	std::vector<std::string> purposeTokens = tokenize(net->getPurpose(), ' ');
+	std::vector<std::string> purposeTokens = tokenize(net->getPurpose(), ',');
 	if(purposeTokens[0] != "Regression")
 	{
 		Log(Log::ERROR)<<"The loaded model dosent report to be a regression model";
@@ -255,9 +262,17 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 	Log(Log::INFO)<<"Running parameter regression for "<<targetModelStr;
 
-	torch::Tensor input = eisToTorch(data);
+	Log(Log::DEBUG)<<"data size: "<<data.size();
 
-	Log(Log::DEBUG)<<"data size: "<<data.size()<<" tensor size "<<input.sizes();
+	if(static_cast<int64_t>(data.size()) != net->getInputSize())
+	{
+		Log(Log::INFO)<<"Network trained for an input size of "<<net->getInputSize()
+		<<" supplied data has a size of "<<data.size()<<" and will be rescaled";
+
+		data = eis::rescale(data, net->getInputSize());
+	}
+	torch::Tensor input = eisToTorch(data);
+	Log(Log::DEBUG)<<"input tensor size: "<<input.numel();
 
 	torch::Tensor output = ann::regression::use(input, net);
 

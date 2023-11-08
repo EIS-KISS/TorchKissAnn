@@ -9,18 +9,20 @@
 #include "tensoroperators.h"
 #include "log.h"
 
-EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn):
+EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn, torch::Tensor targetScalarIn):
 omegas(omegasIn.reshape({omegasIn.numel(), -1})),
-loss(torch::nn::MSELossOptions().reduction(torch::kMean))
+loss(torch::nn::MSELossOptions().reduction(torch::kMean)),
+targetScalar(targetScalarIn)
 {
 	model = std::shared_ptr<eis::Model>(new eis::Model(modelString));
 	modelScript = compileModel(*model);
 }
 
 
-EisDistanceLoss::EisDistanceLoss(const eis::Model& modelIn, torch::Tensor omegasIn):
+EisDistanceLoss::EisDistanceLoss(const eis::Model& modelIn, torch::Tensor omegasIn, torch::Tensor targetScalarIn):
 omegas(omegasIn.reshape({omegasIn.numel(), -1})),
-loss(torch::nn::MSELossOptions().reduction(torch::kMean))
+loss(torch::nn::MSELossOptions().reduction(torch::kMean)),
+targetScalar(targetScalarIn)
 {
 	model = std::shared_ptr<eis::Model>(new eis::Model(modelIn));
 	modelScript = compileModel(*model);
@@ -50,6 +52,9 @@ torch::Tensor EisDistanceLoss::distance(torch::Tensor output, torch::Tensor targ
 torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targets)
 {
 	assert(targets.sizes() == output.sizes());
+
+	output = output/targetScalar;
+	targets = targets/targetScalar;
 
 	if(targets.dim() > 1 && targets.size(1) == static_cast<int64_t>(model->getParameterCount()) )
 		targets = targets.t();

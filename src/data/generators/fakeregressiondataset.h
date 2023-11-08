@@ -26,4 +26,5 @@ public:
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual c10::optional<size_t> size() const override;
 	virtual bool isMulticlass() override;
+	virtual c10::optional<torch::Tensor> freqRange() override;
 };
