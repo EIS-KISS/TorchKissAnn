@@ -16,7 +16,7 @@
 #include "globals.h"
 #include "log.h"
 #include "trainlog.h"
-#include "eisdistanceloss.h"
+#include "loss/eisdistanceloss.h"
 #include "data/eisdataset.h"
 #include "tensoroptions.h"
 #include "tensoroperators.h"
@@ -31,7 +31,7 @@ torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 template <typename DatasetType>
 void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
 
-torch::Tensor getTargetScalar(const std::string& modelString);
+std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBiases(const std::string& modelString);
 
 template <typename DataLoader, typename LossFn>
 int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
@@ -53,7 +53,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	for(auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
-		torch::Tensor targets = batch.target.to(*offload_device)/network->getOutputScalars();
+		torch::Tensor targets = (batch.target.to(*offload_device)-network->getOutputBiases())/network->getOutputScalars();
 
 		torch::Tensor prediction = network->forward(data)+0.5;
 
@@ -180,11 +180,13 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 
 	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
 
-	net->setOutputScalars(getTargetScalar(modelString).to(*offload_device));
+	std::pair<torch::Tensor, torch::Tensor> scaleAndBias = getTargetScalesAndBiases(modelString);
 
+	net->setOutputScalars(scaleAndBias.first.to(*offload_device));
+	net->setOutputBiases(scaleAndBias.second.to(*offload_device));
 
-	std::stringstream purpose("Regression,");
-	purpose<<modelString<<std::scientific;
+	std::stringstream purpose;
+	purpose<<"Regression,"<<modelString<<std::scientific;
 	if(trainDataset->freqRange().has_value())
 	{
 		torch::Tensor freqs = trainDataset->freqRange().value();

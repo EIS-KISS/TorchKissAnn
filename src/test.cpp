@@ -1,6 +1,7 @@
 #include <asm-generic/errno.h>
 #include <cstddef>
 #include <cstdint>
+#include <eisgenerator/eistype.h>
 #include <iostream>
 #include <eisgenerator/model.h>
 #include <libsvm/svm.h>
@@ -20,8 +21,9 @@
 #include "data/loaders/dirloader.h"
 #include "data/generators/parameterregressiondataset.h"
 #include "tensoroptions.h"
-#include "ann/eisdistanceloss.h"
+#include "loss/eisdistanceloss.h"
 #include "modelscript.h"
+#include "fit/fit.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -167,7 +169,7 @@ bool testEisDistanceLoss()
 	eis::Model model("r{100}-r{100}c{1e-4}");
 	model.compile();
 
-	torch::Tensor omegas = torch::logspace(-2, 6, 100);
+	torch::Tensor omegas = torch::logspace(-2, 6, 5);
 
 	EisDistanceLoss loss(model, omegas);
 	std::vector<fvalue> paramVect = model.getFlatParameters();
@@ -196,8 +198,8 @@ bool testEisDistanceLoss()
 	if(autoloss.numel() != 1 || autoloss.item().toDouble() > 0.01)
 		return false;
 
-	std::vector<eis::DataPoint> spectra = model.executeSweep(eis::Range(1e-2, 1e6, 100, true));
-	torch::Tensor spectraTensor = eisToTorch(spectra);
+	std::vector<eis::DataPoint> spectra = model.executeSweep(eis::Range(1e-2, 1e6, 5, true));
+	torch::Tensor spectraTensor = eisToComplexTensor(spectra);
 
 	torch::Tensor sanityloss = loss.distance(parameters, spectraTensor);
 	Log(Log::INFO)<<__func__<<" Sanity loss: "<<sanityloss;
@@ -212,18 +214,35 @@ bool testEisDistanceLoss()
 	return true;
 }
 
+bool testFit()
+{
+	const std::string modelString = "r{100}c{1e-5}";
+	eis::Model model(modelString);
+	torch::Tensor omegas;
+	torch::Tensor targetSpectra = eisToComplexTensor(model.executeSweep(eis::Range(1, 1e6, 5)), &omegas);
+
+	Log(Log::INFO)<<__func__<<"targetSpectra:\n"<<targetSpectra<<"\nomegas:\n"<<omegas;
+
+	std::pair<torch::Tensor, torch::Tensor> fited = eisFit(targetSpectra, omegas, modelString);
+
+	Log(Log::INFO)<<__func__<<"Result:\n"<<fited.first<<"\nremaining loss:\n"<<fited.second;
+	return true;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
 	choose_device(true);
 
-	//testEisGeneratorDataset();
+	/*//testEisGeneratorDataset();
 	//reexportDirDataset();
 
 	testLinearToComplex();
 	testEisDistanceLoss();
 	//testParaDataset();
-	testEisScript();
+	testEisScript();*/
+	//testEisDistanceLoss();
+	testFit();
 
 	free_device();
 	return 0;

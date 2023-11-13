@@ -25,7 +25,8 @@ set(SRC_FILES
 	ann/convnet.cpp
 	ann/classification.cpp
 	ann/regression.cpp
-	ann/eisdistanceloss.cpp
+	loss/eisdistanceloss.cpp
+	fit/fit.cpp
 	nearest/nearest.cpp
 	globals.cpp
 )

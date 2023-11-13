@@ -1,9 +1,9 @@
 #include "net.h"
-#include "../utils/seqprint.h"
 #include <cstdint>
 #include <json/value.h>
 #include <sstream>
 #include <fstream>
+#include <torch/csrc/autograd/generated/variable_factories.h>
 
 #include "tensoroptions.h"
 #include "simplenet.h"
@@ -34,8 +34,6 @@ bool ann::Net::hasSoftmaxOutput() const
 
 ann::Net::Net(const Json::Value& node)
 {
-	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
-
 	inputSize = node["inputSize"].asInt64();
 	outputSize = node["outputSize"].asInt64();
 	softmax = node.get("softmax", "true").asBool();
@@ -59,9 +57,10 @@ ann::Net::Net(const Json::Value& node)
 		}
 	}
 
+	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
 	if(node.isMember("outputScalars"))
 	{
-		Json::Value scalars = node["outputLabels"];
+		Json::Value scalars = node["outputScalars"];
 		if(!scalars.isArray() || scalars.size() != outputSize)
 		{
 			Log(Log::WARN)<<"Could not get output scalars for network";
@@ -72,6 +71,23 @@ ann::Net::Net(const Json::Value& node)
 		{
 			for(Json::ArrayIndex i = 0; i < scalars.size(); ++i)
 				outputScalars[i] = scalars[i].asFloat();
+		}
+	}
+
+	outputBiases = torch::zeros({outputSize}, tensorOptCpu<float>(false));
+	if(node.isMember("outputBiases"))
+	{
+		Json::Value biases = node["outputBiases"];
+		if(!biases.isArray() || biases.size() != outputSize)
+		{
+			Log(Log::WARN)<<"Could not get output biases for network";
+			if(biases.size() != outputSize)
+				Log(Log::WARN)<<"The array has the wrong size at "<<biases.size();
+		}
+		else
+		{
+			for(Json::ArrayIndex i = 0; i < biases.size(); ++i)
+				outputBiases[i] = biases[i].asFloat();
 		}
 	}
 }
@@ -85,6 +101,17 @@ void ann::Net::setOutputScalars(const torch::Tensor& tensor)
 torch::Tensor ann::Net::getOutputScalars()
 {
 	return outputScalars;
+}
+
+void ann::Net::setOutputBiases(const torch::Tensor& tensor)
+{
+	assert(tensor.size(0) == getOutputSize());
+	outputBiases = tensor;
+}
+
+torch::Tensor ann::Net::getOutputBiases()
+{
+	return outputBiases;
 }
 
 void ann::Net::getConfiguration(Json::Value& node)
@@ -110,6 +137,13 @@ void ann::Net::getConfiguration(Json::Value& node)
 	for(int64_t i = 0; i < outputSize; ++i)
 		scalars[static_cast<int>(i)] = outputScalars[i].item().toFloat();
 	node["outputScalars"] = scalars;
+
+	Json::Value biases(Json::ValueType::arrayValue);
+	biases.resize(outputSize);
+	assert(outputSize == outputScalars.size(0));
+	for(int64_t i = 0; i < outputSize; ++i)
+		biases[static_cast<int>(i)] = outputBiases[i].item().toFloat();
+	node["outputBiases"] = biases;
 }
 
 const std::vector<std::string>& ann::Net::getOutputLabels() const

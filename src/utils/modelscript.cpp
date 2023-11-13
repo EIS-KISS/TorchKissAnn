@@ -21,6 +21,11 @@ torch::Tensor runScriptModel(eis::Model& model, std::shared_ptr<torch::Compilati
 	torch::Tensor result = compiledScript->run_method(model.getCompiledFunctionName(), parameters, omegas).toTensor();
 	assert(result.scalar_type() == torch::kComplexFloat || result.scalar_type() == torch::kComplexDouble);
 	assert(result.size(0) == omegas.numel());
+	assert(result.sizes().size() == 1 || result.size(1) == 1);
+	if(result.sizes().size() == 2)
+		result = result.reshape({result.numel()});
+	else
+		assert(false);
 	return result;
 }
 

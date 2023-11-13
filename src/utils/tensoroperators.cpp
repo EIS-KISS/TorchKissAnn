@@ -179,7 +179,13 @@ torch::Tensor linearToComplex(torch::Tensor& in)
 torch::Tensor complexToLinear(torch::Tensor& in)
 {
 	assert(in.dtype() == torch::kComplexFloat || in.dtype() == torch::kComplexDouble);
-	torch::Tensor real = torch::view_as_real(in);
-	return real.transpose(0, 1).reshape({real.numel()});
+	torch::Tensor imag = torch::imag(in);
+	imag = imag.reshape({imag.numel()});
+	torch::Tensor real = torch::real(in);
+	real = real.reshape({real.numel()});
+	torch::Tensor out = torch::cat({real, imag}, 0);
+	assert(out.sizes().size() == 1);
+	assert(out.size(0) == in.numel()*2);
+	return out;
 }
 

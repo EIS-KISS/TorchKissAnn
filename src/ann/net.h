@@ -19,6 +19,7 @@ protected:
 	std::vector<std::string> outputLabels;
 	std::string purpose = "Unkown";
 	torch::Tensor outputScalars;
+	torch::Tensor outputBiases;
 	bool softmax;
 
 public:
@@ -36,7 +37,9 @@ public:
 	void setOutputLabels(const std::vector<std::string>& outputLabels);
 	void setInputLabel(const std::string& inputLabel);
 	void setOutputScalars(const torch::Tensor& tensor);
+	void setOutputBiases(const torch::Tensor& tensor);
 	torch::Tensor getOutputScalars();
+	torch::Tensor getOutputBiases();
 	virtual void getConfiguration(Json::Value& node);
 	bool saveToCheckpointDir(const std::filesystem::path& path);
 	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) = 0;

@@ -258,23 +258,23 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 	std::string targetModelStr = "Unkown";
 	if(purposeTokens.size() >= 3)
-		targetModelStr = purposeTokens[2];
+		targetModelStr = purposeTokens[1];
 
 	Log(Log::INFO)<<"Running parameter regression for "<<targetModelStr;
 
 	Log(Log::DEBUG)<<"data size: "<<data.size();
 
-	if(static_cast<int64_t>(data.size()) != net->getInputSize())
+	if(static_cast<int64_t>(data.size())*2 != net->getInputSize())
 	{
 		Log(Log::INFO)<<"Network trained for an input size of "<<net->getInputSize()
-		<<" supplied data has a size of "<<data.size()<<" and will be rescaled";
+		<<" supplied data has a size of "<<data.size()*2<<" and will be rescaled";
 
-		data = eis::rescale(data, net->getInputSize());
+		data = eis::rescale(data, net->getInputSize()/2);
 	}
-	torch::Tensor input = eisToTorch(data);
+	torch::Tensor input = eisToTorch(data).to(*offload_device);
 	Log(Log::DEBUG)<<"input tensor size: "<<input.numel();
 
-	torch::Tensor output = ann::regression::use(input, net);
+	torch::Tensor output = ann::regression::use(input, net).to(torch::kCPU);
 
 	Log(Log::DEBUG)<<"output shape: "<<output.sizes();
 
@@ -334,6 +334,7 @@ bool requiresNetwork(PredictionMode mode)
 int main(int argc, char** argv)
 {
 	Config config;
+	Log::level = Log::INFO;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
 	choose_device(true);
@@ -355,6 +356,8 @@ int main(int argc, char** argv)
 			Log(Log::ERROR)<<"Could not load network from "<<config.networkFileName;
 			return 2;
 		}
+
+		net->to(*offload_device);
 
 		Log(Log::INFO)<<"Loaded network with "<<net->getOutputSize()<<" outputs. Purpose: "<<net->getPurpose();
 		const std::vector<std::string>& outputLabels = net->getOutputLabels();
