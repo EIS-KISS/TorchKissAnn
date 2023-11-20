@@ -75,14 +75,15 @@ namespace io{
                         }
 
                         void set_file_name(const char*file_name){
+                                #pragma GCC diagnostic push
+                                #pragma GCC diagnostic ignored "-Wstringop-truncation"
                                 if(file_name != nullptr){
-                                        // This call to strncpy has parenthesis around it
-                                        // to silence the GCC -Wstringop-truncation warning
-                                        (strncpy(this->file_name, file_name, sizeof(this->file_name)));
+                                        strncpy(this->file_name, file_name, sizeof(this->file_name));
                                         this->file_name[sizeof(this->file_name)-1] = '\0';
                                 }else{
                                         this->file_name[0] = '\0';
                                 }
+                                #pragma GCC diagnostic pop
                         }
 
                         char file_name[max_file_name_length+1];
