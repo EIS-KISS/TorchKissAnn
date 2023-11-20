@@ -3,6 +3,7 @@
 #include <fstream>
 #include <exception>
 #include <filesystem>
+#include <thread>
 
 #include "ann/net.h"
 
@@ -35,17 +36,27 @@ public:
 		}
 	};
 
+private:
+
 	static std::filesystem::path runsDir;
 
 	std::filesystem::path logDir;
 	size_t lossTrainIter = 0;
 	size_t lossTestIter = 0;
+	bool savedCheckpoint = false;
 	std::ofstream lossFileTrain;
 	std::ofstream lossFileTest;
 
+	std::vector<std::pair<size_t, double>> trainLossCurve;
+	std::vector<std::pair<size_t, double>> testLossCurve;
+
 	std::ofstream createLossFile(const std::string& fileName);
 
+	std::thread* plotThread = nullptr;
+
 	void logLoss(std::ofstream& file, size_t epoch, size_t step, double loss, double acc, size_t total, bool print, size_t iteration);
+
+	static void plot(std::filesystem::path logDir, std::vector<std::pair<size_t, double>> loss, bool test);
 
 public:
 	TrainLog();
@@ -61,4 +72,5 @@ public:
 
 	static void setRunsDir(const std::filesystem::path& dir);
 	static std::filesystem::path getRunsDir();
+
 };

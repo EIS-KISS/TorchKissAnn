@@ -12,11 +12,18 @@ set (CMAKE_CXX_STANDARD 20)
 
 find_package(Torch REQUIRED)
 find_package(PkgConfig REQUIRED)
-#find_package(sciplot REQUIRED)
+find_package(sciplot REQUIRED)
 pkg_search_module(JSONCPP REQUIRED jsoncpp)
 
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
+
+if(NOT sciplot_FOUND)
+	message(WARNING "Sciplot not found, application will be unable to generate plots")
+else()
+	add_definitions(-DENABLE_PLOTTING)
+	message("Sciplot found, ploting enabled")
+endif()
 
 set(COMMON_LINK_LIBRARIES pthread ${JSONCPP_LIBRARIES} ${TORCH_LIBRARIES} eisgenerator eisdrt_torch)
 set(COMMON_INCLUDE_DIRECTORYS ${JSONCPP_INCLUDE_DIRS} ${TORCH_INCLUDE_DIRS})

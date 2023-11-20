@@ -1,11 +1,13 @@
 #include "trainlog.h"
 
+#include <ctime>
+#include <filesystem>
+#include <json/json.h>
+
 #include "log.h"
 #include "tensoroperators.h"
 #include "gitrev.h"
-
-#include <ctime>
-#include <json/json.h>
+#include "ploting.h"
 
 std::filesystem::path TrainLog::runsDir;
 
@@ -114,11 +116,25 @@ void TrainLog::logLoss(std::ofstream& file, size_t epoch, size_t step, double lo
 void TrainLog::logTrainLoss(size_t epoch, size_t step, double loss, double acc, size_t total, bool print)
 {
 	logLoss(lossFileTrain, epoch, step, loss, acc, total, print, lossTrainIter++);
+	trainLossCurve.push_back({lossTrainIter, loss});
+
+	if(plotThread && plotThread->joinable())
+		plotThread->join();
+
+	if(lossTrainIter >= 10 && lossTrainIter % 10 == 0)
+		plotThread = new std::thread(TrainLog::plot, logDir, trainLossCurve, false);
 }
 
 void TrainLog::logTestLoss(size_t epoch, size_t step, double loss, double acc, size_t total, bool print)
 {
 	logLoss(lossFileTest, epoch, step, loss, acc, total, print, lossTestIter++);
+	testLossCurve.push_back({lossTestIter, loss});
+
+	if(plotThread && plotThread->joinable())
+		plotThread->join();
+
+	if(lossTestIter >= 10 && lossTestIter % 10 == 0)
+		plotThread = new std::thread(TrainLog::plot, logDir, testLossCurve, false);
 }
 
 void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
@@ -142,12 +158,28 @@ void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
 
 void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net)
 {
+	savedCheckpoint = true;
 	std::filesystem::path dir = logDir/std::filesystem::path("checkpoints")/(std::string("checkpoint_")+std::to_string(lossTrainIter));
 	net->saveToCheckpointDir(dir);
+}
+
+void TrainLog::plot(std::filesystem::path logDir, std::vector<std::pair<size_t, double>> loss, bool test)
+{
+	std::valarray<double> trainSteps(loss.size());
+	std::valarray<double> trainLosses(loss.size());
+	for(size_t i = 0; i < loss.size(); ++i)
+	{
+		trainSteps[i] = loss[i].first;
+		trainLosses[i] = loss[i].second;
+	}
+
+	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", trainSteps, trainLosses);
 }
 
 TrainLog::~TrainLog()
 {
 	lossFileTrain.close();
 	lossFileTest.close();
+	if(!savedCheckpoint)
+		std::filesystem::remove_all(logDir);
 }

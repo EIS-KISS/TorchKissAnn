@@ -17,6 +17,7 @@ set(SRC_FILES
 	utils/tensoroperators.cpp
 	utils/microtar.cpp
 	utils/modelscript.cpp
+	utils/ploting.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
