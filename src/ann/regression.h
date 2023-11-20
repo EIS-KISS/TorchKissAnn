@@ -86,6 +86,8 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		}
 
 		torch::Tensor loss = lossFn(prediction, targets);
+		torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
+		loss = loss + (negatives.sum()/negatives.numel());
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
