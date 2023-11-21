@@ -70,7 +70,7 @@ static double tryConfiguration(const Configuration config)
 
 	double out;
 
-	train<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(nullptr, net, &dataset, nullptr, 10, 1e-5, &out);
+	train<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(nullptr, net, &dataset, nullptr, 10, 1e-4, &out);
 
 	return out;
 }
