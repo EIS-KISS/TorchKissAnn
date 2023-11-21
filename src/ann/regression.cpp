@@ -1,8 +1,13 @@
 #include "regression.h"
+#include "ann/convnet.h"
+#include "ann/simplenet.h"
+#include "data/generators/parameterregressiondataset.h"
 
 #include <cstdint>
 #include <eisgenerator/model.h>
+#include <memory>
 #include <torch/optim/adamw.h>
+
 
 using namespace ann::regression;
 
@@ -31,5 +36,64 @@ std::pair<torch::Tensor, torch::Tensor>  ann::regression::getTargetScalesAndBias
 		bias[i] = defaultRanges[i].start;
 	}
 	return {scales, bias};
+}
+
+struct Configuration
+{
+	int extraSteps;
+	int downsampleSteps;
+	bool conv;
+
+	void print(Log::Level level)
+	{
+		Log(level)<<"Configuration:\n\t"<<"extraSteps = "<<extraSteps<<"\n\tdownsampleSteps = "
+			<<downsampleSteps<<"\n\tconv = "<<(conv ? "true" : "false");
+	}
+};
+
+static double tryConfiguration(const Configuration config)
+{
+	std::shared_ptr<ann::Net> net;
+
+	ParameterRegressionDatasetGenerator dataset("rp", 25, 0, false);
+
+	if(config.conv)
+	{
+		net = std::shared_ptr<ann::Net>(new ann::ConvNet(dataset.get(0).data.numel(),
+		                                dataset.classesCount(), config.downsampleSteps, config.extraSteps, false));
+	}
+	else
+	{
+		net = std::shared_ptr<ann::Net>(new ann::SimpleNet(dataset.get(0).data.numel(),
+		                                dataset.classesCount(), config.downsampleSteps, config.extraSteps, false));
+	}
+
+	double out;
+
+	train<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(nullptr, net, &dataset, nullptr, 10, 1e-5, &out);
+
+	return out;
+}
+
+void ann::regression::parameterSearch()
+{
+	constexpr int minDownsample = 3;
+	constexpr int maxDownsample = 10;
+	constexpr int minExtra = 0;
+	constexpr int maxExtra = 12;
+
+	std::vector<std::pair<double, Configuration>> losses;
+	for(int downsample = minDownsample; downsample < maxDownsample; ++downsample)
+	{
+		for(int extra = minExtra; extra < maxExtra; ++extra)
+		{
+			Configuration config = {extra, downsample, false};
+			Log(Log::INFO, false)<<"Trying ";
+			config.print(Log::INFO);
+			double loss = tryConfiguration(config);
+			losses.push_back({loss, config});
+		}
+	}
+
 }
 

@@ -148,6 +148,7 @@ struct Config
 	size_t dataWidth = 100;
 	size_t extraLayers = 3;
 	bool probeModel = false;
+	bool hyperparameters = false;
 	bool noGpu = false;
 };
 

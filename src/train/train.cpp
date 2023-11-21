@@ -190,66 +190,6 @@ template <> int train<FakeRegressionDatasetGenerator>(const Config& config)
 	return 0;
 }
 
-int main(int argc, char** argv)
-{
-	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
-	Log::level = Log::INFO;
-	eis::Log::level = eis::Log::ERROR;
-
-	Config config;
-	argp_parse(&argp, argc, argv, 0, 0, &config);
-
-	choose_device(config.noGpu);
-	batch_size = config.batchSize;
-
-	if(config.mode == MODE_INVALID)
-	{
-		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
-		return 3;
-	}
-
-	if(config.datasetMode == DATASET_INVALID)
-	{
-		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
-		return 3;
-	}
-
-	if((config.datasetMode != DATASET_GEN_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION &&
-		config.datasetMode != DATASET_FAKE_REGRESSION) &&
-		config.mode == MODE_REGRESSION)
-	{
-		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
-		return 3;
-	}
-
-	TrainLog::setRunsDir("./runs");
-
-	switch(config.datasetMode)
-	{
-		case DATASET_GEN:
-			return train<EisGeneratorDataset>(config);
-		case DATASET_FDUP:
-			return train<FastDedupDataset>(config);
-		case DATASET_DIR:
-			return train<EisDirDataset>(config);
-		case DATASET_GEN_REGRESSION:
-			return train<ParameterRegressionDatasetGenerator>(config);
-		case DATASET_TAR_REGRESSION:
-			return train<ParameterRegressionDatasetLoader>(config);
-		case DATASET_FAKE_REGRESSION:
-			return train<FakeRegressionDatasetGenerator>(config);
-		case DATASET_TRASH:
-		case DATASET_TAR:
-		case DATASET_INVALID:
-			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
-			break;
-	}
-
-	free_device();
-	return 0;
-}
-
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -310,4 +250,64 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			Log(Log::ERROR)<<"invalid model";
 			break;
 	}
+}
+
+int main(int argc, char** argv)
+{
+	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
+	Log::level = Log::INFO;
+	eis::Log::level = eis::Log::ERROR;
+
+	Config config;
+	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	choose_device(config.noGpu);
+	batch_size = config.batchSize;
+
+	if(config.mode == MODE_INVALID)
+	{
+		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
+		return 3;
+	}
+
+	if(config.datasetMode == DATASET_INVALID)
+	{
+		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
+		return 3;
+	}
+
+	if((config.datasetMode != DATASET_GEN_REGRESSION &&
+		config.datasetMode != DATASET_TAR_REGRESSION &&
+		config.datasetMode != DATASET_FAKE_REGRESSION) &&
+		config.mode == MODE_REGRESSION)
+	{
+		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
+		return 3;
+	}
+
+	TrainLog::setRunsDir("./runs");
+
+	switch(config.datasetMode)
+	{
+		case DATASET_GEN:
+			return train<EisGeneratorDataset>(config);
+		case DATASET_FDUP:
+			return train<FastDedupDataset>(config);
+		case DATASET_DIR:
+			return train<EisDirDataset>(config);
+		case DATASET_GEN_REGRESSION:
+			return train<ParameterRegressionDatasetGenerator>(config);
+		case DATASET_TAR_REGRESSION:
+			return train<ParameterRegressionDatasetLoader>(config);
+		case DATASET_FAKE_REGRESSION:
+			return train<FakeRegressionDatasetGenerator>(config);
+		case DATASET_TRASH:
+		case DATASET_TAR:
+		case DATASET_INVALID:
+			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
+			break;
+	}
+
+	free_device();
+	return 0;
 }

@@ -2,6 +2,7 @@
 #include <ATen/ops/logspace.h>
 #include <cstddef>
 #include <cstdint>
+#include <numeric>
 #include <torch/csrc/autograd/anomaly_mode.h>
 #include <torch/nn/modules/loss.h>
 #include <torch/nn/options/loss.h>
@@ -36,7 +37,7 @@ std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBiases(const std::stri
 template <typename DataLoader, typename LossFn>
 int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, int64_t classesCount, TrainLog* log = nullptr)
+			size_t data_size, int64_t classesCount, TrainLog* log = nullptr, double* finalLoss = nullptr)
 {
 	size_t index = 0;
 	network->train();
@@ -49,6 +50,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	std::vector<torch::OrderedDict<std::string, torch::Tensor>> parameters;
 
 	torch::Tensor prevLoss;
+	torch::Tensor loss;
 
 	for(auto& batch : loader)
 	{
@@ -85,7 +87,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			return -1;
 		}
 
-		torch::Tensor loss = lossFn(prediction, targets);
+		loss = lossFn(prediction, targets);
 		torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
 		loss = loss + (negatives.sum()/negatives.numel());
 
@@ -120,7 +122,11 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		index++;
 	}
 
-	log->logTrainLoss(epoch, data_size, lossAccumulator/index, 0, data_size);
+	if(log)
+		log->logTrainLoss(epoch, data_size, lossAccumulator/index, 0, data_size);
+
+	if(finalLoss)
+		*finalLoss = loss.item().toDouble();
 
 	return 0;
 }
@@ -160,7 +166,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& los
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate)
+		   size_t epochs, double learingRate, double* finalLoss = nullptr)
 {
 	static constexpr double LOSS_START_DECADE = -2;
 	static constexpr double LOSS_FINISH_DECADE = 6;
@@ -241,20 +247,25 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 	{
 		int ret = trainImpl(net, *trainDataLoader,
 			lossMse, optimizer, epoch, trainDataset->size().value(),
-			trainDataset->classesCount(), trainLog);
+			trainDataset->classesCount(), trainLog, finalLoss);
 		if(ret != 0)
 			return -1;
 
 		if(testDataset)
 			test(net, *testDataLoader, lossMse, testDataset->size().value(), trainDataset->classesCount(), epoch, trainLog);
 
-		trainLog->saveNetwork(net);
+		if(trainLog)
+			trainLog->saveNetwork(net);
 		Log(Log::INFO)<<"Epoch "<<epoch<<'/'<<epochs;
 	}
 
-	trainLog->saveNetwork(net);
+	if(trainLog)
+		trainLog->saveNetwork(net);
 	return 0;
 }
+
+void parameterSearch();
+
 
 }
 }
