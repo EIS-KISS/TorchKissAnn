@@ -92,8 +92,17 @@ void ann::regression::parameterSearch()
 			config.print(Log::INFO);
 			double loss = tryConfiguration(config);
 			losses.push_back({loss, config});
+
+			Log(Log::INFO)<<"Loss for config: "<<loss;
 		}
 	}
 
+	std::sort(losses.begin(), losses.end(),
+		[](std::pair<double, Configuration> a, std::pair<double, Configuration>b){return a.first < b.first;});
+
+	Log(Log::INFO)<<"Best configuration with loss "<<losses.front().first<<'\n';
+	losses.front().second.print(Log::INFO);
+	Log(Log::INFO)<<"Worst configuration with loss "<<losses.back().first<<'\n';
+	losses.back().second.print(Log::INFO);
 }
 
