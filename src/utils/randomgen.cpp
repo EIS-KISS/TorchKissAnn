@@ -5,16 +5,16 @@
 #include <random>
 
 static std::default_random_engine randomEngine;
-static std::uniform_real_distribution<double> dist(0, 1);
-static std::uniform_int_distribution<size_t> distSt(0, SIZE_MAX);
 
 double rd::rand(double max)
 {
+	static std::uniform_real_distribution<double> dist(0, 1);
 	return dist(randomEngine)*max;
 }
 
 size_t rd::uid()
 {
+	static std::uniform_int_distribution<size_t> distSt(0, SIZE_MAX);
 	return distSt(randomEngine);
 }
 
