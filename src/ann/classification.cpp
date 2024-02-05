@@ -44,12 +44,12 @@ void ann::classification::exportRandomSamples(const torch::Tensor& data, const t
 	{
 		if(hits[i].template item<int>() > 0)
 		{
-			if(outputProb > 0 && rd::rand() < (outputProb/10))
+			if(outputProb > 0 && rd::rand() < (outputProb/10.0f))
 			{
 				for(int64_t j = 0; j < targets[i].size(0); ++j)
 				{
 					if((targets[i][j].template item<int64_t>()) == 1)
-						eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outDir, true, j));
+						eis::EisSpectra(torchToEis(data.select(0, i)), "", "").saveToDisk(getSampleOutputFileName(outDir, true, j));
 				}
 			}
 		}
@@ -58,7 +58,10 @@ void ann::classification::exportRandomSamples(const torch::Tensor& data, const t
 			for(int64_t j = 0; j < targets[i].size(0); ++j)
 			{
 				if((targets[i][j].template item<int64_t>()) == 1)
-					eis::saveToDisk(eis::EisSpectra(torchToEis(data.select(0, i)), "", ""), getSampleOutputFileName(outDir, false, j));
+				{
+					eis::EisSpectra spectra(torchToEis(data.select(0, i)), "", "");
+					spectra.saveToDisk(getSampleOutputFileName(outDir, false, j));
+				}
 			}
 		}
 	}

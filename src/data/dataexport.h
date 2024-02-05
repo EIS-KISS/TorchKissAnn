@@ -35,8 +35,8 @@ bool saveDataset(std::string directory, EisDataset<DatasetType>* dataset)
 		torch::data::Example<torch::Tensor, torch::Tensor> example = dataset->get(i);
 		std::vector<eis::DataPoint> eisdata = torchToEis(example.data);
 		int64_t classNum = example.target.item().to<int64_t>();
-		eis::saveToDisk(eis::EisSpectra(eisdata, dataset->modelStringForClass(classNum), ""),
-						directory + "/" + std::to_string(classNum) + "_" + std::to_string(i) + ".csv");
+		eis::EisSpectra spectra(eisdata, dataset->modelStringForClass(classNum), "");
+		spectra.saveToDisk(directory + "/" + std::to_string(classNum) + "_" + std::to_string(i) + ".csv");
 	}
 	return true;
 }

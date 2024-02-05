@@ -3,7 +3,8 @@
 #include <optional>
 #include <string>
 #include <map>
-#include "../ann/net.h"
+
+#include "net.h"
 
 template <typename DataSelf>
 class EisDataset:

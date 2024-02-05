@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <thread>
 
-#include "ann/net.h"
+#include "net.h"
 
 class TrainLog
 {

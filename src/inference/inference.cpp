@@ -73,7 +73,7 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 		case FILE_TYPE_CSV:
 			try
 			{
-				return eis::loadFromDisk(fileName).data;
+				return eis::EisSpectra::loadFromDisk(fileName).data;
 			}
 			catch(const eis::file_error& ex)
 			{
@@ -310,7 +310,7 @@ int reexportPipe(const Config& config)
 		return 3;
 	filterData(data, DATA_WIDTH);
 	torch::Tensor input = eisToTorch(data);
-	eis::saveToDisk(eis::EisSpectra(torchToEis(input), "", ""), "export.txt");
+	eis::EisSpectra(torchToEis(input), "", "").saveToDisk("export.txt");
 	return 0;
 }
 

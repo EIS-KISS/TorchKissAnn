@@ -9,8 +9,22 @@ static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers,
 	return std::pair<size_t, size_t>(layerIn, layerOut);
 }
 
-GANGeneratorImpl::GANGeneratorImpl(size_t inputSize, size_t outputSize)
+GANGeneratorImpl::GANGeneratorImpl(const Json::Value& node):
+Net(node)
 {
+	init();
+}
+
+GANGeneratorImpl::GANGeneratorImpl(size_t inputSize, size_t outputSize):
+Net(inputSize, outputSize, false)
+{
+	init();
+}
+
+void GANGeneratorImpl::init()
+{
+	setPurpose("gan generator for eis spectra");
+	setInputLabel("RAND");
 	register_module("GANGeneratorModel", model);
 	std::pair<size_t, size_t> layerSizes = layerWidthFunction(0, 4, inputSize, outputSize);
 	model->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
@@ -27,12 +41,33 @@ GANGeneratorImpl::GANGeneratorImpl(size_t inputSize, size_t outputSize)
 	model->push_back(torch::nn::Tanh());
 }
 
+std::shared_ptr<torch::nn::Module> GANGeneratorImpl::operator[](size_t index)
+{
+	return model[index];
+}
+
+bool GANGeneratorImpl::saveToCheckpointDir(const std::filesystem::path& path)
+{
+}
+
 torch::Tensor GANGeneratorImpl::forward(torch::Tensor x)
 {
 	return model->forward(x);
 }
 
-GANDiscriminatorImpl::GANDiscriminatorImpl(size_t inputSize)
+GANDiscriminatorImpl::GANDiscriminatorImpl(size_t inputSize):
+Net(inputSize, 1, false)
+{
+	init();
+}
+
+GANDiscriminatorImpl::GANDiscriminatorImpl(const Json::Value& node):
+Net(node)
+{
+
+}
+
+void GANDiscriminatorImpl::init()
 {
 	register_module("GANDiscriminatorFeature", feature);
 	register_module("GANDiscriminatorClassifier", classifier);
@@ -49,10 +84,15 @@ GANDiscriminatorImpl::GANDiscriminatorImpl(size_t inputSize)
 	classifier->push_back(torch::nn::Linear(layerSizes.first, layerSizes.second));
 }
 
-std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorImpl::forward(torch::Tensor x)
+std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorImpl::forwardSplit(torch::Tensor x)
 {
 	torch::Tensor features = feature->forward(x);
 	torch::Tensor out = classifier->forward(features);
 	return std::pair<torch::Tensor, torch::Tensor>(out, features);
+}
+
+torch::Tensor GANDiscriminatorImpl::forward(torch::Tensor x)
+{
+	return forwardSplit(x).first;
 }
 

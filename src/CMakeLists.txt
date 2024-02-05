@@ -21,7 +21,6 @@ set(SRC_FILES
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
-	ann/net.cpp
 	ann/simplenet.cpp
 	ann/convnet.cpp
 	ann/classification.cpp
@@ -30,6 +29,7 @@ set(SRC_FILES
 	fit/fit.cpp
 	nearest/nearest.cpp
 	globals.cpp
+	net.cpp
 )
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/utils/gitrev.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/utils/gitrev.cpp" @ONLY)

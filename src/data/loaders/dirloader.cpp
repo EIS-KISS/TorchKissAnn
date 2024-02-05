@@ -29,7 +29,7 @@ outputSize(outputSizeI)
 		if(!dirent.is_regular_file() || dirent.path().extension() != ".csv")
 			continue;
 		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();
-		eis::EisSpectra spectra = eis::loadFromDisk(dirent.path());
+		eis::EisSpectra spectra = eis::EisSpectra::loadFromDisk(dirent.path());
 		purgeEisParamBrackets(spectra.model);
 		auto search = std::find(modelStrs.begin(), modelStrs.end(), spectra.model);
 		size_t index;
@@ -68,7 +68,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t
 
 	try
 	{
-		data = eis::loadFromDisk(fileNames[index].path);
+		data = eis::EisSpectra::loadFromDisk(fileNames[index].path);
 	}
 	catch(const eis::file_error& err)
 	{
