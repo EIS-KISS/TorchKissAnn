@@ -10,8 +10,8 @@ using namespace gan;
 static std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> anomalyScore(torch::Tensor data, torch::Tensor fake, GANDiscriminator &dis, float lambda = 0.1)
 {
     torch::Tensor resLoss = torch::abs(data - fake).sum();
-    torch::Tensor feature = dis->forward(data).second;
-    torch::Tensor fakeFeature = dis->forward(fake).second;
+    torch::Tensor feature = dis->forwardSplit(data).second;
+    torch::Tensor fakeFeature = dis->forwardSplit(fake).second;
     torch::Tensor disLoss = torch::abs(feature - fakeFeature).sum();
     torch::Tensor score = (1.0 - lambda) * resLoss + lambda * disLoss;
     return {score, resLoss, disLoss};

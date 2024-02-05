@@ -53,9 +53,9 @@ namespace gan
 				torch::Tensor fakeLabel = torch::full({batch.data.size(0)}, 0, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device);
 				torch::Tensor generatedFake = gen->forward(torch::randn({batch.data.size(0), Z_SIZE}));
 
-				torch::Tensor fakePrediction = dis->forward(generatedFake.detach()).first.view({-1});
+				torch::Tensor fakePrediction = dis->forwardSplit(generatedFake.detach()).first.view({-1});
 
-				torch::Tensor realPrediction = dis->forward(input).first.view({-1});
+				torch::Tensor realPrediction = dis->forwardSplit(input).first.view({-1});
 				torch::Tensor fakeLoss = lossFn(fakePrediction, fakeLabel);
 				torch::Tensor realLoss = lossFn(realPrediction, inputLabel);
 				torch::Tensor disLoss = realLoss + fakeLoss;
@@ -66,7 +66,7 @@ namespace gan
 					optimizerDis.step();
 				}
 
-				fakePrediction = dis->forward(generatedFake).first.view({-1});
+				fakePrediction = dis->forwardSplit(generatedFake).first.view({-1});
 				torch::Tensor genLoss = lossFn(fakePrediction, inputLabel);
 				if(genLoss.item<float>() > ideal * 0.5)
 				{
@@ -86,8 +86,8 @@ namespace gan
 				}
 			}
 		}
-		trainLog->saveNetwork();
-		torch::save(dis, fileName + ".dis.vos");
-		torch::save(gen, fileName + ".gen.vos");
+		//trainLog->saveNetwork();
+		/*torch::save(dis, fileName + ".dis.vos");
+		torch::save(gen, fileName + ".gen.vos");*/
 	}
 }
