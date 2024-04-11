@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "eisdataset.h"
+#include "randomgen.h"
 
 template <typename SourceDataset>
 class SplitDataset:
