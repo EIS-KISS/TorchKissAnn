@@ -38,11 +38,11 @@ torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetGen
 	}
 	else
 	{
-		FitMetics fm;
+		FitMetrics fm;
 		try {
 			input = calcDrtTorch(data, fm,  FitParameters(1000));
 		}
-		catch (const drt_errror& ex)
+		catch (const drt_error& ex)
 		{
 			Log(Log::DEBUG)<<"Drt calculation failed! using next index";
 			index++;
