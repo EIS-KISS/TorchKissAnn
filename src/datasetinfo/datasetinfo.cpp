@@ -1,3 +1,4 @@
+#include <ATen/TensorIndexing.h>
 #include <cstddef>
 #include <cstdint>
 #include <eisgenerator/eistype.h>
@@ -15,9 +16,10 @@
 #include <vector>
 #include <limits>
 
+#include "data/generators/eisgendatanoise.h"
+#include "data/passfaildataset.h"
 #include "log.h"
 #include "data/generators/eisgendata.h"
-#include "data/generators/trashgenerator.h"
 #include "data/generators/classextractordataset.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
@@ -30,22 +32,22 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 {
 	std::stringstream ss;
 
-	ss<<"Name, Size, Classes Count, Mulitclass\n";
-	ss<<typeid(DataSetType).name()<<", "<<dataset->size().value()
-	  <<", "<<dataset->classesCount()<<", "<<dataset->isMulticlass()<<'\n';
+	ss<<"Name,\tSize,\tClass Count,\tMulitclass\n";
+	ss<<typeid(DataSetType).name()<<",\t"<<dataset->size().value()
+	  <<",\t"<<dataset->classesCount()<<",\t"<<dataset->isMulticlass()<<'\n';
 
 	for(size_t i = 0; i < dataset->classesCount(); ++i)
 	{
 		ss<<i;
 		if(i+1 < dataset->classesCount())
-			ss<<", ";
+			ss<<",\t";
 	}
 	ss<<'\n';
 	for(size_t i = 0; i < dataset->classesCount(); ++i)
 	{
 		ss<<dataset->modelStringForClass(i);
 		if(i+1 < dataset->classesCount())
-			ss<<", ";
+			ss<<",\t";
 	}
 	ss<<'\n';
 	ss<<tensorToString(dataset->classCounts())<<'\n';
@@ -64,36 +66,53 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 
 	for(size_t i = 0; i < classesCount; ++i)
 	{
+		Log(Log::INFO)<<"Processing class "<<i+1<<" of "<<classesCount;
 		ClassExtractorDataset<DataSetType> extractedClass(dataset, i);
 
 		sciplot::Plot2D plot;
 		plot.xlabel("Re");
 		plot.ylabel("Im");
 
-		double min = std::numeric_limits<double>::max();
-		double max = std::numeric_limits<double>::min();
+		double xmin = std::numeric_limits<double>::max();
+		double xmax = std::numeric_limits<double>::min();
+		double ymin = std::numeric_limits<double>::max();
+		double ymax = std::numeric_limits<double>::min();
 
 		for(size_t j = 0; j < extractedClass.size().value(); ++j)
 		{
+			Log(Log::INFO)<<"Processing spectra "<<j+1<<" of "<<extractedClass.size().value();
 			torch::data::Example<torch::Tensor, torch::Tensor> example = extractedClass.get(j);
 			std::pair<std::valarray<double>, std::valarray<double>> data = torchToValarray<double>(example.data.to(torch::kFloat64));
 
 
-			double lmin = torch::min(example.data).item().toDouble();
-			lmin = lmin - std::abs(min*0.05);
-			double lmax = torch::max(example.data).item().toDouble();
-			lmax = lmax + std::abs(max*0.05);
-			if(lmin < min)
-				min = lmin;
-			else if(lmax > max)
-				max = lmax;
-			plot.xrange(min, max);
-			plot.yrange(min, max);
+			double cxmin = data.first.min();
+			cxmin = cxmin - std::abs(cxmin*0.05);
+			double cymin = data.second.min();
+			cymin = cymin - std::abs(cymin*0.05);
+
+			double cxmax = data.first.max();
+			cxmax = cxmax - std::abs(cxmax*0.05);
+			double cymax = data.second.max();
+			cymax = cymax - std::abs(cymax*0.05);
+
+			if(xmax < cxmax)
+				xmax = cxmax;
+			if(ymax < cymax)
+				ymax = cymax;
+
+			if(xmin > cxmin)
+				xmin = cxmin;
+			if(ymin > cymin)
+				ymin = cymin;
+			plot.xrange(xmin, xmax);
+			plot.yrange(ymin, ymax);
+			plot.legend().hide();
 
 			plot.drawCurve(data.first, data.second);
 		}
 		sciplot::Figure fig({{plot}});
 		sciplot::Canvas canvas({{fig}});
+		canvas.size(1280, 768);
 		canvas.save(outDir/(dataset->modelStringForClass(i)+ ".png"));
 	}
 	return true;
@@ -129,6 +148,19 @@ int main(int argc, char** argv)
 			delete dataset;
 			break;
 		}
+		case DATASET_GEN_NOISE:
+		{
+			EisGeneratorDatasetNoise *dataset;
+			if(config.fileName.empty())
+				dataset = EisGeneratorDatasetNoise::newDefaultDataset(100, config.datasetSize, false);
+			else
+				dataset = new EisGeneratorDatasetNoise(config.fileName, config.datasetSize, 100, false);
+			report = generateReport<EisGeneratorDatasetNoise>(dataset);
+			if(!config.imageOutput.empty())
+				saveImages<EisGeneratorDatasetNoise>(dataset, config.imageOutput);
+			delete dataset;
+			break;
+		}
 		case DATASET_FDUP:
 		{
 			if(config.fileName.empty())
@@ -142,6 +174,15 @@ int main(int argc, char** argv)
 				saveImages<FastDedupDataset>(&dataset, config.imageOutput);
 			break;
 		}
+		case DATASET_PASSFAIL:
+		{
+			EisGeneratorDataset *origDataset = EisGeneratorDataset::newDefaultDataset(100, config.datasetSize, 0, false);
+			PassFaillDataset<EisGeneratorDataset> dataset(origDataset);
+			report = generateReport<PassFaillDataset<EisGeneratorDataset>>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<PassFaillDataset<EisGeneratorDataset>>(&dataset, config.imageOutput);
+			break;
+		}
 		case DATASET_DIR:
 		{
 			if(config.fileName.empty())
@@ -153,14 +194,6 @@ int main(int argc, char** argv)
 			report = generateReport<EisDirDataset>(&dataset);
 			if(!config.imageOutput.empty())
 				saveImages<EisDirDataset>(&dataset, config.imageOutput);
-			break;
-		}
-		case DATASET_TRASH:
-		{
-			TrashDataset dataset;
-			report = generateReport<TrashDataset>(&dataset);
-			if(!config.imageOutput.empty())
-				saveImages<TrashDataset>(&dataset, config.imageOutput);
 			break;
 		}
 		default:
