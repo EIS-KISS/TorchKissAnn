@@ -4,12 +4,8 @@
 #include <eisgenerator/eistype.h>
 #include <stdexcept>
 
-#include "mpt.h"
-#include "../print.h"
 #include "log.h"
 #include "tokenize.h"
-#include "../filterdata.h"
-#include "../eistotorch.h"
 
 using namespace eis;
 
