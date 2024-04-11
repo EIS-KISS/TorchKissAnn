@@ -9,22 +9,22 @@
 
 #include "ann/classification.h"
 #include "ann/regression.h"
+#include "ann/scriptnet.h"
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
-#include "data/generators/fakeregressiondataset.h"
-#include "data/loaders/regressionloader.h"
+#include "ann/simplenet.h"
 #include "gan/gan.h"
 #include "log.h"
 #include "data/splitdataset.h"
 #include "data/generators/eisgendata.h"
-#include "data/generators/extendordataset.h"
+#include "data/generators/eisgendatanoise.h"
 #include "data/generators/parameterregressiondataset.h"
-#include "data/generators/fakeregressiondataset.h"
+#include "data/loaders/regressionloader.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
+#include "data/passfaildataset.h"
 #include "options.h"
 #include "trainlog.h"
-#include "globals.h"
 
 template <typename DataSetType>
 int train(const Config& config);
@@ -94,6 +94,52 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	return 0;
 }
 
+
+template <> int train<EisGeneratorDatasetNoise>(const Config& config)
+{
+	EisGeneratorDatasetNoise* dataset;
+	EisGeneratorDatasetNoise* testDataset = nullptr;
+
+	if(config.fileName.empty())
+		dataset = EisGeneratorDatasetNoise::newDefaultDataset(config.dataWidth, config.datasetSize, config.probeModel);
+	else
+		dataset = new EisGeneratorDatasetNoise(config.fileName, config.datasetSize, config.dataWidth, config.probeModel);
+
+	if(config.testFileName.empty() && config.fileName.empty())
+		testDataset = EisGeneratorDatasetNoise::newDefaultDataset(config.dataWidth, config.datasetSize/10, config.probeModel);
+	else if(!config.testFileName.empty())
+		testDataset = new EisGeneratorDatasetNoise(config.testFileName, config.datasetSize/10, config.dataWidth, config.probeModel);
+
+	if(testDataset && dataset->classesCount() != testDataset->classesCount())
+	{
+		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
+		<<"The traing dataset has "<<dataset->classesCount()
+		<<" and the test dataset has "<<testDataset->classesCount();
+		return 1;
+	}
+
+	trainSwitch<EisGeneratorDatasetNoise>(config, dataset, testDataset);
+
+	delete dataset;
+	if(testDataset)
+		delete testDataset;
+	return 0;
+}
+
+template <> int train<PassFaillDataset<EisGeneratorDataset>>(const Config& config)
+{
+	EisGeneratorDataset* origDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize, config.noise, config.probeModel);
+	PassFaillDataset<EisGeneratorDataset> dataset(origDataset);
+
+	EisGeneratorDataset* origTestDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, 3000, config.noise, config.probeModel);
+	PassFaillDataset<EisGeneratorDataset> testDataset(origTestDataset);
+
+	trainSwitch<PassFaillDataset<EisGeneratorDataset>, PassFaillDataset<EisGeneratorDataset>>(config, &dataset, &testDataset);
+
+	delete origDataset;
+	return 0;
+}
+
 template <> int train<EisDirDataset>(const Config& config)
 {
 	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
@@ -123,9 +169,7 @@ template <> int train<EisDirDataset>(const Config& config)
 		}
 	}
 
-	ExtendorDataset<EisDirDataset> datasetExtended(&dataset, 4);
-
-	trainSwitch<ExtendorDataset<EisDirDataset>, EisDirDataset>(config, &datasetExtended, testDataset);
+	trainSwitch<EisDirDataset, EisDirDataset>(config, &dataset, testDataset);
 
 	if(testDataset)
 		delete testDataset;
@@ -182,14 +226,6 @@ template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
 	return 0;
 }
 
-template <> int train<FakeRegressionDatasetGenerator>(const Config& config)
-{
-	FakeRegressionDatasetGenerator dataset(config.dataWidth);
-
-	trainSwitch<FakeRegressionDatasetGenerator, FakeRegressionDatasetGenerator>(config, &dataset, nullptr);
-	return 0;
-}
-
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -222,20 +258,39 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 	switch(config.mode)
 	{
 		case MODE_ANN:
-		case MODE_ANN_CONV:
 		{
-			Log(Log::INFO)<<"Training classification network";
-			std::shared_ptr<ann::Net> net;
-			if(config.mode == MODE_ANN_CONV)
-				net.reset(new ann::ConvNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
-			else
-				net.reset(new ann::SimpleNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
+			Log(Log::INFO)<<"Training classification network with simple net";
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
-		case MODE_GAN:
-			gan::train("ganNet", EisGeneratorDataset::DEFAULT_EXAMPLE_COUNT);
+		case MODE_ANN_CONV:
+		{
+			Log(Log::INFO)<<"Training classification network with conv net";
+			std::shared_ptr<ann::Net> net(new ann::ConvNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
+			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
+		}
+		case MODE_ANN_SCRIPT:
+		{
+			try
+			{
+				Log(Log::INFO)<<"Training classification network with script net loaded from "<<config.scriptPath;
+				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, config.dataWidth, trainDataset->classesCount()));
+				ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
+			}
+			catch(const ann::ScriptNet::load_errror& err)
+			{
+				Log(Log::ERROR)<<"Could not load TorchScript model: "<<err.what();
+			}
+			break;
+		}
+		case MODE_GAN:
+		{
+			EisGeneratorDataset dataset;
+			gan::train(trainLog.get(), &dataset, config.epochs, config.learingRate);
+			break;
+		}
 		break;
 		case MODE_REGRESSION:
 		{
@@ -252,6 +307,43 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 	}
 }
 
+bool check_options(const Config& config)
+{
+	if(config.mode == MODE_INVALID)
+	{
+		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
+		return false;
+	}
+
+	if(config.datasetMode == DATASET_INVALID)
+	{
+		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
+		return false;
+	}
+
+	if((config.datasetMode != DATASET_GEN_REGRESSION &&
+		config.datasetMode != DATASET_TAR_REGRESSION) &&
+		config.mode == MODE_REGRESSION)
+	{
+		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
+		return false;
+	}
+
+	if(config.mode == MODE_ANN_SCRIPT && config.scriptPath.empty())
+	{
+		Log(Log::ERROR)<<"To train a TorchScript a path to a TorchScript must be supplied via -n";
+		return false;
+	}
+
+	if(config.mode != MODE_ANN_SCRIPT && !config.scriptPath.empty())
+	{
+		Log(Log::ERROR)<<"a path to a TorchScript can only be supplied in "<<trainModeToStr(MODE_ANN_SCRIPT)<<" mode";
+		return false;
+	}
+
+	return true;
+}
+
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
@@ -264,26 +356,10 @@ int main(int argc, char** argv)
 	choose_device(config.noGpu);
 	batch_size = config.batchSize;
 
-	if(config.mode == MODE_INVALID)
-	{
-		Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
+	if(!check_options(config))
 		return 3;
-	}
 
-	if(config.datasetMode == DATASET_INVALID)
-	{
-		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
-		return 3;
-	}
-
-	if((config.datasetMode != DATASET_GEN_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION &&
-		config.datasetMode != DATASET_FAKE_REGRESSION) &&
-		config.mode == MODE_REGRESSION)
-	{
-		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
-		return 3;
-	}
+	Log(Log::INFO)<<"Training "<<trainModeToStr(config.mode);
 
 	TrainLog::setRunsDir("./runs");
 
@@ -291,17 +367,18 @@ int main(int argc, char** argv)
 	{
 		case DATASET_GEN:
 			return train<EisGeneratorDataset>(config);
+		case DATASET_GEN_NOISE:
+			return train<EisGeneratorDatasetNoise>(config);
 		case DATASET_FDUP:
 			return train<FastDedupDataset>(config);
+		case DATASET_PASSFAIL:
+			return train<PassFaillDataset<EisGeneratorDataset>>(config);
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
 		case DATASET_GEN_REGRESSION:
 			return train<ParameterRegressionDatasetGenerator>(config);
 		case DATASET_TAR_REGRESSION:
 			return train<ParameterRegressionDatasetLoader>(config);
-		case DATASET_FAKE_REGRESSION:
-			return train<FakeRegressionDatasetGenerator>(config);
-		case DATASET_TRASH:
 		case DATASET_TAR:
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;

@@ -1,6 +1,8 @@
 #include "simplenet.h"
 #include <cstddef>
 #include <utility>
+#include <fstream>
+#include <json/value.h>
 
 static std::pair<size_t, size_t> layerWidthFunction(size_t layer, size_t leyers, size_t input, size_t output)
 {
@@ -43,11 +45,12 @@ void GANGeneratorImpl::init()
 
 std::shared_ptr<torch::nn::Module> GANGeneratorImpl::operator[](size_t index)
 {
-	return model[index];
+	return model->ptr(index);
 }
 
 bool GANGeneratorImpl::saveToCheckpointDir(const std::filesystem::path& path)
 {
+	return true;
 }
 
 torch::Tensor GANGeneratorImpl::forward(torch::Tensor x)
@@ -94,5 +97,35 @@ std::pair<torch::Tensor, torch::Tensor> GANDiscriminatorImpl::forwardSplit(torch
 torch::Tensor GANDiscriminatorImpl::forward(torch::Tensor x)
 {
 	return forwardSplit(x).first;
+}
+
+std::shared_ptr<torch::nn::Module> GANDiscriminatorImpl::operator[](size_t index)
+{
+	if(index < feature->size())
+		return feature->ptr(index);
+	else
+		return classifier->ptr(index);
+}
+
+bool GANDiscriminatorImpl::saveToCheckpointDir(const std::filesystem::path& path)
+{
+	if(!std::filesystem::is_directory(path))
+		std::filesystem::create_directories(path);
+	if(!std::filesystem::is_directory(path))
+		return false;
+
+	Json::Value networkMetadata;
+	getConfiguration(networkMetadata);
+	std::ofstream networkMetadataFile;
+	networkMetadataFile.open(path/"meta.json", std::ios_base::out);
+	if(!networkMetadataFile.is_open())
+		return false;
+	Json::StreamWriterBuilder builder;
+	const std::unique_ptr<Json::StreamWriter> writer(builder.newStreamWriter());
+	writer->write(networkMetadata, &networkMetadataFile);
+
+	networkMetadataFile.close();
+	torch::save(shared_from_this(), path/"weights.pt");
+	return true;
 }
 

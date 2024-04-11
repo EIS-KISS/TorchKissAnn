@@ -1,9 +1,8 @@
 set(SRC_FILES
 	data/generators/classextractordataset.cpp
 	data/generators/eisgendata.cpp
-	data/generators/trashgenerator.cpp
+	data/generators/eisgendatanoise.cpp
 	data/generators/parameterregressiondataset.cpp
-	data/generators/fakeregressiondataset.cpp
 	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
 	data/loaders/deduploader.cpp
@@ -23,6 +22,7 @@ set(SRC_FILES
 	gan/gan.cpp
 	ann/simplenet.cpp
 	ann/convnet.cpp
+	ann/scriptnet.cpp
 	ann/classification.cpp
 	ann/regression.cpp
 	loss/eisdistanceloss.cpp

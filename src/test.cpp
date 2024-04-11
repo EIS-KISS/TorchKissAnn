@@ -10,6 +10,7 @@
 #include <torch/optim.h>
 #include <filesystem>
 
+#include "ann/scriptnet.h"
 #include "data/eistotorch.h"
 #include "data/generators/eisgendata.h"
 #include "log.h"
@@ -229,6 +230,25 @@ bool testFit()
 	return true;
 }
 
+
+bool testScriptnet()
+{
+	ann::SimpleNet net(100, 6, 4, 3, true);
+	net.eval();
+	torch::Tensor input = torch::randn({1, 100});
+	torch::Tensor output = net.forward(input);
+	Log(Log::INFO)<<"SimpleNet sizes: "<< output.sizes();
+	Log(Log::INFO)<<output;
+
+	ann::ScriptNet scriptNet("../TorchScripts/simplenet100-6.pt", false, 100, 6);
+
+	output = scriptNet.forward(input);
+	Log(Log::INFO)<<"ScriptNet sizes: "<< output.sizes();
+	Log(Log::INFO)<<output;
+
+	return true;
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::DEBUG;
@@ -242,7 +262,8 @@ int main(int argc, char** argv)
 	//testParaDataset();
 	testEisScript();*/
 	//testEisDistanceLoss();
-	testFit();
+	//testFit();
+	testScriptnet();
 
 	free_device();
 	return 0;

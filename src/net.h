@@ -42,6 +42,7 @@ public:
 	torch::Tensor getOutputBiases();
 	virtual void getConfiguration(Json::Value& node);
 	virtual bool saveToCheckpointDir(const std::filesystem::path& path);
+	virtual bool loadWeightsFromDir(const std::filesystem::path& path);
 	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index) = 0;
 	static std::shared_ptr<Net> newNetFromConfiguation(const Json::Value& node);
 	static std::shared_ptr<Net> newNetFromCheckpointDir(const std::filesystem::path& path);

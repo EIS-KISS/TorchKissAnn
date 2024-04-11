@@ -25,8 +25,8 @@ namespace gan
 		size_t data_size = trainDataset->size().value();
 		int64_t loginterval = data_size/10000 ?: data_size/batch_size-1;
 
-		GANGenerator gen(Z_SIZE, trainDataset->get().data.size(0));
-		GANDiscriminator dis(trainDataset->get().data.size(0));
+		GANGenerator gen(Z_SIZE, trainDataset->get(0).data.size(0));
+		GANDiscriminator dis(trainDataset->get(0).data.size(0));
 
 		torch::nn::BCEWithLogitsLoss lossFn(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean));
 		torch::Tensor equal = torch::full({1}, /*value=*/0.0, torch::TensorOptions().dtype(torch::kFloat));

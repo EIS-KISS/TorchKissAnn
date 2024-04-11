@@ -6,11 +6,11 @@
 #include <filesystem>
 #include "utils/log.h"
 
-#define MODE_LIST "ann, conv, gan, regression"
-#define DATASET_LIST "gen, fdedup, dir, tar, trash, genregression, tarregression"
+#define MODE_LIST "ann, conv, script, gan, regression"
+#define DATASET_LIST "gen, gennoise, fdedup, dir, tar, genregression, tarregression"
 
-const char *argp_program_version = "TorchKissAnnTrain";
-const char *argp_program_bug_address = "<carl@uvos.xyz>";
+inline const char *argp_program_version = "TorchKissAnnTrain";
+inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that trains models for TorchKissAnn";
 static char args_doc[] = "";
 
@@ -31,7 +31,8 @@ static struct argp_option options[] =
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
-  {"no-gpu",		'n', 0,				0,	"don't use gpu even if one is available"},
+  {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
+  {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
   { 0 }
 };
 
@@ -40,22 +41,10 @@ typedef enum
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
 	MODE_ANN_CONV,
+	MODE_ANN_SCRIPT,
 	MODE_GAN,
 	MODE_REGRESSION
 } TrainMode;
-
-typedef enum
-{
-	DATASET_INVALID = -1,
-	DATASET_GEN = 0,
-	DATASET_FDUP,
-	DATASET_DIR,
-	DATASET_TAR,
-	DATASET_TRASH,
-	DATASET_GEN_REGRESSION,
-	DATASET_TAR_REGRESSION,
-	DATASET_FAKE_REGRESSION
-} DatasetMode;
 
 static std::string trainModeToStr(const TrainMode mode)
 {
@@ -65,6 +54,8 @@ static std::string trainModeToStr(const TrainMode mode)
 			return "ann";
 		case MODE_ANN_CONV:
 			return "conv";
+		case MODE_ANN_SCRIPT:
+			return "script";
 		case MODE_GAN:
 			return "gan";
 		case MODE_REGRESSION:
@@ -80,6 +71,8 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_ANN;
 	else if(in == trainModeToStr(MODE_ANN_CONV))
 		return MODE_ANN_CONV;
+	else if(in == trainModeToStr(MODE_ANN_SCRIPT))
+		return MODE_ANN_SCRIPT;
 	else if(in == trainModeToStr(MODE_GAN))
 		return MODE_GAN;
 	else if(in == trainModeToStr(MODE_REGRESSION))
@@ -87,26 +80,39 @@ static TrainMode parseTrainMode(const std::string& in)
 	return MODE_INVALID;
 }
 
+typedef enum
+{
+	DATASET_INVALID = -1,
+	DATASET_GEN = 0,
+	DATASET_GEN_NOISE,
+	DATASET_FDUP,
+	DATASET_PASSFAIL,
+	DATASET_DIR,
+	DATASET_TAR,
+	DATASET_GEN_REGRESSION,
+	DATASET_TAR_REGRESSION
+} DatasetMode;
+
 static std::string datasetModeToStr(const DatasetMode mode)
 {
 	switch(mode)
 	{
 		case DATASET_GEN:
 			return "gen";
+		case DATASET_GEN_NOISE:
+			return "gennoise";
 		case DATASET_FDUP:
 			return "fdedup";
+		case DATASET_PASSFAIL:
+			return "passfail";
 		case DATASET_DIR:
 			return "dir";
 		case DATASET_TAR:
-			return "trash";
-		case DATASET_TRASH:
-			return "trash";
+			return "tar";
 		case DATASET_GEN_REGRESSION:
 			return "genregression";
 		case DATASET_TAR_REGRESSION:
 			return "tarregression";
-		case DATASET_FAKE_REGRESSION:
-			return "fakeregression";
 		default:
 			return "invalid";
 	}
@@ -116,20 +122,20 @@ static DatasetMode parseDatasetMode(const std::string& in)
 {
 	if(in.empty() || in == datasetModeToStr(DATASET_GEN))
 		return DATASET_GEN;
+	else if(in == datasetModeToStr(DATASET_GEN_NOISE))
+		return DATASET_GEN_NOISE;
 	else if(in == datasetModeToStr(DATASET_FDUP))
 		return DATASET_FDUP;
+	else if(in == datasetModeToStr(DATASET_PASSFAIL))
+		return DATASET_PASSFAIL;
 	else if(in == datasetModeToStr(DATASET_DIR))
 		return DATASET_DIR;
 	else if(in == datasetModeToStr(DATASET_TAR))
 		return DATASET_TAR;
-	else if(in == datasetModeToStr(DATASET_TRASH))
-		return DATASET_TRASH;
 	else if(in == datasetModeToStr(DATASET_GEN_REGRESSION))
 		return DATASET_GEN_REGRESSION;
 	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
 		return DATASET_TAR_REGRESSION;
-	else if(in == datasetModeToStr(DATASET_FAKE_REGRESSION))
-		return DATASET_FAKE_REGRESSION;
 	return DATASET_INVALID;
 }
 
@@ -140,6 +146,7 @@ struct Config
 	std::filesystem::path fileName;
 	std::filesystem::path testFileName;
 	std::filesystem::path outputDir;
+	std::filesystem::path scriptPath;
 	double noise = 0;
 	double learingRate = 0.005;
 	size_t batchSize = 256;
@@ -215,11 +222,14 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'r':
 			config->learingRate = std::stod(std::string(arg));
 			break;
-		case 'n':
+		case 'c':
 			config->noGpu = true;
 			break;
 		case 'w':
 			config->dataWidth = std::stod(std::string(arg));
+			break;
+		case 'n':
+			config->scriptPath = arg;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

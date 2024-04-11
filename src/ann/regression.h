@@ -260,7 +260,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 	}
 
 	if(trainLog)
-		trainLog->saveNetwork(net);
+		trainLog->saveNetwork(net, true);
 	return 0;
 }
 

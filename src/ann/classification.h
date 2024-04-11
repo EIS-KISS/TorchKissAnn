@@ -194,7 +194,19 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
-	torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).momentum(0.5));
+	size_t active_parameters = 0;
+	size_t inactive_parameters = 0;
+	double sum = 0;
+	for(torch::Tensor& param : net->parameters())
+	{
+		if(param.requires_grad())
+			active_parameters += param.numel();
+		else
+			inactive_parameters += param.numel();
+		sum += torch::sum(param).item<double>();
+	}
+	Log(Log::INFO)<<"Training "<<active_parameters<<" active parameters and "<<inactive_parameters<<" inactive parameters sum "<<sum;
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate));
 
 	if(trainDataset->isMulticlass())
 		Log(Log::DEBUG)<<"Using BCELoss";
@@ -215,7 +227,12 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 
-	trainLog->saveNetwork(net);
+	sum = 0;
+	for(torch::Tensor& param : net->parameters())
+		sum += torch::sum(param).item<double>();
+	Log(Log::INFO)<<"End sum "<<sum;
+
+	trainLog->saveNetwork(net, true);
 }
 
 }

@@ -13,7 +13,6 @@
 #include "utils/log.h"
 #include "options.h"
 #include "data/loaders/mpt.h"
-#include "data/generators/trashgenerator.h"
 #include "data/loaders/dirloader.h"
 #include "data/eistotorch.h"
 #include "data/generators/eisgendata.h"
@@ -43,7 +42,7 @@ bool yesNoPrompt(std::string msg)
 
 std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 {
-	if(fileName.empty() && type != FILE_TYPE_TRASH)
+	if(fileName.empty())
 	{
 		Log(Log::ERROR)<<"A spectrum must be supplied";
 		return std::vector<eis::DataPoint>();
@@ -82,21 +81,6 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 			}
 		case FILE_TYPE_MPT:
 			return loaders::mpt(fileName);
-		case FILE_TYPE_TRASH:
-		{
-			TrashDataset trashSet;
-			int seed;
-			try
-			{
-				seed = fileName.empty() ? 0 : std::stoi(fileName.c_str());
-			}
-			catch(std::invalid_argument& ex)
-			{
-				seed = 0;
-			}
-			torch::data::Example<torch::Tensor, torch::Tensor> example = trashSet.get(seed);
-			return torchToEis(example.data);
-		}
 		case FILE_TYPE_GAN:
 		{
 			torch::Tensor data = gan::generate(fileName);
@@ -367,6 +351,8 @@ int main(int argc, char** argv)
 			for(const std::string& label : outputLabels)
 				Log(Log::INFO)<<label;
 		}
+
+		net->eval();
 	}
 
 	switch(config.mode)

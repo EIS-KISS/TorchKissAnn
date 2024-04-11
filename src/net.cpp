@@ -5,6 +5,7 @@
 #include <fstream>
 #include <torch/csrc/autograd/generated/variable_factories.h>
 
+#include "ann/scriptnet.h"
 #include "tensoroptions.h"
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
@@ -15,6 +16,7 @@ ann::Net::Net(int64_t inputSizeI, int64_t outputSizeI, bool softmaxI):
 inputSize(inputSizeI), outputSize(outputSizeI), softmax(softmaxI)
 {
 	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
+	outputBiases = torch::zeros({outputSize}, tensorOptCpu<float>(false));
 }
 
 int64_t ann::Net::getInputSize() const
@@ -167,6 +169,8 @@ std::shared_ptr<Net> ann::Net::newNetFromConfiguation(const Json::Value& node)
 		return std::shared_ptr<Net>(new ann::ConvNet(node));
 	else if(type == typeid(ann::SimpleNet).name())
 		return std::shared_ptr<Net>(new ann::SimpleNet(node));
+	else if(type == typeid(ann::ScriptNet).name())
+		return std::shared_ptr<Net>(new ann::ScriptNet(node, true));
 	return nullptr;
 }
 
@@ -208,8 +212,17 @@ std::shared_ptr<Net> ann::Net::newNetFromCheckpointDir(const std::filesystem::pa
 		return nullptr;
 
 	std::shared_ptr<Net> net = newNetFromConfiguation(json);
-	torch::load(net, path/"weights.pt");
+	if(!net)
+		return nullptr;
+	net->loadWeightsFromDir(path);
 	return net;
+}
+
+bool ann::Net::loadWeightsFromDir(const std::filesystem::path& path)
+{
+	std::shared_ptr<Net> net(this, [](void*){});
+	torch::load(net, path/"weights.pt");
+	return true;
 }
 
 const std::string& ann::Net::getPurpose() const
@@ -220,4 +233,9 @@ const std::string& ann::Net::getPurpose() const
 void ann::Net::setPurpose(const std::string& str)
 {
 	purpose = str;
+}
+
+void ann::Net::setInputLabel(const std::string& str)
+{
+	inputLabel = str;
 }
