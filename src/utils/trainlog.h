@@ -68,7 +68,7 @@ public:
 	void logTestLoss(size_t epoch, size_t step, double loss, double acc, size_t total = 0, bool print = true);
 	void logTensor(const std::string& name, const torch::Tensor& tensor);
 	std::filesystem::path getDir();
-	void saveNetwork(std::shared_ptr<ann::Net> net);
+	void saveNetwork(std::shared_ptr<ann::Net> net, bool finished = false);
 
 	static void setRunsDir(const std::filesystem::path& dir);
 	static std::filesystem::path getRunsDir();

@@ -156,10 +156,15 @@ void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
 		throw log_error("Could not save tensor to " + static_cast<std::string>(path));
 }
 
-void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net)
+void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
 {
 	savedCheckpoint = true;
-	std::filesystem::path dir = logDir/std::filesystem::path("checkpoints")/(std::string("checkpoint_")+std::to_string(lossTrainIter));
+	std::filesystem::path dir;
+	if(!finished)
+		dir = logDir/std::filesystem::path("checkpoints")/(std::string("checkpoint_")+std::to_string(lossTrainIter));
+	else
+		dir = logDir/(std::string("finished_network"));
+
 	net->saveToCheckpointDir(dir);
 }
 
