@@ -222,6 +222,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::getImpl(
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt8);
+	options = options.requires_grad(false);
 	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(models[modelAndOffset.first].classNum);
 

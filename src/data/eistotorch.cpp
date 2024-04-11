@@ -45,9 +45,9 @@ torch::Tensor eisToComplexTensor(const std::vector<eis::DataPoint>& data, torch:
 
 torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs)
 {
-	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>());
+	torch::Tensor input = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>(false));
 	if(freqs)
-		*freqs = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>());
+		*freqs = torch::empty({static_cast<long int>(data.size()*2)}, tensorOptCpu<fvalue>(false));
 
 	float* tensorDataPtr = input.contiguous().data_ptr<float>();
 	float* tensorFreqDataPtr = freqs ? freqs->contiguous().data_ptr<float>() : nullptr;
