@@ -186,12 +186,14 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	if(data.empty())
 		return 3;
 
-	filterData(data, DATA_WIDTH);
+	filterData(data, net->getInputSize());
 
 	torch::Tensor input = eisToTorch(data);
 
 	if(!filter(input, config.filterFileName, config.filterMode))
 		return 4;
+
+	Log(Log::DEBUG)<<"Input data:\n"<<input;
 
 	torch::Tensor output = classify(input, config.mode, net);
 
