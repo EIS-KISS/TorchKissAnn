@@ -1,0 +1,93 @@
+import torch
+from nets.resnet1d import ResNet1D
+from nets.simplenet import SimpleNet
+from nets.convnet import ConvNet
+import json
+import argparse
+
+
+def save(model, input_size, output_size, name: str):
+	print(f"\n{name}:")
+	print(model.code)
+	print(f"Parameter Count: {sum(p.numel() for p in model.parameters())}")
+	input_str = str(input_size) if input_size is not None else "ANY"
+
+	outputLabels: list[str] = list()
+	for i in range(0, output_size):
+		outputLabels = outputLabels + ["class_" + str(i)]
+
+	meta_json = json.dumps({
+		'inputSize': input_size,
+		'outputSize': output_size,
+		'name': name,
+		'outputLabels': outputLabels,
+		'purpose': 'Unkown',
+		'inputLabel': 'EIS'})
+
+	print(meta_json)
+
+	metadata = {'meta.json': meta_json}
+	torch.jit.save(model, f"{name}{input_str}-{output_size}.pt", _extra_files=metadata)
+
+
+def build_resnet(output_size: int):
+	module = ResNet1D(in_channels=1,
+		base_filters=100,
+		kernel_size=16,
+		stride=2,
+		groups=1,
+		n_classes=output_size,
+		downsample_gap=output_size,
+		increasefilter_gap=12,
+		verbose=False)
+
+	data = torch.randn((16, 100))
+	data = module.forward(data)
+	print(f"ResNet1D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+	save(script, None, output_size, "resnet")
+
+
+def build_simplenet(input_size: int, output_size: int):
+	module = SimpleNet(input_size, output_size, 4, 3)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"SimpleNet output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "simplenet")
+
+
+def build_convnet(input_size: int, output_size: int):
+	module = ConvNet(input_size, output_size, 4, 3)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"ConvNet output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "convnet")
+
+
+if __name__ == "__main__":
+	valid_network_types = "simple, conv, resnet"
+	parser = argparse.ArgumentParser("TorchScript network generation script")
+	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
+	parser.add_argument('--output_size', '-o', required=True, help="Number of output classes")
+	parser.add_argument('--input_size', '-i', default=100, help="Number of input classes")
+	args = parser.parse_args()
+
+	if args.type == "simple":
+		build_simplenet(args.input_size, args.output_size)
+	elif args.type == "conv":
+		build_convnet(args.input_size, args.output_size)
+	elif args.type == "resnet":
+		build_resnet(args.output_size)
+	else:
+		print(f"{args.type} is not a valid network type valid types are: {valid_network_types}")
+		exit(1)
+
