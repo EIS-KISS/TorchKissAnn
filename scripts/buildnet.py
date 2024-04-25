@@ -29,6 +29,8 @@ def save(model, input_size, output_size, name: str):
 	metadata = {'meta.json': meta_json}
 	torch.jit.save(model, f"{name}{input_str}-{output_size}.pt", _extra_files=metadata)
 
+	print(f"Saved model as ./{name}{input_str}-{output_size}.pt")
+
 
 def build_resnet(output_size: int):
 	module = ResNet1D(in_channels=1,
@@ -77,8 +79,8 @@ if __name__ == "__main__":
 	valid_network_types = "simple, conv, resnet"
 	parser = argparse.ArgumentParser("TorchScript network generation script")
 	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
-	parser.add_argument('--output_size', '-o', required=True, help="Number of output classes")
-	parser.add_argument('--input_size', '-i', default=100, help="Number of input classes")
+	parser.add_argument('--output_size', '-o', type=int, required=True, help="Number of output classes")
+	parser.add_argument('--input_size', '-i', type=int, default=100, help="Number of input classes")
 	args = parser.parse_args()
 
 	if args.type == "simple":
