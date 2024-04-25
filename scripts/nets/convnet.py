@@ -1,5 +1,5 @@
 import torch
-from simplenet import LinearBlock
+from .simplenet import LinearBlock
 
 
 def layer_width_function(layer: int, layers: int, input: int, output: int):
