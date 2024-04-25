@@ -64,7 +64,8 @@ void ann::ScriptNet::loadModule(const std::filesystem::path& scriptPath)
 			}
 			int64_t scriptOutputSize = json["outputSize"].asInt64();
 			if(scriptOutputSize != outputSize && outputSize > 0)
-				throw load_errror("The given torch script has a output size incompatable with the given size");
+				throw load_errror("The given torch script has a output size incompatable with the given size, script has " +
+					std::to_string(scriptOutputSize) + " but " + std::to_string(outputSize) + " was requested");
 		}
 	}
 
