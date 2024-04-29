@@ -90,11 +90,21 @@ void EisGeneratorDatasetNoise::addVectorOfModels(const std::vector<std::string>&
 			workModelStr.insert(0, std::string("l{5e-6}-"));
 
 		std::shared_ptr<eis::Model> model(new eis::Model(workModelStr));
-		model->setParamSweepCountClosestTotal(sizePerModel);
-		model->compile();
+		if(model->getRequiredStepsForSweeps() > 1)
+			model->setParamSweepCountClosestTotal(sizePerModel);
 		addModel(model, sizePerModel);
 	}
 	Log(Log::INFO)<<__func__<<" dataset now has "<<size().value()<<" examples from "<<models.size()<<" models";
+}
+
+EisGeneratorDatasetNoise::ModelData* EisGeneratorDatasetNoise::findSameClass(std::string modelStr)
+{
+	for(ModelData& model :models)
+	{
+		if(model.model->getModelStr() == modelStr)
+			return &model;
+	}
+	return nullptr;
 }
 
 void EisGeneratorDatasetNoise::addModel(const eis::Model& model, size_t targetSize)
@@ -114,14 +124,29 @@ void EisGeneratorDatasetNoise::addModel(std::shared_ptr<eis::Model> model, size_
 	const std::string modelStr = model->getModelStr();
 
 	if(steps == 1)
+	{
 		modelData.indecies = {0};
+	}
 	else
+	{
+		model->compile();
 		modelData.indecies = model->getRecommendedParamIndices(omega, 0.01, true);
+	}
 
-	Log(Log::INFO)<<__func__<<" found "<<modelData.indecies.size()<<" interesting spectra for model";
+	ModelData* candidate = findSameClass(model->getModelStr());
+	if(candidate)
+	{
+		modelData.classNum = candidate->classNum;
+	}
+	else
+	{
+		modelData.classNum = classCounter;
+		++classCounter;
+	}
+
+	Log(Log::INFO)<<__func__<<" found "<<modelData.indecies.size()<<" interesting spectra for model "<<model->getModelStr();
 
 	modelData.totalCount = targetSize;
-
 	models.push_back(modelData);
 }
 
@@ -157,7 +182,10 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDatasetNoise::get
 	{
 		if constexpr(PRINT)
 			std::cout<<__func__<<' '<<index<<" rejected as uninteresting\n";
-		return get(index+1);
+		if(index+1 < size().value())
+			return get(index+1);
+		else
+			return get(0);
 	}
 
 	torch::Tensor input = eisToTorch(data);
@@ -167,14 +195,14 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDatasetNoise::get
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kInt8);
 	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(modelAndOffset.first);
+	output[0] = static_cast<float>(models[modelAndOffset.first].classNum);
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
 size_t EisGeneratorDatasetNoise::classesCount() const
 {
-	return models.size();
+	return classCounter;
 }
 
 size_t EisGeneratorDatasetNoise::frequencies()
@@ -209,15 +237,21 @@ torch::Tensor EisGeneratorDatasetNoise::classCounts()
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
-	for(size_t i = 0; i < models.size(); ++i)
-		output[i] = output[i] + static_cast<int64_t>(models[i].totalCount);
+	for(size_t i = 0; i < classesCount(); ++i)
+	{
+		for(ModelData& model : models)
+		{
+			if(model.classNum == i)
+				output[i] = output[i] + static_cast<int64_t>(model.totalCount);
+		}
+	}
 	return output;
 }
 
 size_t EisGeneratorDatasetNoise::classForIndex(size_t index)
 {
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
-	return modelAndOffset.first;
+	return models[modelAndOffset.first].classNum;
 }
 
 EisGeneratorDatasetNoise* EisGeneratorDatasetNoise::getTestDataset()
@@ -237,10 +271,12 @@ EisGeneratorDatasetNoise* EisGeneratorDatasetNoise::newDefaultDataset(int64_t ou
 
 std::string EisGeneratorDatasetNoise::modelStringForClass(size_t classNum)
 {
-	if(classNum >= models.size())
-		return "invalid";
-	else
-		return models[classNum].model->getModelStr();
+	for(ModelData model : models)
+	{
+		if(model.classNum == classNum)
+			return model.model->getModelStr();
+	}
+	return "invalid";
 }
 
 void EisGeneratorDatasetNoise::setOmegaRange(eis::Range range)

@@ -164,7 +164,10 @@ void EisGeneratorDataset::compileModels()
 {
 	std::vector<std::future<bool>> futures;
 	for(ModelData& model : models)
-		futures.push_back(std::async(std::launch::async, &eis::Model::compile, model.model));
+	{
+		if(model.isSingleSweep == false)
+			futures.push_back(std::async(std::launch::async, &eis::Model::compile, model.model));
+	}
 	for(std::future<bool>& future : futures)
 		future.wait();
 }

@@ -88,8 +88,6 @@ torch::Tensor ann::ScriptNet::forward(torch::Tensor x)
 {
 	torch::Tensor output = jitModule.forward({x}).toTensor();
 
-	std::cout<<"Out: "<<output<<'\n';
-
 	if(softmax)
 		output = torch::nn::functional::log_softmax(output, torch::nn::functional::LogSoftmaxFuncOptions(1));
 	return output;

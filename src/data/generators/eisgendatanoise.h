@@ -19,6 +19,7 @@ public EisDataset<EisGeneratorDatasetNoise>
 		std::shared_ptr<eis::Model> model;
 		std::vector<size_t> indecies;
 		size_t totalCount;
+		size_t classNum;
 	};
 
 public:
@@ -30,12 +31,14 @@ private:
 
 	eis::Range omega;
 	EisNoise noise;
+	size_t classCounter = 0;
 
 private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
 	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity);
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
+	ModelData* findSameClass(std::string modelStr);
 
 public:
 	explicit EisGeneratorDatasetNoise(int64_t outputSize = 100);
