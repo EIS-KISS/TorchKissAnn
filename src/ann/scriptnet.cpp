@@ -114,7 +114,10 @@ bool ann::ScriptNet::saveToCheckpointDir(const std::filesystem::path &path)
 	Json::FastWriter fastWriter;
 	torch::jit::ExtraFilesMap files;
 	files["meta.json"] = fastWriter.write(networkMetadata);
+
+	jitModule.to(torch::Device(torch::DeviceType::CPU, 0));
 	jitModule.save(path/"module.pt", files);
+	jitModule.to(*offload_device);
 	return true;
 }
 
