@@ -216,11 +216,11 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
-				  trainDataset->classWeights(), trainDataset->isMulticlass(), trainLog);
+				  trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), trainLog);
 		if(testDataset)
 		{
 			test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount(),
-				 trainDataset->classWeights(), trainDataset->isMulticlass(), i, trainLog);
+				 trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), i, trainLog);
 		}
 
 		trainLog->saveNetwork(net);
