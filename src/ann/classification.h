@@ -56,7 +56,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		if(!isMulticlass)
 		{
 			targets = targets.view({-1});
-			loss = lossNll->forward(prediction, targets.to(torch::kInt32));
+			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
 			acc = prediction.argmax(1).eq(targets).sum().to(torch::kCPU);
 		}
 		else
@@ -93,9 +93,9 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	torch::NoGradGuard no_grad;
 	float Loss = 0, Acc = 0;
 
-	torch::Tensor classAcc = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt32));
-	torch::Tensor classCount = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt32));
-	torch::Tensor histograms = torch::zeros({classesCount, classesCount}, torch::TensorOptions().dtype(torch::kInt32));
+	torch::Tensor classAcc = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor classCount = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor histograms = torch::zeros({classesCount, classesCount}, torch::TensorOptions().dtype(torch::kInt64));
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -110,8 +110,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 		if(!isMulticlass)
 		{
-			loss = lossNll->forward(output, targets.to(torch::kInt32));
-			targets = unargmax(targets.to(torch::kInt32), classesCount);
+			loss = lossNll->forward(output, targets.to(torch::kInt64));
+			targets = unargmax(targets.to(torch::kInt64), classesCount);
 			output = unargmax(output.argmax(1), classesCount);
 		}
 		else
