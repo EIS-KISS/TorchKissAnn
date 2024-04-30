@@ -139,9 +139,9 @@ int main(int argc, char** argv)
 		{
 			EisGeneratorDataset *dataset;
 			if(config.fileName.empty())
-				dataset = EisGeneratorDataset::newDefaultDataset(100, config.datasetSize, 0, false);
+				dataset = EisGeneratorDataset::newDefaultDataset(100, config.datasetSize, 1, false);
 			else
-				dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, 100, 0, false, false);
+				dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, 100, 1, false, false);
 			report = generateReport<EisGeneratorDataset>(dataset);
 			if(!config.imageOutput.empty())
 				saveImages<EisGeneratorDataset>(dataset, config.imageOutput);

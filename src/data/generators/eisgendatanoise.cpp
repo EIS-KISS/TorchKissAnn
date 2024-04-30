@@ -37,7 +37,7 @@ static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 }
 
 EisGeneratorDatasetNoise::EisGeneratorDatasetNoise(int64_t outputSize):
-omega(10, 1e6, outputSize/2, true)
+omega(10, 1e6, outputSize/2, true), noise(0.4)
 {
 }
 
@@ -172,10 +172,12 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDatasetNoise::get
 	ModelData& model = models[modelAndOffset.first];
 	size_t modelIndex = modelAndOffset.second % model.indecies.size();
 
-	std::vector<eis::DataPoint> data = model.model->executeSweep(omega, modelIndex);
-	noise.add(data);
+	std::vector<eis::DataPoint> data = model.model->executeSweep(omega, model.indecies[modelIndex]);
 	assert(data.size());
 
+	eis::normalize(data);
+	noise.add(data);
+	eis::noise(data, 0.001, false);
 	filterData(data, omega.count*2);
 
 	if(data.size() != omega.count)
