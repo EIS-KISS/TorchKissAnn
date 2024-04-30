@@ -1,4 +1,5 @@
 #pragma once
+#include <ATen/ops/zeros.h>
 #include <c10/core/DeviceType.h>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +12,7 @@
 #include "../utils/randomgen.h"
 #include "../data/eistotorch.h"
 #include "log.h"
+#include "tensoroptions.h"
 #include "trainlog.h"
 #include "tensoroperators.h"
 #include <ATen/autocast_mode.h>
@@ -83,6 +85,28 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 				log->logTrainLoss(epoch, end, (lossF/end)*100, accF/end, data_size);
 		}
 	}
+}
+
+template <typename DataLoader>
+torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
+{
+	torch::Tensor confusionMatrix = torch::zeros({network->getOutputSize(), network->getOutputSize()}, tensorOptCpu<long>(false));
+	for(const auto& batch : loader)
+	{
+		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
+
+		torch::Tensor output = network->forward(data);
+
+		targets = unargmax(targets.to(torch::kInt64), network->getOutputSize());
+		output = unargmax(output.argmax(1), network->getOutputSize());
+
+		for(long i = 0; i < output.size(0); ++i)
+		{
+			confusionMatrix[targets.select(0, i).argmax()] = confusionMatrix[targets.select(0, i).argmax()] + output.select(0, i);
+		}
+	}
+	return confusionMatrix;
 }
 
 template <typename DataLoader>
@@ -195,8 +219,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
-	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>
-		(trainDataset->map(torch::data::transforms::Stack<>()), options);
+	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
 	size_t active_parameters = 0;

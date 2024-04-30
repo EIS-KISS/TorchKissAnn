@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <eisgenerator/model.h>
 
+#include "commonoptions.h"
+#include "data/generators/eisgendatanoise.h"
 #include "tokenize.h"
 #include "utils/log.h"
 #include "options.h"
@@ -24,6 +26,7 @@
 #include "data/print.h"
 #include "data/filterdata.h"
 #include "globals.h"
+#include <fstream>
 
 bool yesNoPrompt(std::string msg)
 {
@@ -127,16 +130,6 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	return pass;
 }
 
-torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
-{
-	EisDirDataset dataset(datasetDir);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::test(network, *dataLoader, dataset.size().value(),
-				   dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
-}
-
 torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_ptr<ann::Net> net)
 {
 	torch::Tensor output;
@@ -160,15 +153,128 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_pt
 	return output;
 }
 
+
+torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
+{
+	EisDirDataset dataset(datasetDir);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return ann::classification::test(network, *dataLoader, dataset.size().value(),
+									 dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
+}
+
+torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
+{
+	EisGeneratorDataset dataset(classesPath, 10000, network->getInputSize(), 0, false, false);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return ann::classification::test(network, *dataLoader, dataset.size().value(),
+									 dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
+}
+
 int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
-	if(config.datasetDir.empty())
+	if(config.spectraFileName.empty())
 	{
 		Log(Log::ERROR)<<"You must specify a dataset to test on\n";
 		return 1;
 	}
 
-	testOnDir(config.datasetDir, net);
+	if(config.datasetMode == DATASET_DIR)
+	{
+		testOnDir(config.spectraFileName, net);
+	}
+	else if(config.datasetMode == DATASET_GEN)
+	{
+		testGen(config.spectraFileName, net);
+	}
+	else
+	{
+		Log(Log::ERROR)<<"Dataset not implemented for this operation: "<<datasetModeToStr(config.datasetMode);
+		return 1;
+	}
+	return 0;
+}
+
+static torch::Tensor confusionOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
+{
+	EisDirDataset dataset(datasetDir);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return ann::classification::confusion(network, *dataLoader);
+}
+
+static torch::Tensor confusionOnGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
+{
+	EisGeneratorDataset dataset(classesPath, 10000, network->getInputSize(), 0, false, false);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return ann::classification::confusion(network, *dataLoader);
+}
+
+static torch::Tensor confusionOnGenNoise(const std::string& classesPath, std::shared_ptr<ann::Net> network)
+{
+	EisGeneratorDatasetNoise dataset(classesPath, 10000, network->getInputSize(), false);
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(JOBS);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	return ann::classification::confusion(network, *dataLoader);
+}
+
+static int confusionPipe(const Config& config, std::shared_ptr<ann::Net> net)
+{
+	if(config.spectraFileName.empty())
+	{
+		Log(Log::ERROR)<<"You must specify a dataset to test on\n";
+		return 1;
+	}
+
+	torch::Tensor confusionMatrix;
+
+	if(config.datasetMode == DATASET_DIR)
+	{
+		confusionMatrix = confusionOnDir(config.spectraFileName, net);
+	}
+	else if(config.datasetMode == DATASET_GEN)
+	{
+		confusionMatrix = confusionOnGen(config.spectraFileName, net);
+	}
+	else if(config.datasetMode == DATASET_GEN_NOISE)
+	{
+		confusionMatrix = confusionOnGenNoise(config.spectraFileName, net);
+	}
+	else
+	{
+		Log(Log::ERROR)<<"Dataset not implemented for this operation: "<<datasetModeToStr(config.datasetMode);
+		return 1;
+	}
+
+	std::string path = "./confusion.csv";
+	std::ofstream file(path);
+	if(!file.is_open())
+	{
+		Log(Log::ERROR)<<"Coult not open "<<path<<" for writeing";
+		return 1;
+	}
+
+	file<<std::setw(10)<<",";
+	for(int64_t i = 0; i < net->getOutputSize(); ++i)
+		file<<net->getOutputLabels()[i]<<", ";
+	file<<'\n';
+
+	for(int64_t row = 0; row < net->getOutputSize(); ++row)
+	{
+		file<<net->getOutputLabels()[row]<<", ";
+		for(int64_t col = 0; col < net->getOutputSize(); ++col)
+			file<<confusionMatrix[row][col].item<long>()<<", ";
+		file<<'\n';
+	}
+
+	Log(Log::INFO)<<"Saved confsion matrix to "<<path;
 
 	return 0;
 }
@@ -307,6 +413,7 @@ bool requiresNetwork(PredictionMode mode)
 		case MODE_NN:
 		case MODE_ANN:
 		case MODE_ANN_TEST:
+		case MODE_ANN_CONFUSION:
 		case MODE_REGRESSION:
 			return true;
 		case MODE_SHOW:
@@ -364,6 +471,8 @@ int main(int argc, char** argv)
 			return classifyPipeline(config, net);
 		case MODE_ANN_TEST:
 			return testPipe(config, net);
+		case MODE_ANN_CONFUSION:
+			return confusionPipe(config, net);
 		case MODE_REGRESSION:
 			return regressionPipe(config, net);
 		case MODE_SHOW:

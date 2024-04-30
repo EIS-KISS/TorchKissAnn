@@ -5,6 +5,7 @@
 #include <iostream>
 #include "globals.h"
 #include "utils/log.h"
+#include "utils/commonoptions.h"
 
 const inline char *argp_program_version = "TorchKissAnn";
 const inline char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -17,9 +18,9 @@ static struct argp_option options[] =
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"network",		'n', "[FILE]",		0,	"Network file name" },
   {"input",			'i', "[FILE]",		0,	"Input file name" },
-  {"dataset", 		'd', "[STRING]",	0,	"directory of a dir dataset to test on"},
+  {"dataset",	 	'd', "[STRING]",	0,	"The dataset type to test on :" DATASET_LIST},
   {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, mpt, trash, gen" },
-  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: ann, knn, anntest, regression, show"},
+  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: ann, knn, anntest, annconfusion, regression, show"},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
   { 0 }
@@ -30,6 +31,7 @@ typedef enum
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
 	MODE_ANN_TEST,
+	MODE_ANN_CONFUSION,
 	MODE_REGRESSION,
 	MODE_NN,
 	MODE_SHOW,
@@ -48,11 +50,11 @@ struct Config
 	std::string networkFileName;
 	std::string spectraFileName;
 	std::string filterFileName;
-	std::string datasetDir;
-	bool trash = false;
+	DatasetMode datasetMode = DATASET_INVALID;
 	PredictionMode mode = MODE_ANN;
 	FilterMode filterMode = FILTER_NONE;
 	FileType fileType = FILE_TYPE_CSV;
+
 };
 
 static PredictionMode parseMode(const std::string& in)
@@ -61,6 +63,8 @@ static PredictionMode parseMode(const std::string& in)
 		return MODE_ANN;
 	else if(in == "anntest")
 		return MODE_ANN_TEST;
+	else if(in == "annconfusion")
+		return MODE_ANN_CONFUSION;
 	else if (in == "regression")
 		return MODE_REGRESSION;
 	else if (in == "show")
@@ -120,7 +124,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			config->spectraFileName.assign(arg);
 			break;
 		case 'd':
-			config->datasetDir.assign(arg);
+			config->datasetMode = parseDatasetMode(arg);
+			if(config->datasetMode == DATASET_INVALID)
+			{
+				std::cout<<arg<<" is not a vaild dataset type.\n";
+				argp_usage(state);
+			}
 			break;
 		case 't':
 			config->fileType = parseFileType(arg);

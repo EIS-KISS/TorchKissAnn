@@ -83,7 +83,11 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 {
 	int64_t sizePerModel = desiredSize/modelStrs.size();
 
-	assert(sizePerModel > 3);
+	if(sizePerModel < 3)
+	{
+		sizePerModel = 3;
+		Log(Log::WARN)<<"EisGeneratorDataset desired size to small for dataset adjusting to "<<sizePerModel*modelStrs.size();
+	}
 	for(const std::string& modelStr : modelStrs)
 	{
 		std::string workModelStr = stripWhitespace(modelStr);
