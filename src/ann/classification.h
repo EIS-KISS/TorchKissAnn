@@ -13,6 +13,7 @@
 #include "log.h"
 #include "trainlog.h"
 #include "tensoroperators.h"
+#include <ATen/autocast_mode.h>
 
 namespace ann
 {
@@ -105,6 +106,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
+		at::autocast::set_enabled(true);
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
 
@@ -139,6 +141,9 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();
+
+		at::autocast::clear_cache();
+		at::autocast::set_enabled(false);
 	}
 
 	std::cout<<"Class predictions:\n";
