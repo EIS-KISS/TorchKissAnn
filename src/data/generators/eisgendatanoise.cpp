@@ -7,7 +7,7 @@
 #include <eisgenerator/basicmath.h>
 #include <sstream>
 #include <fstream>
-#include <future>
+#include <algorithm>
 
 #include "../eistotorch.h"
 #include "log.h"
@@ -77,7 +77,7 @@ EisGeneratorDatasetNoise(outputSize)
 
 void EisGeneratorDatasetNoise::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity)
 {
-	int64_t sizePerModel = desiredSize/modelStrs.size();
+	int64_t sizePerModel = (desiredSize/modelStrs.size())*3;
 
 	assert(sizePerModel > 3);
 	for(const std::string& modelStr : modelStrs)
@@ -132,6 +132,13 @@ void EisGeneratorDatasetNoise::addModel(std::shared_ptr<eis::Model> model, size_
 		model->compile();
 		modelData.indecies = model->getRecommendedParamIndices(omega, 0.01, true);
 	}
+	modelData.totalCount = targetSize;
+
+	if(modelData.indecies.empty())
+	{
+		modelData.indecies = {0};
+		modelData.totalCount = std::min(static_cast<size_t>(1000), targetSize);
+	}
 
 	ModelData* candidate = findSameClass(model->getModelStr());
 	if(candidate)
@@ -146,7 +153,7 @@ void EisGeneratorDatasetNoise::addModel(std::shared_ptr<eis::Model> model, size_
 
 	Log(Log::INFO)<<__func__<<" found "<<modelData.indecies.size()<<" interesting spectra for model "<<model->getModelStr();
 
-	modelData.totalCount = targetSize;
+
 	models.push_back(modelData);
 }
 
