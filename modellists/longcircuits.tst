@@ -19,6 +19,5 @@ rp-p(r-w)
 rp-rc(r-l)
 rp-rp-rp
 w
-r
 rp
 rc
