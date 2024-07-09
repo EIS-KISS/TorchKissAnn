@@ -4,7 +4,100 @@ import sys
 import json
 import os
 import onnxruntime as ort
+from onnxruntime.training import artifacts as ortart
 import argparse
+import tarfile
+import io
+
+TMP_DIRECTORY = "./tmp"
+
+
+def checkCompositContainer(container, key: str) -> bool:
+	for element in container:
+		if element.key == key:
+			return True
+	return False
+
+
+def exportTrainingArtifactsModels(model_path: str, meta: dict, outname: str):
+	onnx_model = onnx.load(model_path)
+
+	requires_grad = [param.name for param in onnx_model.graph.initializer if "weight" in param.name or "bias" in param.name]
+
+	out_dir = os.path.join(TMP_DIRECTORY, 'train_artifacts')
+	if not os.path.exists(out_dir):
+		os.makedirs(out_dir)
+	ortart.generate_artifacts(onnx_model, requires_grad=requires_grad, frozen_params=None,
+	                          loss=ortart.LossType.CrossEntropyLoss, optimizer=ortart.OptimType.AdamW, artifact_directory=out_dir)
+
+	try:
+		os.remove(f"{outname}.tar")
+	except FileNotFoundError:
+		pass
+	tar = tarfile.open(f"{outname}.tar", mode="x")
+	for filename in os.listdir(out_dir):
+		path = os.path.join(out_dir, filename)
+		tar.add(path, arcname=os.path.split(path)[-1])
+		os.remove(path)
+	jsonstr = json.dumps(meta, indent='\t')
+	jsonio = io.BytesIO(jsonstr.encode('utf-8'))
+	jsontarinfo = tarfile.TarInfo("meta.json")
+	jsontarinfo.size = len(jsonstr)
+	tar.addfile(jsontarinfo, jsonio)
+	tar.close()
+	os.rmdir(out_dir)
+
+
+def exportModel(model, meta, outname: str, train: bool = False) -> str:
+	example_input = torch.randn((2 if train else 1, int(meta['inputSize'])), dtype=torch.float32)
+	model.eval()
+	example_output = model.forward(example_input)
+
+	input_names = [meta['inputLabel'] if 'inputLabel' in meta is not None else "EIS"]
+	output_names = [meta['purpose'] if 'purpose' in meta is not None else "Unkown"]
+	if args.input_name is not None:
+		input_names = [args.input_name]
+	if args.purpose is not None:
+		output_names = [args.purpose]
+
+	torch.onnx.export(model, example_input, f"{outname}.onnx", verbose=True,
+		training=torch.onnx.TrainingMode.TRAINING if train else torch.onnx.TrainingMode.EVAL,
+		input_names=input_names, output_names=output_names, do_constant_folding=False)
+
+	onnx_model = onnx.load(f"{basename}.onnx")
+	onnx.checker.check_model(onnx_model)
+
+	if 'outputLabels' in meta and len(meta['outputLabels']) == meta['outputSize'] and not checkCompositContainer(onnx_model.metadata_props, 'outputLabels'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'outputLabels'
+		value = ""
+		for label in meta['outputLabels']:
+			value = value + str(label) + ','
+		onnxmeta.value = value[:-1]
+	elif not checkCompositContainer(onnx_model.metadata_props, 'outputLabels'):
+		print("Warning: model lacks output labels")
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'outputLabels'
+		value = ""
+		for i in range(0, meta['outputSize']):
+			value = value + "class_" + str(i) + ','
+		onnxmeta.value = value[:-1]
+
+	if not checkCompositContainer(onnx_model.metadata_props, 'softmax'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = "softmax"
+		onnxmeta.value = str(meta['softmax'] if 'softmax' in meta is not None else "true")
+
+	if args.version is not None and not checkCompositContainer(onnx_model.metadata_props, 'version'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = "version"
+		onnxmeta.value = args.version
+
+	onnx.save(onnx_model, f"{outname}.onnx")
+
+	ort_model = ort.InferenceSession(f"{outname}.onnx")
+
+	return "{outname}.onnx"
 
 
 if __name__ == "__main__":
@@ -22,55 +115,13 @@ if __name__ == "__main__":
 		print("TorchScript dose not contain a meta.json")
 		exit(1)
 
-	basename = os.path.split(os.path.splitext(args.network)[0])[-1]
-
 	meta = json.loads(extra_files["meta.json"])
 
-	example_input = torch.randn((1, int(meta['inputSize'])), dtype=torch.float32)
-	model.eval()
-	example_output = model.forward(example_input)
-
-	input_names = [meta['inputLabel'] if 'inputLabel' in meta is not None else "EIS"]
-	output_names = [meta['purpose'] if 'purpose' in meta is not None else "Unkown"]
-	if args.input_name is not None:
-		input_names = [args.input_name]
-	if args.purpose is not None:
-		output_names = [args.purpose]
-
-	torch.onnx.export(model, example_input, f"{basename}.onnx", verbose=True,
-		training=torch.onnx.TrainingMode.EVAL, input_names=input_names, output_names=output_names)
-
-	onnx_model = onnx.load(f"{basename}.onnx")
-	onnx.checker.check_model(onnx_model)
-
-	if 'outputLabels' in meta and len(meta['outputLabels']) == meta['outputSize']:
-		onnxmeta = onnx_model.metadata_props.add()
-		onnxmeta.key = 'outputLabels'
-		value = ""
-		for label in meta['outputLabels']:
-			value = value + str(label) + ','
-		onnxmeta.value = value[:-1]
-	else:
-		print("Warning: model lacks output labels")
-		onnxmeta = onnx_model.metadata_props.add()
-		onnxmeta.key = 'outputLabels'
-		value = ""
-		for i in range(0, meta['outputSize']):
-			value = value + "class_" + str(i) + ','
-		onnxmeta.value = value[:-1]
-
-	onnxmeta = onnx_model.metadata_props.add()
-	onnxmeta.key = "softmax"
-	onnxmeta.value = str(meta['softmax'] if 'softmax' in meta is not None else "true")
-
-	if args.version is not None:
-		onnxmeta = onnx_model.metadata_props.add()
-		onnxmeta.key = "version"
-		onnxmeta.value = args.version
-
-	onnx.save(onnx_model, f"{basename}.onnx")
-
-	ort_model = ort.InferenceSession(f"{basename}.onnx")
-	onnx_output = ort_model.run(None, {input_names[0]: example_input.numpy()})
-	print(f"onnx output: {onnx_output}")
-	print(f"torch output: {example_output}")
+	basename = os.path.split(os.path.splitext(args.network)[0])[-1]
+	print("Exporting eval model")
+	exportModel(model, meta, basename, False)
+	print("Exporting tmp train model")
+	exportModel(model, meta, basename + "_train", True)
+	print("Exporting train model")
+	exportTrainingArtifactsModels(f"{basename}_train.onnx", meta, basename + "_train")
+	os.remove(f"{basename}_train.onnx")

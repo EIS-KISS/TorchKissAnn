@@ -105,7 +105,7 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 			if(ymin > cymin)
 				ymin = cymin;
 			plot.xrange(xmin, xmax);
-			plot.yrange(ymin, ymax);
+			plot.yrange(ymax, ymin);
 			plot.legend().hide();
 
 			plot.drawCurve(data.first, data.second);
