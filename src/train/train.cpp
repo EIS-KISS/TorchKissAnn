@@ -22,6 +22,7 @@
 #include "data/loaders/regressionloader.h"
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
+#include "data/loaders/coincellhellloader.h"
 #include "data/passfaildataset.h"
 #include "options.h"
 #include "trainlog.h"
@@ -226,6 +227,31 @@ template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
 	return 0;
 }
 
+template <> int train<CoinCellHellLoader>(const Config& config)
+{
+	if(config.fileName.empty())
+	{
+		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
+		return 1;
+	}
+	if(!config.testFileName.empty())
+	{
+		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type";
+		return 1;
+	}
+
+	CoinCellHellLoader dataset(config.fileName);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
+	}
+
+	trainSwitch<CoinCellHellLoader, CoinCellHellLoader>(config, &dataset, nullptr);
+	return 0;
+}
+
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -379,6 +405,8 @@ int main(int argc, char** argv)
 			return train<ParameterRegressionDatasetGenerator>(config);
 		case DATASET_TAR_REGRESSION:
 			return train<ParameterRegressionDatasetLoader>(config);
+		case DATASET_COINCELLHELL:
+			return train<CoinCellHellLoader>(config);
 		case DATASET_TAR:
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;

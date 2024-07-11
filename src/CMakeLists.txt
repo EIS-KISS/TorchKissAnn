@@ -7,6 +7,7 @@ set(SRC_FILES
 	data/loaders/dirloader.cpp
 	data/loaders/deduploader.cpp
 	data/loaders/regressionloader.cpp
+	data/loaders/coincellhellloader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
 	utils/tokenize.cpp

@@ -1,6 +1,6 @@
 #pragma once
 
-#define DATASET_LIST "gen, gennoise, fdedup, passfail, dir, tar, genregression, tarregression, composit"
+#define DATASET_LIST "gen, gennoise, fdedup, passfail, dir, tar, genregression, tarregression, composit, coincellhell"
 
 typedef enum
 {
@@ -12,10 +12,11 @@ typedef enum
 	DATASET_DIR,
 	DATASET_TAR,
 	DATASET_GEN_REGRESSION,
-	DATASET_TAR_REGRESSION
+	DATASET_TAR_REGRESSION,
+	DATASET_COINCELLHELL
 } DatasetMode;
 
-static inline std::string datasetModeToStr(const DatasetMode mode)
+static inline constexpr std::string datasetModeToStr(const DatasetMode mode)
 {
 	switch(mode)
 	{
@@ -35,6 +36,8 @@ static inline std::string datasetModeToStr(const DatasetMode mode)
 			return "genregression";
 		case DATASET_TAR_REGRESSION:
 			return "tarregression";
+		case DATASET_COINCELLHELL:
+			return "coincellhell";
 		default:
 			return "invalid";
 	}
