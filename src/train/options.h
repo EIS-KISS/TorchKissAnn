@@ -7,7 +7,7 @@
 #include "utils/log.h"
 #include "commonoptions.h"
 
-#define MODE_LIST "ann, conv, script, gan, regression"
+#define MODE_LIST "ann, conv, script, gan, regression, regression_script"
 
 inline const char *argp_program_version = "TorchKissAnnTrain";
 inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -43,7 +43,8 @@ typedef enum
 	MODE_ANN_CONV,
 	MODE_ANN_SCRIPT,
 	MODE_GAN,
-	MODE_REGRESSION
+	MODE_REGRESSION,
+	MODE_REGRESSION_SCRIPT
 } TrainMode;
 
 static std::string trainModeToStr(const TrainMode mode)
@@ -60,6 +61,8 @@ static std::string trainModeToStr(const TrainMode mode)
 			return "gan";
 		case MODE_REGRESSION:
 			return "regression";
+		case MODE_REGRESSION_SCRIPT:
+			return "regression_script";
 		default:
 			return "Invalid";
 	}
@@ -77,6 +80,8 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_GAN;
 	else if(in == trainModeToStr(MODE_REGRESSION))
 		return MODE_REGRESSION;
+	else if(in == trainModeToStr(MODE_REGRESSION_SCRIPT))
+		return MODE_REGRESSION_SCRIPT;
 	return MODE_INVALID;
 }
 

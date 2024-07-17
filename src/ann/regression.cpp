@@ -4,6 +4,7 @@
 #include "data/generators/parameterregressiondataset.h"
 
 #include <cstdint>
+#include <eisgenerator/eistype.h>
 #include <eisgenerator/model.h>
 #include <memory>
 #include <torch/optim/adamw.h>
@@ -25,17 +26,29 @@ torch::Tensor ann::regression::use(torch::Tensor input, std::shared_ptr<Net> net
 
 std::pair<torch::Tensor, torch::Tensor>  ann::regression::getTargetScalesAndBiases(const std::string& modelString)
 {
-	eis::Model model(modelString);
-	std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
-	torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
-	torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
-
-	for(size_t i = 0; i < defaultRanges.size(); ++i)
+	try
 	{
-		scales[i] = defaultRanges[i].end-defaultRanges[i].start;
-		bias[i] = defaultRanges[i].start;
+		eis::Model model(modelString);
+		if(model.isReady())
+		{
+			std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
+			torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+			torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+
+			for(size_t i = 0; i < defaultRanges.size(); ++i)
+			{
+				scales[i] = defaultRanges[i].end-defaultRanges[i].start;
+				bias[i] = defaultRanges[i].start;
+			}
+			return {scales, bias};
+		}
 	}
-	return {scales, bias};
+	catch(const eis::parse_errror& err)
+	{
+		return {torch::Tensor(), torch::Tensor()};
+	}
+
+	return {torch::Tensor(), torch::Tensor()};
 }
 
 struct Configuration
@@ -70,7 +83,7 @@ static double tryConfiguration(const Configuration config)
 
 	double out;
 
-	train<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(nullptr, net, &dataset, nullptr, 10, 1e-4, &out);
+	train<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(nullptr, net, &dataset, nullptr, 10, 1e-4, REG_LOSS_MSE, &out);
 
 	return out;
 }

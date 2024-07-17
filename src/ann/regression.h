@@ -2,7 +2,6 @@
 #include <ATen/ops/logspace.h>
 #include <cstddef>
 #include <cstdint>
-#include <numeric>
 #include <torch/csrc/autograd/anomaly_mode.h>
 #include <torch/nn/modules/loss.h>
 #include <torch/nn/options/loss.h>
@@ -18,7 +17,7 @@
 #include "log.h"
 #include "trainlog.h"
 #include "loss/eisdistanceloss.h"
-#include "data/eisdataset.h"
+#include "data/regressiondataset.h"
 #include "tensoroptions.h"
 #include "tensoroperators.h"
 
@@ -26,6 +25,12 @@ namespace ann
 {
 namespace regression
 {
+
+typedef enum
+{
+	REG_LOSS_EIS,
+	REG_LOSS_MSE
+} regression_loss_type_t;
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
@@ -165,8 +170,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& los
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate, double* finalLoss = nullptr)
+int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<DatasetType>* trainDataset, RegressionDataset<TestDatasetType>* testDataset,
+		   size_t epochs, double learingRate, regression_loss_type_t loss = REG_LOSS_MSE, double* finalLoss = nullptr)
 {
 	static constexpr double LOSS_START_DECADE = -2;
 	static constexpr double LOSS_FINISH_DECADE = 6;
@@ -186,14 +191,14 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 		Log(Log::WARN)<<"No test dataset provided!";
 	}
 
-	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
-
-	std::pair<torch::Tensor, torch::Tensor> scaleAndBias = getTargetScalesAndBiases(modelString);
-
-	net->setOutputScalars(scaleAndBias.first.to(*offload_device));
-	net->setOutputBiases(scaleAndBias.second.to(*offload_device));
+	std::pair<torch::Tensor, torch::Tensor> scalarAndBias = trainDataset->getTargetScalesAndBias();
+	Log(Log::INFO)<<"Using output scalars:\n"<<scalarAndBias.first;
+	Log(Log::INFO)<<"Using output biases:\n"<<scalarAndBias.second;
+	net->setOutputScalars(scalarAndBias.first);
+	net->setOutputBiases(scalarAndBias.second);
 
 	std::stringstream purpose;
+	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
 	purpose<<"Regression,"<<modelString<<std::scientific;
 	if(trainDataset->freqRange().has_value())
 	{
@@ -210,12 +215,21 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 
 	Log(Log::INFO)<<"Training "<<net->getPurpose();
 
-	Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
-		<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
-		<<"and will be based on "<<modelString;
-	torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
-	torch::nn::MSELoss lossMse(torch::nn::MSELossOptions().reduction(torch::kMean));
-	EisDistanceLoss lossEis(modelString, omega);
+	std::unique_ptr<torch::nn::MSELoss> lossMse;
+	std::unique_ptr<EisDistanceLoss> lossEis;
+	if(loss == REG_LOSS_EIS)
+	{
+		Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
+			<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
+			<<"and will be based on "<<modelString;
+		torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
+		lossEis.reset(new EisDistanceLoss(modelString, omega));
+	}
+	else
+	{
+		Log(Log::INFO)<<"Using mse loss";
+		lossMse.reset(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
+	}
 
 	std::vector<std::string> outputLables(net->getOutputSize());
 	bool noLabels = false;
@@ -241,18 +255,23 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>*
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
 	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
-	//torch::optim::SGD optimizer(net->parameters(), torch::optim::SGDOptions(learingRate).weight_decay(0));
 
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{
-		int ret = trainImpl(net, *trainDataLoader,
-			lossMse, optimizer, epoch, trainDataset->size().value(),
-			trainDataset->classesCount(), trainLog, finalLoss);
+		int ret;
+		if(lossEis)
+			 ret = trainImpl(net, *trainDataLoader,
+				*lossEis, optimizer, epoch, trainDataset->size().value(),
+				trainDataset->classesCount(), trainLog, finalLoss);
+		else
+			ret = trainImpl(net, *trainDataLoader,
+							*lossMse, optimizer, epoch, trainDataset->size().value(),
+							trainDataset->classesCount(), trainLog, finalLoss);
 		if(ret != 0)
 			return -1;
 
 		if(testDataset)
-			test(net, *testDataLoader, lossMse, testDataset->size().value(), trainDataset->classesCount(), epoch, trainLog);
+			test(net, *testDataLoader, *lossMse, testDataset->size().value(), trainDataset->classesCount(), epoch, trainLog);
 
 		if(trainLog)
 			trainLog->saveNetwork(net);

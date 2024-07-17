@@ -61,5 +61,7 @@ static inline DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_GEN_REGRESSION;
 	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
 		return DATASET_TAR_REGRESSION;
+	else if(in == datasetModeToStr(DATASET_COINCELLHELL))
+		return DATASET_COINCELLHELL;
 	return DATASET_INVALID;
 }

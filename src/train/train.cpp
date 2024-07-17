@@ -13,9 +13,11 @@
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
 #include "ann/simplenet.h"
+#include "commonoptions.h"
 #include "gan/gan.h"
 #include "log.h"
 #include "data/splitdataset.h"
+#include "data/regressiondataset.h"
 #include "data/generators/eisgendata.h"
 #include "data/generators/eisgendatanoise.h"
 #include "data/generators/parameterregressiondataset.h"
@@ -26,6 +28,7 @@
 #include "data/passfaildataset.h"
 #include "options.h"
 #include "trainlog.h"
+
 
 template <typename DataSetType>
 int train(const Config& config);
@@ -320,10 +323,31 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		break;
 		case MODE_REGRESSION:
 		{
-			Log(Log::INFO)<<"Training regression network";
+			RegressionDataset<DataSetType>* trainDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(trainDataset);
+			RegressionDataset<DataSetType>* testDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(testDataset);
+			if(!trainDatasetReg || (testDataset && !testDatasetReg))
+			{
+				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(trainDataset).name()<<" to train regression as this is not a regression dataset";
+				exit(1);
+			}
+			Log(Log::INFO)<<"Training regression network "<<trainDataset->get(0).data.size(0)<<' '<<trainDataset->classesCount();
 			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->get(0).data.size(0),
 															 trainDataset->classesCount(), 4, config.extraLayers, false));
-			ann::regression::train(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
+			break;
+		}
+		case MODE_REGRESSION_SCRIPT:
+		{
+			RegressionDataset<DataSetType>* trainDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(trainDataset);
+			RegressionDataset<DataSetType>* testDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(testDataset);
+			if(!trainDatasetReg || (testDataset && !testDatasetReg))
+			{
+				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(trainDataset).name()<<" to train regression as this is not a regression dataset";
+				exit(1);
+			}
+			Log(Log::INFO)<<"Training regression script network "<<trainDataset->get(0).data.size(0)<<' '<<trainDataset->classesCount();
+			std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, false, trainDataset->get(0).data.size(0), trainDataset->classesCount()));
+			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_INVALID:
@@ -348,20 +372,21 @@ bool check_options(const Config& config)
 	}
 
 	if((config.datasetMode != DATASET_GEN_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION) &&
-		config.mode == MODE_REGRESSION)
+		config.datasetMode != DATASET_TAR_REGRESSION &&
+		config.datasetMode != DATASET_COINCELLHELL) &&
+		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
 	{
 		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
 		return false;
 	}
 
-	if(config.mode == MODE_ANN_SCRIPT && config.scriptPath.empty())
+	if((config.mode == MODE_ANN_SCRIPT || config.mode == MODE_REGRESSION_SCRIPT) && config.scriptPath.empty())
 	{
 		Log(Log::ERROR)<<"To train a TorchScript a path to a TorchScript must be supplied via -n";
 		return false;
 	}
 
-	if(config.mode != MODE_ANN_SCRIPT && !config.scriptPath.empty())
+	if((config.mode != MODE_ANN_SCRIPT && config.mode != MODE_REGRESSION_SCRIPT) && !config.scriptPath.empty())
 	{
 		Log(Log::ERROR)<<"a path to a TorchScript can only be supplied in "<<trainModeToStr(MODE_ANN_SCRIPT)<<" mode";
 		return false;
