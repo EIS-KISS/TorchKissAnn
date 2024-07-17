@@ -16,7 +16,7 @@ typedef enum
 	DATASET_COINCELLHELL
 } DatasetMode;
 
-static inline constexpr std::string datasetModeToStr(const DatasetMode mode)
+static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
 {
 	switch(mode)
 	{
