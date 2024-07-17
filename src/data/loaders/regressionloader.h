@@ -5,11 +5,11 @@
 #include <string>
 #include <filesystem>
 
-#include "data/eisdataset.h"
+#include "data/regressiondataset.h"
 #include "microtar.h"
 
 class ParameterRegressionDatasetLoader :
-public EisDataset<ParameterRegressionDatasetLoader>
+public RegressionDataset<ParameterRegressionDatasetLoader>
 {
 private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
@@ -37,4 +37,5 @@ public:
 	virtual bool isMulticlass() override;
 	virtual std::string dataLabel() const override;
 	virtual c10::optional<torch::Tensor> freqRange() override;
+	virtual std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBias() override;
 };

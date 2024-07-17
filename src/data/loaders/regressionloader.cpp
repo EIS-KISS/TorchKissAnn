@@ -221,3 +221,17 @@ c10::optional<torch::Tensor> ParameterRegressionDatasetLoader::freqRange()
 	out[2] = static_cast<fvalue>(spectra.data.size());
 	return out;
 }
+
+std::pair<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoader::getTargetScalesAndBias()
+{
+	eis::Model model(modelStringForClass(classesCount()+1));
+	std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
+	torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+	torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+
+	for(size_t i = 0; i < defaultRanges.size(); ++i) {
+		scales[i] = defaultRanges[i].end-defaultRanges[i].start;
+		bias[i] = defaultRanges[i].start;
+	}
+	return {scales, bias};
+}

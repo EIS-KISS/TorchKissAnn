@@ -3,10 +3,10 @@
 #include <eisgenerator/model.h>
 #include <string>
 
-#include "data/eisdataset.h"
+#include "data/regressiondataset.h"
 
 class ParameterRegressionDatasetGenerator :
-public EisDataset<ParameterRegressionDatasetGenerator>
+public RegressionDataset<ParameterRegressionDatasetGenerator>
 {
 public:
 	static constexpr size_t DEFAULT_EXAMPLE_COUNT = 1e8;
@@ -36,4 +36,5 @@ public:
 	virtual bool isMulticlass() override;
 	virtual std::string dataLabel() const override;
 	virtual c10::optional<torch::Tensor> freqRange() override;
+	virtual std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBias() override;
 };

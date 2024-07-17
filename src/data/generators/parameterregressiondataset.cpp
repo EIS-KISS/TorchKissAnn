@@ -1,6 +1,7 @@
 #include <eisdrt/eistorchdrt.h>
 #include <eisdrt/types.h>
 
+#include "utils/tensoroptions.h"
 #include "parameterregressiondataset.h"
 #include "data/eistotorch.h"
 
@@ -105,6 +106,20 @@ std::string ParameterRegressionDatasetGenerator::modelStringForClass(size_t clas
 			return std::string(1, componant->getComponantChar()) + std::string("-") + std::to_string(classNum);
 	}
 	return model.getModelStr();
+}
+
+std::pair<torch::Tensor, torch::Tensor> ParameterRegressionDatasetGenerator::getTargetScalesAndBias()
+{
+	eis::Model model(modelStringForClass(classesCount()+1));
+	std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
+	torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+	torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
+
+	for(size_t i = 0; i < defaultRanges.size(); ++i) {
+		scales[i] = defaultRanges[i].end-defaultRanges[i].start;
+		bias[i] = defaultRanges[i].start;
+	}
+	return {scales, bias};
 }
 
 c10::optional<torch::Tensor> ParameterRegressionDatasetGenerator::freqRange()
