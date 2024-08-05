@@ -22,7 +22,7 @@ private:
 	std::filesystem::path path;
 	std::vector<std::streampos> lineStarts;
 	std::vector<std::string> modelStrings;
-	std::vector<size_t> classCounts;
+	std::vector<size_t> classCountsVec;
 	int versionMajor = 0;
 	int versionMinor = 1;
 

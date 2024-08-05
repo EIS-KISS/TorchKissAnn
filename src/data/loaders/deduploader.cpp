@@ -129,7 +129,7 @@ FastDedupDataset::FastDedupDataset(const FastDedupDataset& in)
 	modelStrings = in.modelStrings;
 	versionMajor = in.versionMajor;
 	versionMinor = in.versionMinor;
-	classCounts = in.classCounts;
+	classCountsVec = in.classCountsVec;
 	path = in.path;
 	file.open(path, std::ios_base::in);
 	if(!file.is_open())
@@ -258,11 +258,11 @@ torch::Tensor FastDedupDataset::classWeights()
 	options = options.device(torch::kCPU);
 	torch::Tensor output = torch::empty({static_cast<int64_t>(classes)}, options);
 
-	if(classCounts.size() != modelCount)
-		classCounts = calculateClassCounts();
+	if(classCountsVec.size() != modelCount)
+		classCountsVec = calculateClassCounts();
 
 	for(size_t i = 0; i < modelCount; ++i)
-		output[i] = size().value()/static_cast<float>(classCounts[i]);
+		output[i] = size().value()/static_cast<float>(classCountsVec[i]);
 
 	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 
