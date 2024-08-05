@@ -48,7 +48,7 @@ public:
 		return indexList[index];
 	}
 
-	virtual size_t classesCount() const override
+	virtual size_t outputSize() const override
 	{
 		return 1;
 	}

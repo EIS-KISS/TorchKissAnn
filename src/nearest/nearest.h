@@ -31,7 +31,7 @@ public:
 		torch::data::Example<torch::Tensor, torch::Tensor> grandBatch = *dataLoader->begin();
 		NearestNeighbor nearest(grandBatch.data, grandBatch.target);
 		size_t classNum = nearest.predict(input)[0].item().to<float>();
-		torch::Tensor output = torch::zeros(dataset->classesCount());
+		torch::Tensor output = torch::zeros(dataset->outputSize());
 		output[classNum] = 1.0;
 		return output;
 	}

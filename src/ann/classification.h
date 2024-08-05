@@ -111,16 +111,16 @@ torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
 
 template <typename DataLoader>
 torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
-				   int64_t classesCount, torch::Tensor classWeights, bool isMulticlass, size_t epoch = 0,
+				   int64_t outputSize, torch::Tensor classWeights, bool isMulticlass, size_t epoch = 0,
 				   TrainLog* log = nullptr, const std::string& outputDir = "", double outputProb = 0)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
 	float Loss = 0, Acc = 0;
 
-	torch::Tensor classAcc = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
-	torch::Tensor classCount = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kInt64));
-	torch::Tensor histograms = torch::zeros({classesCount, classesCount}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor classCount = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor histograms = torch::zeros({outputSize, outputSize}, torch::TensorOptions().dtype(torch::kInt64));
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -137,8 +137,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		if(!isMulticlass)
 		{
 			loss = lossNll->forward(output, targets.to(torch::kInt64));
-			targets = unargmax(targets.to(torch::kInt64), classesCount);
-			output = unargmax(output.argmax(1), classesCount);
+			targets = unargmax(targets.to(torch::kInt64), outputSize);
+			output = unargmax(output.argmax(1), outputSize);
 		}
 		else
 		{
@@ -191,14 +191,15 @@ template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
 		   size_t epochs, double learingRate)
 {
-	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->classesCount()));
+	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	if(testDataset)
 	{
-		assert(trainDataset->classesCount() == testDataset->classesCount());
+		assert(trainDataset->outputSize() == testDataset->outputSize());
 		assert(trainDataset->isMulticlass() == testDataset->isMulticlass());
 	}
 
 	net->setPurpose("Classifier");
+	net->setExtraInputs(trainDataset->extraInputs());
 	net->to(*offload_device);
 
 	std::vector<std::string> outputLables(net->getOutputSize());
@@ -247,7 +248,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 				  trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), trainLog);
 		if(testDataset)
 		{
-			test(net, *testDataLoader, testDataset->size().value(), trainDataset->classesCount(),
+			test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
 				 trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), i, trainLog);
 		}
 

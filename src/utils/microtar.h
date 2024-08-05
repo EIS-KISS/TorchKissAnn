@@ -43,6 +43,7 @@ typedef struct {
   unsigned type;
   char name[100];
   char linkname[100];
+  long pos;
 } mtar_header_t;
 
 

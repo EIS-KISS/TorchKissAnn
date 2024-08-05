@@ -178,7 +178,7 @@ void TrainLog::plot(std::filesystem::path logDir, std::vector<std::pair<size_t, 
 		trainLosses[i] = loss[i].second;
 	}
 
-	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", trainSteps, trainLosses);
+	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", trainSteps, trainLosses, false, true);
 }
 
 TrainLog::~TrainLog()

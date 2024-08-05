@@ -190,7 +190,7 @@ size_t FastDedupDataset::parseOriginalClass(const std::string& line)
 	}
 
 	size_t classNum = std::stoul(tokens[2]);
-	if(classNum > classesCount())
+	if(classNum > outputSize())
 	{
 		const std::string error = std::string("The specified class in ");
 		Log(Log::ERROR)<<error;
@@ -218,7 +218,7 @@ size_t FastDedupDataset::classForIndex(size_t index)
 	return parseOriginalClass(line);
 }
 
-size_t FastDedupDataset::classesCount() const
+size_t FastDedupDataset::outputSize() const
 {
 	return modelCount;
 }
@@ -250,7 +250,7 @@ std::vector<size_t> FastDedupDataset::calculateClassCounts()
 
 torch::Tensor FastDedupDataset::classWeights()
 {
-	size_t classes = classesCount();
+	size_t classes = outputSize();
 
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);

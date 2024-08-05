@@ -236,7 +236,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisGeneratorDataset::getImpl(
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t EisGeneratorDataset::classesCount() const
+size_t EisGeneratorDataset::outputSize() const
 {
 	return modelStrings.size();
 }
@@ -277,7 +277,7 @@ torch::Tensor EisGeneratorDataset::classCounts()
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor output = torch::zeros({static_cast<int64_t>(classesCount())}, options);
+	torch::Tensor output = torch::zeros({static_cast<int64_t>(outputSize())}, options);
 	for(size_t i = 0; i < models.size(); ++i)
 		output[models[i].classNum] = output[models[i].classNum] + static_cast<int64_t>(models[i].sweepSize);
 	return output;

@@ -87,7 +87,7 @@ static int write_null_bytes(mtar_t *tar, int n) {
 }
 
 
-static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
+static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh, long pos) {
   unsigned chksum1, chksum2;
 
   /* If the checksum starts with a null byte we assume the record is NULL */
@@ -110,6 +110,7 @@ static int raw_to_header(mtar_header_t *h, const mtar_raw_header_t *rh) {
   h->type = rh->type;
   strcpy(h->name, rh->name);
   strcpy(h->linkname, rh->linkname);
+  h->pos = pos;
 
   return MTAR_ESUCCESS;
 }
@@ -284,7 +285,7 @@ int mtar_read_header(mtar_t *tar, mtar_header_t *h) {
     return err;
   }
   /* Load raw header into header struct and return */
-  return raw_to_header(h, &rh);
+  return raw_to_header(h, &rh, tar->pos);
 }
 
 

@@ -82,11 +82,11 @@ template <> int train<EisGeneratorDataset>(const Config& config)
 	else if(!config.testFileName.empty())
 		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize/10, config.dataWidth, config.noise, config.probeModel, false);
 
-	if(testDataset && dataset->classesCount() != testDataset->classesCount())
+	if(testDataset && dataset->outputSize() != testDataset->outputSize())
 	{
 		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
-			<<"The traing dataset has "<<dataset->classesCount()
-			<<" and the test dataset has "<<testDataset->classesCount();
+			<<"The traing dataset has "<<dataset->outputSize()
+			<<" and the test dataset has "<<testDataset->outputSize();
 		return 1;
 	}
 
@@ -114,11 +114,11 @@ template <> int train<EisGeneratorDatasetNoise>(const Config& config)
 	else if(!config.testFileName.empty())
 		testDataset = new EisGeneratorDatasetNoise(config.testFileName, config.datasetSize/10, config.dataWidth, config.probeModel);
 
-	if(testDataset && dataset->classesCount() != testDataset->classesCount())
+	if(testDataset && dataset->outputSize() != testDataset->outputSize())
 	{
 		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
-		<<"The traing dataset has "<<dataset->classesCount()
-		<<" and the test dataset has "<<testDataset->classesCount();
+		<<"The traing dataset has "<<dataset->outputSize()
+		<<" and the test dataset has "<<testDataset->outputSize();
 		return 1;
 	}
 
@@ -164,11 +164,11 @@ template <> int train<EisDirDataset>(const Config& config)
 	if(!config.testFileName.empty())
 	{
 		testDataset = new EisDirDataset(config.testFileName);
-		if(dataset.classesCount() != testDataset->classesCount())
+		if(dataset.outputSize() != testDataset->outputSize())
 		{
 			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
-				<<"The traing dataset has "<<dataset.classesCount()
-				<<" and the test dataset has "<<testDataset->classesCount();
+				<<"The traing dataset has "<<dataset.outputSize()
+				<<" and the test dataset has "<<testDataset->outputSize();
 			return 1;
 		}
 	}
@@ -259,7 +259,7 @@ template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
 	Log(Log::INFO)<<"Training with"<<(trainDataset->isMulticlass() ? " muliclass" : "")<<
-		" dataset of size "<<trainDataset->size().value()<<" with "<<trainDataset->classesCount()<<" classes";
+		" dataset of size "<<trainDataset->size().value()<<" with "<<trainDataset->outputSize()<<" classes";
 	Log(Log::INFO)<<" Using weights:\n"<<trainDataset->classWeights()<<'\n';
 
 	std::unique_ptr<TrainLog> trainLog;
@@ -272,7 +272,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 	{
 		TrainLog::MetaData meta;
 		meta.model = trainModeToStr(config.mode);
-		meta.classNumber = trainDataset->classesCount();
+		meta.classNumber = trainDataset->outputSize();
 		meta.multiClass = trainDataset->isMulticlass();
 		meta.learingRate = config.learingRate;
 		meta.extraLayers = config.extraLayers;
@@ -289,14 +289,14 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		case MODE_ANN:
 		{
 			Log(Log::INFO)<<"Training classification network with simple net";
-			std::shared_ptr<ann::Net> net(new ann::SimpleNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(config.dataWidth, trainDataset->outputSize(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_ANN_CONV:
 		{
 			Log(Log::INFO)<<"Training classification network with conv net";
-			std::shared_ptr<ann::Net> net(new ann::ConvNet(config.dataWidth, trainDataset->classesCount(), 4, config.extraLayers, true));
+			std::shared_ptr<ann::Net> net(new ann::ConvNet(config.dataWidth, trainDataset->outputSize(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
@@ -305,7 +305,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			try
 			{
 				Log(Log::INFO)<<"Training classification network with script net loaded from "<<config.scriptPath;
-				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, config.dataWidth, trainDataset->classesCount()));
+				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, config.dataWidth, trainDataset->outputSize()));
 				ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			}
 			catch(const ann::ScriptNet::load_errror& err)
@@ -330,9 +330,9 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(trainDataset).name()<<" to train regression as this is not a regression dataset";
 				exit(1);
 			}
-			Log(Log::INFO)<<"Training regression network "<<trainDataset->get(0).data.size(0)<<' '<<trainDataset->classesCount();
-			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->get(0).data.size(0),
-															 trainDataset->classesCount(), 4, config.extraLayers, false));
+			Log(Log::INFO)<<"Training regression network "<<trainDataset->inputSize()<<' '<<trainDataset->outputSize();
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->inputSize(),
+															 trainDataset->outputSize(), 4, config.extraLayers, false));
 			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
 			break;
 		}
@@ -345,8 +345,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(trainDataset).name()<<" to train regression as this is not a regression dataset";
 				exit(1);
 			}
-			Log(Log::INFO)<<"Training regression script network "<<trainDataset->get(0).data.size(0)<<' '<<trainDataset->classesCount();
-			std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, false, trainDataset->get(0).data.size(0), trainDataset->classesCount()));
+			Log(Log::INFO)<<"Training regression script network "<<trainDataset->inputSize()<<' '<<trainDataset->outputSize();
+			std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, false, trainDataset->inputSize(), trainDataset->outputSize()));
 			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
 			break;
 		}

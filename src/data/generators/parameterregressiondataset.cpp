@@ -79,7 +79,7 @@ std::string ParameterRegressionDatasetGenerator::dataLabel() const
 	return drt ? "DRT" : EisDataset::dataLabel();
 }
 
-size_t ParameterRegressionDatasetGenerator::classesCount() const
+size_t ParameterRegressionDatasetGenerator::outputSize() const
 {
 	return parameterCount;
 }
@@ -110,7 +110,7 @@ std::string ParameterRegressionDatasetGenerator::modelStringForClass(size_t clas
 
 std::pair<torch::Tensor, torch::Tensor> ParameterRegressionDatasetGenerator::getTargetScalesAndBias()
 {
-	eis::Model model(modelStringForClass(classesCount()+1));
+	eis::Model model(modelStringForClass(outputSize()+1));
 	std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
 	torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
 	torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));

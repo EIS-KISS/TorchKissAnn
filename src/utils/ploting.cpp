@@ -6,7 +6,7 @@
 #ifdef ENABLE_PLOTTING
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-				std::valarray<double> xData, std::valarray<double> yData, bool square)
+				std::valarray<double> xData, std::valarray<double> yData, bool square, bool log)
 {
 	sciplot::Plot2D plot;
 	plot.xlabel(xLabel);
@@ -28,6 +28,8 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 
 	plot.xrange(xMin, xMax);
 	plot.yrange(yMin, yMax);
+	if(log)
+		plot.ytics().logscale(10);
 
 	plot.drawCurve(xData, yData);
 	plot.legend().hide();

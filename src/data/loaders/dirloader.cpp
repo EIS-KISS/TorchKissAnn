@@ -14,8 +14,8 @@
 
 using namespace eis;
 
-EisDirDataset::EisDirDataset(const std::string& dirName, int64_t outputSizeI):
-outputSize(outputSizeI)
+EisDirDataset::EisDirDataset(const std::string& dirName, int64_t inputSizeI):
+inputSize(inputSizeI)
 {
 	const std::filesystem::path directoryPath{dirName};
 	if(!std::filesystem::is_directory(dirName))
@@ -85,7 +85,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t
 		assert(false);
 	}
 
-	filterData(data.data, outputSize);
+	filterData(data.data, inputSize);
 
 	torch::Tensor input = eisToTorch(data.data);
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
@@ -96,7 +96,7 @@ size_t EisDirDataset::classForIndex(size_t index)
 	return fileNames[index].classNum;
 }
 
-size_t EisDirDataset::classesCount() const
+size_t EisDirDataset::outputSize() const
 {
 	size_t classes = 0;
 	for(const FileNameStr& str : fileNames)
@@ -115,7 +115,7 @@ c10::optional<size_t> EisDirDataset::size() const
 
 torch::Tensor EisDirDataset::modelWeights()
 {
-	size_t classes = classesCount();
+	size_t classes = outputSize();
 
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
@@ -144,7 +144,7 @@ torch::Tensor EisDirDataset::classCounts()
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	torch::Tensor out = torch::zeros({static_cast<int64_t>(classesCount())}, options);
+	torch::Tensor out = torch::zeros({static_cast<int64_t>(outputSize())}, options);
 
 	for(const FileNameStr& file : fileNames)
 		out[file.classNum] = out[file.classNum] + 1;

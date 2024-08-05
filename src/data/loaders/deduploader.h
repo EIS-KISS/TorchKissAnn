@@ -37,7 +37,7 @@ public:
 
 	torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
-	virtual size_t classesCount() const override;
+	virtual size_t outputSize() const override;
 	virtual torch::Tensor classWeights() override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual bool isMulticlass() {return true;}

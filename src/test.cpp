@@ -94,7 +94,7 @@ bool testEisGeneratorDataset()
 {
 	EisGeneratorDataset* dataset = EisGeneratorDataset::newDefaultDataset(100, 1e3, 0, false);
 	Log(Log::INFO)<<__func__<<" size: "<<dataset->size().value();
-	Log(Log::INFO)<<__func__<<" classes: "<<dataset->classesCount();
+	Log(Log::INFO)<<__func__<<" classes: "<<dataset->outputSize();
 
 	delete dataset;
 	return true;
@@ -104,9 +104,9 @@ bool reexportDirDataset()
 {
 	EisDirDataset dataset("realDataset/train");
 	Log(Log::INFO)<<__func__<<" size: "<<dataset.size().value();
-	Log(Log::INFO)<<__func__<<" classes: "<<dataset.classesCount();
+	Log(Log::INFO)<<__func__<<" classes: "<<dataset.outputSize();
 	torch::Tensor classCounts = dataset.classCounts();
-	for(size_t i = 0; i < dataset.classesCount(); ++i)
+	for(size_t i = 0; i < dataset.outputSize(); ++i)
 		Log(Log::INFO)<<__func__<<" class "<<i<<", "<<classCounts[i].item().to<int64_t>()<<" examples: "<<dataset.modelStringForClass(i);
 	bool ret = saveDataset<EisDirDataset>("datasetexport", &dataset);
 	if(!ret)

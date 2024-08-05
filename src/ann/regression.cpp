@@ -73,12 +73,12 @@ static double tryConfiguration(const Configuration config)
 	if(config.conv)
 	{
 		net = std::shared_ptr<ann::Net>(new ann::ConvNet(dataset.get(0).data.numel(),
-		                                dataset.classesCount(), config.downsampleSteps, config.extraSteps, false));
+		                                dataset.outputSize(), config.downsampleSteps, config.extraSteps, false));
 	}
 	else
 	{
 		net = std::shared_ptr<ann::Net>(new ann::SimpleNet(dataset.get(0).data.numel(),
-		                                dataset.classesCount(), config.downsampleSteps, config.extraSteps, false));
+		                                dataset.outputSize(), config.downsampleSteps, config.extraSteps, false));
 	}
 
 	double out;

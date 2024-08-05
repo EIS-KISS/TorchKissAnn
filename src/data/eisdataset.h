@@ -16,7 +16,7 @@ private:
 
 public:
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
-	virtual size_t classesCount() const = 0;
+	virtual size_t outputSize() const = 0;
 	virtual c10::optional<size_t> size() const override = 0;
 	virtual size_t classForIndex(size_t index) = 0;
 	virtual std::string modelStringForClass(size_t classNum);
@@ -24,8 +24,10 @@ public:
 	bool createLabelMap(const ann::Net& net);
 	virtual torch::Tensor classCounts();
 	virtual torch::Tensor classWeights();
+	virtual size_t inputSize();
 	virtual c10::optional<torch::Tensor> freqRange();
 	virtual std::string dataLabel() const;
+	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
 };
 
 template <typename DataSelf>
@@ -49,10 +51,10 @@ bool EisDataset<DataSelf>::isMulticlass()
 template <typename DataSelf>
 bool EisDataset<DataSelf>::createLabelMap(const ann::Net& net)
 {
-	if(classesCount() > net.getOutputLabels().size())
+	if(outputSize() > net.getOutputLabels().size())
 		return false;
 
-	for(int64_t i = 0; i < classesCount(); ++i)
+	for(int64_t i = 0; i < outputSize(); ++i)
 	{
 		std::string model = modelStringForClass(i);
 		for(int64_t j = 0; j < net.getOutputLabels().size(); ++j)
@@ -69,7 +71,7 @@ bool EisDataset<DataSelf>::createLabelMap(const ann::Net& net)
 		}
 	}
 
-	if(labelMap.size() != classesCount())
+	if(labelMap.size() != outputSize())
 		return false;
 	return true;
 }
@@ -91,12 +93,12 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::get(siz
 template <typename DataSelf>
 torch::Tensor EisDataset<DataSelf>::classCounts()
 {
-	assert(classesCount() > 0);
+	assert(outputSize() > 0);
 	torch::TensorOptions options;
 	options = options.dtype(torch::kFloat32);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
-	return torch::ones({static_cast<int64_t>(classesCount())}, options);
+	return torch::ones({static_cast<int64_t>(outputSize())}, options);
 }
 
 template <typename DataSelf>
@@ -116,4 +118,17 @@ template <typename DataSelf>
 c10::optional<torch::Tensor> EisDataset<DataSelf>::freqRange()
 {
 	return c10::optional<torch::Tensor>();
+}
+
+template <typename DataSelf>
+size_t EisDataset<DataSelf>::inputSize()
+{
+	torch::data::Example<torch::Tensor, torch::Tensor> example = getImpl(0);
+	return example.data.numel();
+}
+
+template <typename DataSelf>
+std::vector<std::pair<std::string, int64_t>> EisDataset<DataSelf>::extraInputs()
+{
+	return std::vector<std::pair<std::string, int64_t>>();
 }

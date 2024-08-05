@@ -34,19 +34,19 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 
 	ss<<"Name,\tSize,\tClass Count,\tMulitclass\n";
 	ss<<typeid(DataSetType).name()<<",\t"<<dataset->size().value()
-	  <<",\t"<<dataset->classesCount()<<",\t"<<dataset->isMulticlass()<<'\n';
+	  <<",\t"<<dataset->outputSize()<<",\t"<<dataset->isMulticlass()<<'\n';
 
-	for(size_t i = 0; i < dataset->classesCount(); ++i)
+	for(size_t i = 0; i < dataset->outputSize(); ++i)
 	{
 		ss<<i;
-		if(i+1 < dataset->classesCount())
+		if(i+1 < dataset->outputSize())
 			ss<<",\t";
 	}
 	ss<<'\n';
-	for(size_t i = 0; i < dataset->classesCount(); ++i)
+	for(size_t i = 0; i < dataset->outputSize(); ++i)
 	{
 		ss<<dataset->modelStringForClass(i);
-		if(i+1 < dataset->classesCount())
+		if(i+1 < dataset->outputSize())
 			ss<<",\t";
 	}
 	ss<<'\n';
@@ -62,11 +62,11 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		if(!std::filesystem::create_directory(outDir))
 			return false;
 	}
-	size_t classesCount = dataset->classesCount();
+	size_t outputSize = dataset->outputSize();
 
-	for(size_t i = 0; i < classesCount; ++i)
+	for(size_t i = 0; i < outputSize; ++i)
 	{
-		Log(Log::INFO)<<"Processing class "<<i+1<<" of "<<classesCount;
+		Log(Log::INFO)<<"Processing class "<<i+1<<" of "<<outputSize;
 		ClassExtractorDataset<DataSetType> extractedClass(dataset, i);
 
 		sciplot::Plot2D plot;

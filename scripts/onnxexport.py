@@ -83,6 +83,40 @@ def exportModel(model, meta, outname: str, train: bool = False) -> str:
 			value = value + "class_" + str(i) + ','
 		onnxmeta.value = value[:-1]
 
+	if 'outputBiases' in meta and len(meta['outputBiases']) == meta['outputSize'] and not checkCompositContainer(onnx_model.metadata_props, 'outputBiases'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'outputBiases'
+		biases = ""
+		for bias in meta['outputBiases']:
+			biases = biases + str(bias) + ','
+		onnxmeta.value = biases[:-1]
+
+	if 'outputScalars' in meta and len(meta['outputScalars']) == meta['outputSize'] and not checkCompositContainer(onnx_model.metadata_props, 'outputScalars'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'outputScalars'
+		scalars = ""
+		for scalar in meta['outputScalars']:
+			scalars = scalars + str(scalar) + ','
+		onnxmeta.value = scalars[:-1]
+
+	assert 'extraInputs' not in meta or 'extraInputLengths' in meta
+
+	if 'extraInputs' in meta and not checkCompositContainer(onnx_model.metadata_props, 'extraInputs'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'extraInputs'
+		inputs = ""
+		for einput in meta['extraInputs']:
+			inputs = inputs + str(einput) + ','
+		onnxmeta.value = inputs[:-1]
+
+	if 'extraInputLengths' in meta and not checkCompositContainer(onnx_model.metadata_props, 'extraInputLengths'):
+		onnxmeta = onnx_model.metadata_props.add()
+		onnxmeta.key = 'extraInputLengths'
+		inputs = ""
+		for einput in meta['extraInputLengths']:
+			inputs = inputs + str(einput) + ','
+		onnxmeta.value = inputs[:-1]
+
 	if not checkCompositContainer(onnx_model.metadata_props, 'softmax'):
 		onnxmeta = onnx_model.metadata_props.add()
 		onnxmeta.key = "softmax"

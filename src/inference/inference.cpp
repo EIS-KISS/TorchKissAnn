@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <eisgenerator/basicmath.h>
 #include <eisgenerator/eistype.h>
+#include <eisgenerator/spectra.h>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -43,12 +44,18 @@ bool yesNoPrompt(std::string msg)
 	}
 }
 
-std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
+std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(const std::string& fileName, FileType type, const std::vector<std::pair<std::string, int64_t>>& extraInputs)
 {
 	if(fileName.empty())
 	{
 		Log(Log::ERROR)<<"A spectrum must be supplied";
-		return std::vector<eis::DataPoint>();
+		return {std::vector<eis::DataPoint>(), std::vector<fvalue>()};
+	}
+
+	if(!extraInputs.empty() && type != FILE_TYPE_CSV)
+	{
+		Log(Log::ERROR)<<"This network requires extra inputs besides EIS spectra, but only the csv file type supports extra inputs";
+		return {std::vector<eis::DataPoint>(), std::vector<fvalue>()};
 	}
 
 	switch(type)
@@ -65,35 +72,55 @@ std::vector<eis::DataPoint> grabData(const std::string& fileName, FileType type)
 						<<"This is not supported, only the first element of the sweep will be used";
 				}
 				eis::Range omega(1, 1e6, DATA_WIDTH/2, true);
-				return model.executeSweep(omega);
+				return {model.executeSweep(omega), {}};
 			}
 			catch(const eis::parse_errror& err)
 			{
 				Log(Log::ERROR)<<"Could not load parse "<<fileName<<": "<<err.what();
-				return std::vector<eis::DataPoint>();
+				return {{}, {}};
 			}
 		case FILE_TYPE_CSV:
 			try
 			{
-				return eis::EisSpectra::loadFromDisk(fileName).data;
+				eis::EisSpectra spectra = eis::EisSpectra::loadFromDisk(fileName);
+				std::vector<eis::DataPoint> data = spectra.data;
+				std::vector<fvalue> extra;
+
+				for(const std::pair<std::string, int64_t>& input : extraInputs)
+				{
+					if(input.second != 1)
+					{
+						Log(Log::ERROR)<<"This network requires the extra input \""<<input.first
+							<<"\" with a length of "<<input.second<<" but this type of file can only provide extra inputs of length 1";
+						return {{}, {}};
+					}
+					auto search = std::find(spectra.labelNames.begin(), spectra.labelNames.end(), input.first);
+					if(search == spectra.labelNames.end())
+					{
+						Log(Log::ERROR)<<"This network requires the extra input \""<<input.first<<"\" but the provided csv file dose not contain this";
+						return {{}, {}};
+					}
+					extra.push_back(static_cast<fvalue>(spectra.labels[search-spectra.labelNames.begin()]));
+				}
+				return {data, extra};
 			}
 			catch(const eis::file_error& ex)
 			{
 				Log(Log::ERROR)<<"Could not load file(s): "<<ex.what();
-				return std::vector<eis::DataPoint>();
+				return {{}, {}};
 			}
 		case FILE_TYPE_MPT:
-			return loaders::mpt(fileName);
+			return {loaders::mpt(fileName), {}};
 		case FILE_TYPE_GAN:
 		{
 			torch::Tensor data = gan::generate(fileName);
-			return torchToEis(data);
+			return {torchToEis(data), {}};
 		}
 		case FILE_TYPE_RELAXIS:
 		case FILE_TYPE_INVALID:
 		default:
 			Log(Log::ERROR)<<type<<" is not a valid file type";
-			return std::vector<eis::DataPoint>();
+			return {{}, {}};
 	}
 }
 
@@ -161,7 +188,7 @@ torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net>
 	options = options.batch_size(batch_size).workers(JOBS);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 	return ann::classification::test(network, *dataLoader, dataset.size().value(),
-									 dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
+									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 }
 
 torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
@@ -171,7 +198,7 @@ torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> 
 	options = options.batch_size(batch_size).workers(JOBS);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 	return ann::classification::test(network, *dataLoader, dataset.size().value(),
-									 dataset.classesCount(), dataset.classWeights(), dataset.isMulticlass());
+									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 }
 
 int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
@@ -281,7 +308,7 @@ static int confusionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 {
-	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, net->getExtraInputs()).first;
 
 	if(net->getPurpose() != "Classifier")
 	{
@@ -336,9 +363,9 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 
 int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
-	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> data = grabData(config.spectraFileName, config.fileType, net->getExtraInputs());
 
-	if(data.empty())
+	if(data.first.empty())
 		return 3;
 
 	std::vector<std::string> purposeTokens = tokenize(net->getPurpose(), ',');
@@ -354,17 +381,17 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 	Log(Log::INFO)<<"Running parameter regression for "<<targetModelStr;
 
-	Log(Log::DEBUG)<<"data size: "<<data.size();
+	Log(Log::DEBUG)<<"data size: "<<data.first.size();
 
-	if(static_cast<int64_t>(data.size())*2 != net->getInputSize())
+	if(static_cast<int64_t>(data.first.size()*2 + data.second.size()) != net->getInputSize())
 	{
 		Log(Log::INFO)<<"Network trained for an input size of "<<net->getInputSize()
-		<<" supplied data has a size of "<<data.size()*2<<" and will be rescaled";
+		<<" supplied data has a size of "<<data.first.size()*2<<" and will be rescaled";
 
-		data = eis::rescale(data, net->getInputSize()/2);
+		data.first = eis::rescale(data.first, net->getInputSize()/2 - data.second.size());
 	}
-	torch::Tensor input = eisToTorch(data).to(*offload_device);
-	Log(Log::DEBUG)<<"input tensor size: "<<input.numel();
+	torch::Tensor input = eisToTorchExtra(data.first, data.second).to(*offload_device);
+	Log(Log::DEBUG)<<"input: "<<input;
 
 	torch::Tensor output = ann::regression::use(input, net).to(torch::kCPU);
 
@@ -388,7 +415,7 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 int showPipe(const Config& config)
 {
-	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, {}).first;
 	if(data.empty())
 		return 3;
 	printDataVect(data);
@@ -397,7 +424,7 @@ int showPipe(const Config& config)
 
 int reexportPipe(const Config& config)
 {
-	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType);
+	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, {}).first;
 	if(data.empty())
 		return 3;
 	filterData(data, DATA_WIDTH);

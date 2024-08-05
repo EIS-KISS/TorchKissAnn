@@ -7,6 +7,7 @@
 
 torch::Tensor eisToComplexTensor(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs = nullptr);
 torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor* freqs = nullptr);
+torch::Tensor eisToTorchExtra(const std::vector<eis::DataPoint>& data, std::vector<fvalue> extraInputs = {});
 std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input);
 torch::Tensor fvalueVectorToTensor(std::vector<fvalue>& vect);
 

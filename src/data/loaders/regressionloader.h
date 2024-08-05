@@ -30,7 +30,7 @@ public:
 	ParameterRegressionDatasetLoader& operator=(const ParameterRegressionDatasetLoader& in);
 	~ParameterRegressionDatasetLoader();
 
-	virtual size_t classesCount() const override;
+	virtual size_t outputSize() const override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual c10::optional<size_t> size() const override;

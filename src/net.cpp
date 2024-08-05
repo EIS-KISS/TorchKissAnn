@@ -59,6 +59,25 @@ ann::Net::Net(const Json::Value& node)
 		}
 	}
 
+	if(node.isMember("extraInputs") && !node.isMember("extraInputLengths"))
+	{
+		Log(Log::WARN)<<"network as extra inputs but not extra input lengths";
+	}
+	else if(node.isMember("extraInputs") && node.isMember("extraInputLengths"))
+	{
+		Json::Value inputs = node["extraInputs"];
+		Json::Value lengths = node["extraInputLengths"];
+		if(!inputs.isArray() || !lengths.isArray() || lengths.size() != inputs.size())
+		{
+			Log(Log::WARN)<<"Could not get output extra inputs for network";
+		}
+		else
+		{
+			for(Json::ArrayIndex i = 0; i < inputs.size(); ++i)
+				extraInputs.push_back({inputs.asString(), lengths[i].asInt64()});
+		}
+	}
+
 	outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
 	if(node.isMember("outputScalars"))
 	{
@@ -131,6 +150,21 @@ void ann::Net::getConfiguration(Json::Value& node)
 		for(size_t i = 0; i < outputLabels.size(); ++i)
 			labels[static_cast<int>(i)] = outputLabels[i];
 		node["outputLabels"] = labels;
+	}
+
+	if(!extraInputs.empty())
+	{
+		Json::Value inputs(Json::ValueType::arrayValue);
+		Json::Value lengths(Json::ValueType::arrayValue);
+		inputs.resize(extraInputs.size());
+		lengths.resize(extraInputs.size());
+		for(size_t i = 0; i < inputs.size(); ++i)
+		{
+			inputs[static_cast<int>(i)] = extraInputs[i].first;
+			lengths[static_cast<int>(i)] = extraInputs[i].second;
+		}
+		node["extraInputs"] = inputs;
+		node["extraInputLengths"] = lengths;
 	}
 
 	Json::Value scalars(Json::ValueType::arrayValue);
@@ -238,4 +272,14 @@ void ann::Net::setPurpose(const std::string& str)
 void ann::Net::setInputLabel(const std::string& str)
 {
 	inputLabel = str;
+}
+
+void ann::Net::setExtraInputs(const std::vector<std::pair<std::string, int64_t>>& in)
+{
+	extraInputs = in;
+}
+
+std::vector<std::pair<std::string, int64_t>> ann::Net::getExtraInputs()
+{
+	return extraInputs;
 }

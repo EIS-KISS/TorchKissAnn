@@ -16,6 +16,7 @@ public RegressionDataset<CoinCellHellLoader>
 		long step;
 		int substep;
 		int cellid;
+		int cell_group;
 		float temparature;
 		float ocv;
 		int charge_cycles;
@@ -25,14 +26,16 @@ public RegressionDataset<CoinCellHellLoader>
 		float last_cap;
 		long last_cap_step;
 		float soc;
+		float soc_estimate;
+		float cap_estimate;
 	};
 
 private:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
-	std::vector<std::pair<std::filesystem::path, size_t>> files;
+	std::vector<mtar_header_t> files;
 	std::filesystem::path path;
-	mtar_t tar;
+	mtar_t tar = {};
 	std::vector<int64_t> dataSizes = {};
 
 	eis::EisSpectra loadSpectra(size_t index);
@@ -44,7 +47,7 @@ public:
 	CoinCellHellLoader& operator=(const CoinCellHellLoader& in);
 	~CoinCellHellLoader();
 
-	virtual size_t classesCount() const override;
+	virtual size_t outputSize() const override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual c10::optional<size_t> size() const override;
@@ -52,4 +55,5 @@ public:
 	virtual std::string dataLabel() const override;
 	virtual c10::optional<torch::Tensor> freqRange() override;
 	virtual std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBias() override;
+	virtual std::vector<std::pair<std::string, int64_t>> extraInputs() override;
 };

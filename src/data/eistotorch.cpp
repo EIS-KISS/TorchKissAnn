@@ -65,6 +65,12 @@ torch::Tensor eisToTorch(const std::vector<eis::DataPoint>& data, torch::Tensor*
 	return input;
 }
 
+torch::Tensor eisToTorchExtra(const std::vector<eis::DataPoint>& data, std::vector<fvalue> extraInputs)
+{
+	torch::Tensor extra = torch::from_blob(extraInputs.data(), {static_cast<int64_t>(extraInputs.size())}, tensorOptCpu<fvalue>(false)).clone();
+	return torch::cat({eisToTorch(data), extra}, 0).detach();
+}
+
 std::vector<eis::DataPoint> torchToEis(const torch::Tensor& input)
 {
 	assert(input.numel() % 2 == 0);

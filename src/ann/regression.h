@@ -42,13 +42,13 @@ std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBiases(const std::stri
 template <typename DataLoader, typename LossFn>
 int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, int64_t classesCount, TrainLog* log = nullptr, double* finalLoss = nullptr)
+			size_t data_size, int64_t outputSize, TrainLog* log = nullptr, double* finalLoss = nullptr)
 {
 	size_t index = 0;
 	network->train();
 
 	float lossAccumulator = 0;
-	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
+	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
 	int64_t loginterval = data_size/10000 ?: data_size/batch_size-1;
 
@@ -62,7 +62,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = (batch.target.to(*offload_device)-network->getOutputBiases())/network->getOutputScalars();
 
-		torch::Tensor prediction = network->forward(data)+0.5;
+		torch::Tensor prediction = network->forward(data);
 
 		parameters.push_back(network->named_parameters(true));
 		for(torch::OrderedDict<std::string, torch::Tensor>::Item& parameter : parameters.back())
@@ -138,13 +138,13 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 
 template <typename DataLoader, typename LossFn>
 torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size,
-				   int64_t classesCount, size_t epoch = 0, TrainLog* log = nullptr)
+				   int64_t outputSize, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard noGrad;
 
 	float lossAccumulator = 0;
-	torch::Tensor distanceAccumulator = torch::zeros({classesCount}, torch::TensorOptions().dtype(torch::kFloat32));
+	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32));
 
 	for(const auto& batch : loader)
 	{
@@ -156,7 +156,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& los
 		torch::Tensor loss = lossFn(output, targets);
 		lossAccumulator += loss.template item<float>();
 
-		distanceAccumulator += torch::pow(output-targets, 2*torch::ones({100, classesCount}, torch::TensorOptions().dtype(torch::kFloat32)));
+		distanceAccumulator += torch::pow(output-targets, 2*torch::ones({100, outputSize}, torch::TensorOptions().dtype(torch::kFloat32)));
 	}
 
 	std::cout<<"Parameter predictions:\n"<<torch::sqrt(distanceAccumulator);
@@ -177,13 +177,13 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	static constexpr double LOSS_FINISH_DECADE = 6;
 	static constexpr int64_t LOSS_POINT_COUNT = 3;
 
-	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->classesCount()));
+	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	assert(net->getInputSize() == trainDataset->get(0).data.size(0));
 	assert(trainDataset->isMulticlass());
 	assert(!net->hasSoftmaxOutput());
 	if(testDataset)
 	{
-		assert(trainDataset->classesCount() == testDataset->classesCount());
+		assert(trainDataset->outputSize() == testDataset->outputSize());
 		assert(testDataset->isMulticlass());
 	}
 	else
@@ -198,7 +198,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	net->setOutputBiases(scalarAndBias.second);
 
 	std::stringstream purpose;
-	std::string modelString = trainDataset->modelStringForClass(trainDataset->classesCount()+1);
+	std::string modelString = trainDataset->modelStringForClass(trainDataset->outputSize()+1);
 	purpose<<"Regression,"<<modelString<<std::scientific;
 	if(trainDataset->freqRange().has_value())
 	{
@@ -210,6 +210,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		Log(Log::WARN)<<"Dataset dosent give a frequency range";
 	}
 	net->setPurpose(purpose.str());
+	net->setExtraInputs(trainDataset->extraInputs());
 
 	net->to(*offload_device);
 
@@ -262,16 +263,16 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		if(lossEis)
 			 ret = trainImpl(net, *trainDataLoader,
 				*lossEis, optimizer, epoch, trainDataset->size().value(),
-				trainDataset->classesCount(), trainLog, finalLoss);
+				trainDataset->outputSize(), trainLog, finalLoss);
 		else
 			ret = trainImpl(net, *trainDataLoader,
 							*lossMse, optimizer, epoch, trainDataset->size().value(),
-							trainDataset->classesCount(), trainLog, finalLoss);
+							trainDataset->outputSize(), trainLog, finalLoss);
 		if(ret != 0)
 			return -1;
 
 		if(testDataset)
-			test(net, *testDataLoader, *lossMse, testDataset->size().value(), trainDataset->classesCount(), epoch, trainLog);
+			test(net, *testDataLoader, *lossMse, testDataset->size().value(), trainDataset->outputSize(), epoch, trainLog);
 
 		if(trainLog)
 			trainLog->saveNetwork(net);

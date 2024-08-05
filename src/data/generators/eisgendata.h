@@ -3,11 +3,9 @@
 #include <cstdint>
 #include <cstddef>
 #include <vector>
-#include <optional>
 #include <eisgenerator/model.h>
 #include <string>
 #include <data/eisdataset.h>
-#include <set>
 #include <filesystem>
 #include <memory>
 
@@ -61,7 +59,7 @@ public:
 
 	virtual torch::Tensor classWeights() override;
 	virtual torch::Tensor classCounts() override;
-	virtual size_t classesCount() const override;
+	virtual size_t outputSize() const override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual c10::optional<size_t> size() const override;

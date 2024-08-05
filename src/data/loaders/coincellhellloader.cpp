@@ -3,6 +3,7 @@
 
 #include <ATen/ops/maximum.h>
 #include <cassert>
+#include <cstdint>
 #include <eisgenerator/eistype.h>
 #include <eisgenerator/model.h>
 #include <sstream>
@@ -31,7 +32,7 @@ CoinCellHellLoader::CoinCellHellLoader(const std::filesystem::path& pathI): path
 		if(header.type == MTAR_TREG)
 		{
 			std::filesystem::path path = header.name;
-			files.push_back({path, header.size});
+			files.push_back(header);
 			prevPath = path;
 		}
 		ret = mtar_next(&tar);
@@ -68,7 +69,8 @@ CoinCellHellLoader& CoinCellHellLoader::operator=(const CoinCellHellLoader& in)
 
 CoinCellHellLoader::~CoinCellHellLoader()
 {
-	mtar_close(&tar);
+	if(tar.stream)
+		mtar_close(&tar);
 }
 
 std::string CoinCellHellLoader::dataLabel() const
@@ -78,21 +80,14 @@ std::string CoinCellHellLoader::dataLabel() const
 
 eis::EisSpectra CoinCellHellLoader::loadSpectra(size_t index)
 {
-	mtar_header_t header;
-	int ret = mtar_find(&tar, files[index].first.c_str(), &header);
+	Log(Log::DEBUG)<<"Reading \""<<files[index].name<<"\" of length "<<files[index].size<<" from tar";
+	char* filebuffer = new char[files[index].size+1];
+	filebuffer[files[index].size] = '\0';
+	int ret = mtar_seek(&tar, files[index].pos);
+	ret = mtar_read_data(&tar, filebuffer, files[index].size);
 	if(ret != 0)
 	{
-		Log(Log::ERROR)<<"Unable to find "<<files[index].first<<" in tar archive";
-		assert(ret == 0);
-	}
-
-	Log(Log::DEBUG)<<"Reading \""<<files[index].first.c_str()<<"\" of length "<<header.size<<'/'<<files[index].second<<" from tar";
-	char* filebuffer = new char[header.size+1];
-	filebuffer[header.size] = '\0';
-	ret = mtar_read_data(&tar, filebuffer, header.size);
-	if(ret != 0)
-	{
-		Log(Log::ERROR)<<"Unable to read "<<files[index].first<<" from tar archive";
+		Log(Log::ERROR)<<"Unable to read "<<files[index].name<<" from tar archive";
 		assert(ret == 0);
 	}
 	std::stringstream ss(filebuffer);
@@ -116,6 +111,8 @@ CoinCellHellLoader::Metadata CoinCellHellLoader::loadMetadata(const eis::EisSpec
 			metadata.last_cap_step = spectra.labels[i];
 		else if(spectra.labelNames[i].find("step") != std::string::npos)
 			metadata.step = spectra.labels[i];
+		else if(spectra.labelNames[i].find("cell_group") != std::string::npos)
+			metadata.cell_group = spectra.labels[i];
 		else if(spectra.labelNames[i].find("cellid") != std::string::npos)
 			metadata.cellid = spectra.labels[i];
 		else if(spectra.labelNames[i].find("temparature") != std::string::npos)
@@ -130,8 +127,12 @@ CoinCellHellLoader::Metadata CoinCellHellLoader::loadMetadata(const eis::EisSpec
 			metadata.last_avg_cap = spectra.labels[i];
 		else if(spectra.labelNames[i].find("last_cap") != std::string::npos)
 			metadata.last_cap = spectra.labels[i];
+		else if(spectra.labelNames[i].find("soc_estimate") != std::string::npos)
+			metadata.soc_estimate = spectra.labels[i];
 		else if(spectra.labelNames[i].find("soc") != std::string::npos)
 			metadata.soc = spectra.labels[i];
+		else if(spectra.labelNames[i].find("cap_estimate") != std::string::npos)
+			metadata.cap_estimate = spectra.labels[i];
 		else
 			Log(Log::WARN)<<__func__<<": unkown metadata label name '"<<spectra.labelNames[i]<<'\'';
 	}
@@ -143,30 +144,27 @@ torch::data::Example<torch::Tensor, torch::Tensor> CoinCellHellLoader::getImpl(s
 	eis::EisSpectra spectra = loadSpectra(index);
 	Metadata meta = loadMetadata(spectra);
 
-	if(meta.soc < 0)
-		return getImpl(index+1);
-
 	std::vector<eis::DataPoint> data = spectra.data;
-	data.push_back(eis::DataPoint({meta.ocv, 0}, 0));
-	torch::Tensor input = eisToTorch(spectra.data);
+	torch::Tensor input = eisToTorchExtra(data, {meta.ocv});
 
 	torch::TensorOptions options;
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kFloat32);
-	torch::Tensor output = torch::empty({static_cast<int64_t>(classesCount())}, options);
+	torch::Tensor output = torch::empty({static_cast<int64_t>(outputSize())}, options);
 
-	output[0] = meta.temparature;
-	output[1] = meta.charge_cycles;
-	output[2] = meta.thermal_cycles;
-	output[3] = meta.soc;
+	output[0] = meta.cell_group;
+	output[1] = meta.temparature;
+	output[2] = meta.charge_cycles;
+	output[3] = meta.thermal_cycles;
+	output[4] = meta.soc > 0 ? meta.soc : meta.soc_estimate;
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t CoinCellHellLoader::classesCount() const
+size_t CoinCellHellLoader::outputSize() const
 {
-	return 4;
+	return 5;
 }
 
 c10::optional<size_t> CoinCellHellLoader::size() const
@@ -185,12 +183,14 @@ std::string CoinCellHellLoader::modelStringForClass(size_t classNum)
 	switch(classNum)
 	{
 		case 0:
-			return "Temperature";
+			return "CellGroup";
 		case 1:
-			return "ChargeCycles";
+			return "Temperature";
 		case 2:
-			return "ThermalCycles";
+			return "ChargeCycles";
 		case 3:
+			return "ThermalCycles";
+		case 4:
 			return "SOC";
 		default:
 			return "CoincellHell";
@@ -219,8 +219,8 @@ c10::optional<torch::Tensor> CoinCellHellLoader::freqRange()
 
 std::pair<torch::Tensor, torch::Tensor> CoinCellHellLoader::getTargetScalesAndBias()
 {
-	torch::Tensor max = torch::zeros({static_cast<int>(classesCount())}, tensorOptCpu<fvalue>(false));
-	torch::Tensor min = torch::full({static_cast<int>(classesCount())}, std::numeric_limits<fvalue>::max(),  tensorOptCpu<fvalue>(false));
+	torch::Tensor max = torch::zeros({static_cast<int>(outputSize())}, tensorOptCpu<fvalue>(false));
+	torch::Tensor min = torch::full({static_cast<int>(outputSize())}, std::numeric_limits<fvalue>::max(),  tensorOptCpu<fvalue>(false));
 
 	for(size_t i = 0; i < size().value(); ++i)
 	{
@@ -229,4 +229,9 @@ std::pair<torch::Tensor, torch::Tensor> CoinCellHellLoader::getTargetScalesAndBi
 		min = torch::minimum(targets, min);
 	}
 	return {(max-min), min};
+}
+
+std::vector<std::pair<std::string, int64_t>> CoinCellHellLoader::extraInputs()
+{
+	return {{"ocv", 1}};
 }

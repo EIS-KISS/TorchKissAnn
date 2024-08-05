@@ -36,9 +36,9 @@ public:
 
 	}
 
-	virtual size_t classesCount() const override
+	virtual size_t outputSize() const override
 	{
-		return dataset_->classesCount();
+		return dataset_->outputSize();
 	}
 
 	virtual c10::optional<size_t> size() const override

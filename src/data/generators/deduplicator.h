@@ -53,7 +53,7 @@ public:
 		}
 
 		bool hasOrigin = (firstLineTokens.size() > 1 && firstLineTokens[1].find("originClass") != std::string::npos);
-		if(firstLineTokens.size()-1-hasOrigin != _dataset->classesCount())
+		if(firstLineTokens.size()-1-hasOrigin != _dataset->outputSize())
 		{
 			Log(Log::ERROR)<<"file "<<fileName<<" is not a deduplication file for the current dataset";
 			return;
@@ -66,7 +66,7 @@ public:
 		size_t datasetSize = dataset->size().value();
 		targets.resize(datasetSize);
 		for(size_t i = 0; i < datasetSize; ++i)
-			targets[i] = torch::zeros({static_cast<int64_t>(_dataset->classesCount())}, options);
+			targets[i] = torch::zeros({static_cast<int64_t>(_dataset->outputSize())}, options);
 
 		try
 		{
@@ -74,7 +74,7 @@ public:
 			{
 				std::string lineStr(line);
 				std::vector<std::string> tokens = tokenize(lineStr, ',');
-				if(tokens.size()-1-hasOrigin != _dataset->classesCount())
+				if(tokens.size()-1-hasOrigin != _dataset->outputSize())
 					return;
 				if(hasOrigin)
 					originClass.push_back(std::stoul(tokens[1]));
@@ -86,7 +86,7 @@ public:
 					continue;
 				}
 
-				for(size_t i = 0; i < _dataset->classesCount(); ++i)
+				for(size_t i = 0; i < _dataset->outputSize(); ++i)
 					targets[id][i] = std::stoul(tokens[1]);
 			}
 
@@ -106,7 +106,7 @@ public:
 
 		std::vector<std::unique_ptr<ClassExtractorDatasetHighSpeed<ParentType>>> classExtractorDatasets;
 
-		for(size_t i = 0; i < _dataset->classesCount(); ++i)
+		for(size_t i = 0; i < _dataset->outputSize(); ++i)
 		{
 			classExtractorDatasets.push_back(
 				std::unique_ptr<ClassExtractorDatasetHighSpeed<ParentType>>(new ClassExtractorDatasetHighSpeed<ParentType>(dataset, i)));
@@ -122,7 +122,7 @@ public:
 		torch::data::samplers::SequentialSampler> > > classLoaders;
 		//yes i know wtf
 
-		for(size_t i = 0; i < _dataset->classesCount(); ++i)
+		for(size_t i = 0; i < _dataset->outputSize(); ++i)
 		{
 			loaderOptions = loaderOptions.batch_size(std::min(classExtractorDatasets[i]->size().value()/(JOBS*2), batch_size));
 			classLoaders.push_back(torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
@@ -135,9 +135,9 @@ public:
 		options = options.device(torch::kCPU);
 
 		for(size_t i = 0; i < dataSetSize; ++i)
-			targets[i] = torch::zeros({static_cast<int64_t>(_dataset->classesCount())}, options);
+			targets[i] = torch::zeros({static_cast<int64_t>(_dataset->outputSize())}, options);
 
-		for(size_t classNum = 0; classNum < _dataset->classesCount()-1; ++classNum)
+		for(size_t classNum = 0; classNum < _dataset->outputSize()-1; ++classNum)
 		{
 			Log(Log::INFO)<<"Starting for Class "<<classNum;
 			size_t classSize = classExtractorDatasets[classNum]->size().value();
@@ -148,7 +148,7 @@ public:
 				targets[parentIndex][masterExample.target.template item<int8_t>()] = 1;
 
 				float smalest = std::numeric_limits<float>::max();
-				for(size_t testClassNum = classNum+1; testClassNum < _dataset->classesCount(); ++testClassNum)
+				for(size_t testClassNum = classNum+1; testClassNum < _dataset->outputSize(); ++testClassNum)
 				{
 					size_t batchStart = 0;
 					for(auto& batch : *classLoaders[testClassNum])
@@ -173,17 +173,17 @@ public:
 						batchStart += batch.data.size(0);
 					}
 				}
-				Log(Log::INFO)<<"Class "<<classNum<<" of "<<_dataset->classesCount()-1<<'\t'<<i<<'\\'<<classSize<<"\tsmallest match: "<<smalest;
+				Log(Log::INFO)<<"Class "<<classNum<<" of "<<_dataset->outputSize()-1<<'\t'<<i<<'\\'<<classSize<<"\tsmallest match: "<<smalest;
 			}
 			ready = true;
 		}
 
-		size_t classSize = classExtractorDatasets[_dataset->classesCount()-1]->size().value();
+		size_t classSize = classExtractorDatasets[_dataset->outputSize()-1]->size().value();
 		for(size_t i = 0; i < classSize; ++i)
 		{
-			Log(Log::INFO)<<"Class "<<_dataset->classesCount()-1<<" of "<<_dataset->classesCount()-1<<'\t'<<i<<'\\'<<classSize;
-			auto masterExample = classExtractorDatasets[_dataset->classesCount()-1]->get(i);
-			size_t parentIndex = classExtractorDatasets[_dataset->classesCount()-1]->getParentIndex(i);
+			Log(Log::INFO)<<"Class "<<_dataset->outputSize()-1<<" of "<<_dataset->outputSize()-1<<'\t'<<i<<'\\'<<classSize;
+			auto masterExample = classExtractorDatasets[_dataset->outputSize()-1]->get(i);
+			size_t parentIndex = classExtractorDatasets[_dataset->outputSize()-1]->getParentIndex(i);
 			targets[parentIndex][masterExample.target.template item<int8_t>()] = 1;
 		}
 	}
@@ -201,10 +201,10 @@ public:
 		}
 
 		file<<"id, originClass, ";
-		for(size_t i = 0; i < _dataset->classesCount(); ++i)
+		for(size_t i = 0; i < _dataset->outputSize(); ++i)
 		{
 			file<<"class"<<i;
-			if(i+1 < _dataset->classesCount())
+			if(i+1 < _dataset->outputSize())
 				file<<", ";
 		}
 		file<<"\n ";
@@ -212,10 +212,10 @@ public:
 		for(size_t i = 0; i < targets.size(); ++i)
 		{
 			file<<i<<", ";
-			for(size_t j = 0; j < _dataset->classesCount(); ++j)
+			for(size_t j = 0; j < _dataset->outputSize(); ++j)
 			{
 				file<<targets[i][j].item().to<int>();
-				if(j+1 < _dataset->classesCount())
+				if(j+1 < _dataset->outputSize())
 					file<<", ";
 			}
 			file<<'\n';
@@ -225,9 +225,9 @@ public:
 		return true;
 	}
 
-	virtual size_t classesCount() const override
+	virtual size_t outputSize() const override
 	{
-		return _dataset->classesCount();
+		return _dataset->outputSize();
 	}
 
 	virtual c10::optional<size_t> size() const override
