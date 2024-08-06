@@ -50,7 +50,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
-	int64_t loginterval = data_size/10000 ?: data_size/batch_size-1;
+	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10;
 
 	std::vector<torch::OrderedDict<std::string, torch::Tensor>> parameters;
 
@@ -137,36 +137,31 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 }
 
 template <typename DataLoader, typename LossFn>
-torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size,
+void test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size,
 				   int64_t outputSize, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard noGrad;
 
 	float lossAccumulator = 0;
-	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32));
 
+	size_t index = 0;
 	for(const auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
-		torch::Tensor targets = batch.target.to(*offload_device);
+		torch::Tensor targets = (batch.target.to(*offload_device)-network->getOutputBiases())/network->getOutputScalars();
 
 		torch::Tensor output = network->forward(data);
 
 		torch::Tensor loss = lossFn(output, targets);
-		lossAccumulator += loss.template item<float>();
 
-		distanceAccumulator += torch::pow(output-targets, 2*torch::ones({100, outputSize}, torch::TensorOptions().dtype(torch::kFloat32)));
+		lossAccumulator += loss.template item<float>();
+		index++;
 	}
 
-	std::cout<<"Parameter predictions:\n"<<torch::sqrt(distanceAccumulator);
-
-	torch::Tensor distance = torch::sum(torch::sqrt(distanceAccumulator)/static_cast<double>(data_size));
-
-	std::cout<<"Test Loss: "<<(lossAccumulator / data_size)*100<< "distance: " <<distance.template item<float>()<< std::endl;
+	std::cout<<"Test Loss: "<<(lossAccumulator / index)<<std::endl;
 	if(log)
-		log->logTestLoss(epoch, data_size, (lossAccumulator / data_size)*100, distance.template item<float>(), data_size);
-	return distance;
+		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
@@ -249,7 +244,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		net->setOutputLabels(outputLables);
 
 	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
+	options = options.batch_size(batch_size).workers(1);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>
 		(trainDataset->map(torch::data::transforms::Stack<>()), options);
 	auto testDataLoader =

@@ -25,6 +25,7 @@
 #include "data/loaders/dirloader.h"
 #include "data/loaders/deduploader.h"
 #include "data/loaders/coincellhellloader.h"
+#include "data/splitregressiondataset.h"
 #include "data/passfaildataset.h"
 #include "options.h"
 #include "trainlog.h"
@@ -239,11 +240,12 @@ template <> int train<CoinCellHellLoader>(const Config& config)
 	}
 	if(!config.testFileName.empty())
 	{
-		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type";
+		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type, the train datase will be automaticly split";
 		return 1;
 	}
 
 	CoinCellHellLoader dataset(config.fileName);
+	std::pair<SplitRegressionDataset<CoinCellHellLoader>, SplitRegressionDataset<CoinCellHellLoader>> splitdatasets = SplitRegressionDataset<CoinCellHellLoader>::createSplitRegressionDataset(&dataset, 0.1);
 
 	if(dataset.size().value() == 0)
 	{
@@ -251,7 +253,8 @@ template <> int train<CoinCellHellLoader>(const Config& config)
 		return 2;
 	}
 
-	trainSwitch<CoinCellHellLoader, CoinCellHellLoader>(config, &dataset, nullptr);
+	trainSwitch<SplitRegressionDataset<CoinCellHellLoader>, SplitRegressionDataset<CoinCellHellLoader>>(config, &splitdatasets.first, &splitdatasets.second);
+	//trainSwitch<CoinCellHellLoader, CoinCellHellLoader>(config, &dataset, nullptr);
 	return 0;
 }
 
