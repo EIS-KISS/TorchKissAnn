@@ -134,7 +134,7 @@ void TrainLog::logTestLoss(size_t epoch, size_t step, double loss, double acc, s
 		plotThread->join();
 
 	if(lossTestIter >= 10 && lossTestIter % 10 == 0)
-		plotThread = new std::thread(TrainLog::plot, logDir, testLossCurve, false);
+		plotThread = new std::thread(TrainLog::plot, logDir, testLossCurve, true);
 }
 
 void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
