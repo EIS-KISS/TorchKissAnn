@@ -18,6 +18,7 @@ set(SRC_FILES
 	utils/microtar.cpp
 	utils/modelscript.cpp
 	utils/ploting.cpp
+	utils/r2score.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp
@@ -46,14 +47,15 @@ set_target_properties(${PROJECT_NAME}_common PROPERTIES COMPILE_FLAGS ${COMMON_C
 target_precompile_headers(${PROJECT_NAME}_common PRIVATE torchph.h)
 target_compile_definitions(${PROJECT_NAME}_common PRIVATE "_XOPEN_SOURCE")
 
-add_executable(${PROJECT_NAME}_test test.cpp)
-target_link_libraries(${PROJECT_NAME}_test ${PROJECT_NAME}_common)
-target_include_directories(${PROJECT_NAME}_test PUBLIC ${COMMON_INCLUDE_DIRECTORYS} .)
-set_target_properties(${PROJECT_NAME}_test PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
-target_precompile_headers(${PROJECT_NAME}_test  REUSE_FROM ${PROJECT_NAME}_common)
-target_compile_definitions(${PROJECT_NAME}_test PRIVATE "_XOPEN_SOURCE")
+add_executable(${PROJECT_NAME}_utest test.cpp)
+target_link_libraries(${PROJECT_NAME}_utest ${PROJECT_NAME}_common)
+target_include_directories(${PROJECT_NAME}_utest PUBLIC ${COMMON_INCLUDE_DIRECTORYS} .)
+set_target_properties(${PROJECT_NAME}_utest PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS "")
+target_precompile_headers(${PROJECT_NAME}_utest  REUSE_FROM ${PROJECT_NAME}_common)
+target_compile_definitions(${PROJECT_NAME}_utest PRIVATE "_XOPEN_SOURCE")
 
 add_subdirectory(inference)
 add_subdirectory(train)
+add_subdirectory(test)
 add_subdirectory(datasetinfo)
 add_subdirectory(tune)
