@@ -2,6 +2,8 @@
 #include <c10/core/ScalarType.h>
 #include <torch/torch.h>
 
+#include "globals.h"
+
 template <typename V>
 inline torch::TensorOptions tensorOptCpu(bool grad = true)
 {
@@ -34,4 +36,10 @@ inline torch::TensorOptions tensorOptCplxCpu(bool grad = true)
 	options = options.device(torch::kCPU);
 	options = options.requires_grad(grad);
 	return options;
+}
+
+template <typename V>
+inline torch::TensorOptions tensorOptDevice(bool grad = true)
+{
+	return tensorOptCpu<V>().device(*offload_device);
 }
