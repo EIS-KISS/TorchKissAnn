@@ -29,7 +29,7 @@
 #include "globals.h"
 #include <fstream>
 
-bool yesNoPrompt(std::string msg)
+static bool yesNoPrompt(std::string msg)
 {
 	while(true)
 	{
@@ -44,7 +44,7 @@ bool yesNoPrompt(std::string msg)
 	}
 }
 
-std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(const std::string& fileName, FileType type, const std::vector<std::pair<std::string, int64_t>>& extraInputs)
+static std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(const std::string& fileName, FileType type, const std::vector<std::pair<std::string, int64_t>>& extraInputs)
 {
 	if(fileName.empty())
 	{
@@ -124,7 +124,7 @@ std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(const std::
 	}
 }
 
-bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterMode)
+static bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterMode)
 {
 	if(filterMode != FILTER_NONE && fileName.empty())
 	{
@@ -157,7 +157,7 @@ bool filter(torch::Tensor& data, const std::string& fileName, FilterMode filterM
 	return pass;
 }
 
-torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_ptr<ann::Net> net)
+static torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_ptr<ann::Net> net)
 {
 	torch::Tensor output;
 
@@ -181,7 +181,7 @@ torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::shared_pt
 }
 
 
-torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
+static torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
 {
 	EisDirDataset dataset(datasetDir);
 	torch::data::DataLoaderOptions options;
@@ -191,7 +191,7 @@ torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net>
 									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 }
 
-torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
+static torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
 {
 	EisGeneratorDataset dataset(classesPath, 10000, network->getInputSize(), 0, false, false);
 	torch::data::DataLoaderOptions options;
@@ -201,7 +201,7 @@ torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> 
 									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 }
 
-int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
+static int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	if(config.spectraFileName.empty())
 	{
@@ -306,7 +306,7 @@ static int confusionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 	return 0;
 }
 
-int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
+static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, net->getExtraInputs()).first;
 
@@ -361,7 +361,7 @@ int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	return 0;
 }
 
-int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
+static int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> data = grabData(config.spectraFileName, config.fileType, net->getExtraInputs());
 
@@ -413,7 +413,7 @@ int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 	return 0;
 }
 
-int showPipe(const Config& config)
+static int showPipe(const Config& config)
 {
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, {}).first;
 	if(data.empty())
@@ -422,7 +422,7 @@ int showPipe(const Config& config)
 	return 0;
 }
 
-int reexportPipe(const Config& config)
+static int reexportPipe(const Config& config)
 {
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, {}).first;
 	if(data.empty())
@@ -433,7 +433,7 @@ int reexportPipe(const Config& config)
 	return 0;
 }
 
-bool requiresNetwork(PredictionMode mode)
+static bool requiresNetwork(PredictionMode mode)
 {
 	switch(mode)
 	{
