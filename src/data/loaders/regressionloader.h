@@ -12,8 +12,6 @@ class ParameterRegressionDatasetLoader :
 public RegressionDataset<ParameterRegressionDatasetLoader>
 {
 private:
-	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
-
 	size_t parameterCount;
 	std::vector<std::pair<std::filesystem::path, size_t>> files;
 	std::filesystem::path path;
@@ -23,6 +21,8 @@ private:
 
 	eis::EisSpectra loadSpectra(size_t index);
 
+protected:
+	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 public:
 	explicit ParameterRegressionDatasetLoader(const std::filesystem::path& pathI, bool drtI = true);
