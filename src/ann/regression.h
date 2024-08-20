@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <torch/csrc/autograd/anomaly_mode.h>
+#include <torch/enum.h>
+#include <torch/nn/functional/loss.h>
 #include <torch/nn/modules/loss.h>
 #include <torch/nn/options/loss.h>
 #include <torch/optim.h>
@@ -20,6 +22,7 @@
 #include "data/regressiondataset.h"
 #include "tensoroptions.h"
 #include "tensoroperators.h"
+#include "r2score.h"
 
 namespace ann
 {
@@ -116,8 +119,8 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 
 		if(log && index % loginterval == 0)
 		{
-			Log(Log::INFO)<<"last targets:\n"<<targets[0];
-			Log(Log::INFO)<<"last prediction:\n"<<prediction[0];
+			//Log(Log::INFO)<<"last targets:\n"<<targets[0];
+			//Log(Log::INFO)<<"last prediction:\n"<<prediction[0];
 			auto end = std::min(data_size, (index + 1) * batch_size);
 			log->logTrainLoss(epoch, end, loss.template item<float>(), 0, data_size);
 		}
@@ -137,13 +140,16 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 }
 
 template <typename DataLoader, typename LossFn>
-void test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size,
-				   int64_t outputSize, size_t epoch = 0, TrainLog* log = nullptr)
+double test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard noGrad;
 
 	float lossAccumulator = 0;
+
+	torch::Tensor allpredictions = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alltargets = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
 	size_t index = 0;
 	for(const auto& batch : loader)
@@ -153,15 +159,26 @@ void test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size
 
 		torch::Tensor output = network->forward(data);
 
+		allpredictions = safeConcat({allpredictions, output}, 0);
+		alltargets = safeConcat({alltargets, targets}, 0);
+
 		torch::Tensor loss = lossFn(output, targets);
+		torch::Tensor mse = torch::nn::functional::mse_loss(output, targets, torch::nn::functional::MSELossFuncOptions(torch::kNone));
+		mse = torch::mean(mse, 0);
+		alltargetmse = alltargetmse + mse;
 
 		lossAccumulator += loss.template item<float>();
 		index++;
 	}
 
-	std::cout<<"Test Loss: "<<(lossAccumulator / index)<<std::endl;
+	alltargetmse = alltargetmse / index;
+
+	torch::Tensor r2scores = r2score(allpredictions, alltargets);
+	std::cout<<"Test r2: "<<r2scores<<std::endl;
+	std::cout<<"Test mse: "<<alltargetmse<<std::endl;
 	if(log)
 		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
+	return (lossAccumulator / index);
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
@@ -247,9 +264,9 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	options = options.batch_size(batch_size).workers(1);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>
 		(trainDataset->map(torch::data::transforms::Stack<>()), options);
+	//options.batch_size(5);
 	auto testDataLoader =
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
-
 	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
 
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
@@ -267,7 +284,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			return -1;
 
 		if(testDataset)
-			test(net, *testDataLoader, *lossMse, testDataset->size().value(), trainDataset->outputSize(), epoch, trainLog);
+			test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
 
 		if(trainLog)
 			trainLog->saveNetwork(net);
