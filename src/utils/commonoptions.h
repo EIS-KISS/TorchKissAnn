@@ -1,6 +1,6 @@
 #pragma once
 
-#define DATASET_LIST "gen, gennoise, fdedup, passfail, dir, tar, genregression, tarregression, composit, coincellhell"
+#define DATASET_LIST "gen, gennoise, fdedup, passfail, dir, tar, genregression, tarregression, coincellhellpost, coincellhellpre"
 
 typedef enum
 {
@@ -13,7 +13,8 @@ typedef enum
 	DATASET_TAR,
 	DATASET_GEN_REGRESSION,
 	DATASET_TAR_REGRESSION,
-	DATASET_COINCELLHELL
+	DATASET_COINCELLHELL_POSTDICT,
+	DATASET_COINCELLHELL_PREDICT
 } DatasetMode;
 
 static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
@@ -36,8 +37,10 @@ static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
 			return "genregression";
 		case DATASET_TAR_REGRESSION:
 			return "tarregression";
-		case DATASET_COINCELLHELL:
-			return "coincellhell";
+		case DATASET_COINCELLHELL_POSTDICT:
+			return "coincellhellpost";
+		case DATASET_COINCELLHELL_PREDICT:
+			return "coincellhellpre";
 		default:
 			return "invalid";
 	}
@@ -61,7 +64,9 @@ static inline DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_GEN_REGRESSION;
 	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
 		return DATASET_TAR_REGRESSION;
-	else if(in == datasetModeToStr(DATASET_COINCELLHELL))
-		return DATASET_COINCELLHELL;
+	else if(in == datasetModeToStr(DATASET_COINCELLHELL_POSTDICT))
+		return DATASET_COINCELLHELL_POSTDICT;
+	else if(in == datasetModeToStr(DATASET_COINCELLHELL_PREDICT))
+		return DATASET_COINCELLHELL_PREDICT;
 	return DATASET_INVALID;
 }

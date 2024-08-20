@@ -231,7 +231,7 @@ template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
 	return 0;
 }
 
-template <> int train<CoinCellHellLoader>(const Config& config)
+template <> int train<CoinCellHellLoaderPostdict>(const Config& config)
 {
 	if(config.fileName.empty())
 	{
@@ -244,8 +244,8 @@ template <> int train<CoinCellHellLoader>(const Config& config)
 		return 1;
 	}
 
-	CoinCellHellLoader dataset(config.fileName);
-	std::pair<SplitRegressionDataset<CoinCellHellLoader>, SplitRegressionDataset<CoinCellHellLoader>> splitdatasets = SplitRegressionDataset<CoinCellHellLoader>::createSplitRegressionDataset(&dataset, 0.1);
+	CoinCellHellLoaderPostdict dataset(config.fileName);
+	std::pair<SplitRegressionDataset<CoinCellHellLoaderPostdict>, SplitRegressionDataset<CoinCellHellLoaderPostdict>> splitdatasets = SplitRegressionDataset<CoinCellHellLoaderPostdict>::createSplitRegressionDataset(&dataset, 0.1);
 
 	if(dataset.size().value() == 0)
 	{
@@ -253,8 +253,33 @@ template <> int train<CoinCellHellLoader>(const Config& config)
 		return 2;
 	}
 
-	trainSwitch<SplitRegressionDataset<CoinCellHellLoader>, SplitRegressionDataset<CoinCellHellLoader>>(config, &splitdatasets.first, &splitdatasets.second);
-	//trainSwitch<CoinCellHellLoader, CoinCellHellLoader>(config, &dataset, nullptr);
+	trainSwitch<SplitRegressionDataset<CoinCellHellLoaderPostdict>, SplitRegressionDataset<CoinCellHellLoaderPostdict>>(config, &splitdatasets.first, &splitdatasets.second);
+	return 0;
+}
+
+template <> int train<CoinCellHellLoaderPredict>(const Config& config)
+{
+	if(config.fileName.empty())
+	{
+		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
+		return 1;
+	}
+	if(!config.testFileName.empty())
+	{
+		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type, the train datase will be automaticly split";
+		return 1;
+	}
+
+	CoinCellHellLoaderPredict dataset(config.fileName);
+	std::pair<SplitRegressionDataset<CoinCellHellLoaderPredict>, SplitRegressionDataset<CoinCellHellLoaderPredict>> splitdatasets = SplitRegressionDataset<CoinCellHellLoaderPredict>::createSplitRegressionDataset(&dataset, 0.1);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
+	}
+
+	trainSwitch<SplitRegressionDataset<CoinCellHellLoaderPredict>, SplitRegressionDataset<CoinCellHellLoaderPredict>>(config, &splitdatasets.first, &splitdatasets.second);
 	return 0;
 }
 
@@ -292,14 +317,14 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		case MODE_ANN:
 		{
 			Log(Log::INFO)<<"Training classification network with simple net";
-			std::shared_ptr<ann::Net> net(new ann::SimpleNet(config.dataWidth, trainDataset->outputSize(), 4, config.extraLayers, true));
+			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->inputSize(), trainDataset->outputSize(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
 		case MODE_ANN_CONV:
 		{
 			Log(Log::INFO)<<"Training classification network with conv net";
-			std::shared_ptr<ann::Net> net(new ann::ConvNet(config.dataWidth, trainDataset->outputSize(), 4, config.extraLayers, true));
+			std::shared_ptr<ann::Net> net(new ann::ConvNet(trainDataset->inputSize(), trainDataset->outputSize(), 4, config.extraLayers, true));
 			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
@@ -376,7 +401,8 @@ bool check_options(const Config& config)
 
 	if((config.datasetMode != DATASET_GEN_REGRESSION &&
 		config.datasetMode != DATASET_TAR_REGRESSION &&
-		config.datasetMode != DATASET_COINCELLHELL) &&
+		config.datasetMode != DATASET_COINCELLHELL_PREDICT &&
+		config.datasetMode != DATASET_COINCELLHELL_POSTDICT) &&
 		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
 	{
 		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
@@ -433,8 +459,10 @@ int main(int argc, char** argv)
 			return train<ParameterRegressionDatasetGenerator>(config);
 		case DATASET_TAR_REGRESSION:
 			return train<ParameterRegressionDatasetLoader>(config);
-		case DATASET_COINCELLHELL:
-			return train<CoinCellHellLoader>(config);
+		case DATASET_COINCELLHELL_POSTDICT:
+			return train<CoinCellHellLoaderPostdict>(config);
+		case DATASET_COINCELLHELL_PREDICT:
+			return train<CoinCellHellLoaderPredict>(config);
 		case DATASET_TAR:
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
