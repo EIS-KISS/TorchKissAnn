@@ -1,6 +1,8 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <filesystem>
+#include <initializer_list>
 
 template <typename V>
 bool checkTorchType(const torch::Tensor& tensor)
@@ -46,3 +48,5 @@ std::string tensorToString(const torch::Tensor& tensor);
 
 torch::Tensor complexToLinear(torch::Tensor& tensor);
 torch::Tensor linearToComplex(torch::Tensor& tensor);
+
+torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim);

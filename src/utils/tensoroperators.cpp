@@ -189,3 +189,19 @@ torch::Tensor complexToLinear(torch::Tensor& in)
 	return out;
 }
 
+
+torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim)
+{
+	torch::Tensor output;
+	for(const torch::Tensor& in : list)
+	{
+		if(in.numel() == 0)
+			continue;
+
+		if(output.numel() == 0)
+			output = in;
+		else
+			torch::cat({output, in}, dim);
+	}
+	return output;
+}
