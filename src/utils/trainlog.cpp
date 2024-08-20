@@ -170,15 +170,15 @@ void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
 
 void TrainLog::plot(std::filesystem::path logDir, std::vector<std::pair<size_t, double>> loss, bool test)
 {
-	std::valarray<double> trainSteps(loss.size());
-	std::valarray<double> trainLosses(loss.size());
+	std::valarray<double> steps(loss.size());
+	std::valarray<double> losses(loss.size());
 	for(size_t i = 0; i < loss.size(); ++i)
 	{
-		trainSteps[i] = loss[i].first;
-		trainLosses[i] = loss[i].second;
+		steps[i] = loss[i].first;
+		losses[i] = loss[i].second;
 	}
 
-	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", trainSteps, trainLosses, false, true);
+	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", steps, losses, false, true);
 }
 
 TrainLog::~TrainLog()
