@@ -12,6 +12,8 @@ public torch::data::datasets::Dataset<DataSelf, torch::data::Example<torch::Tens
 {
 private:
 	std::map<int64_t, int64_t> labelMap;
+
+protected:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) = 0;
 
 public:
