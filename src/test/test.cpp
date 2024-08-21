@@ -174,6 +174,8 @@ void testSwitch(const Config& config, DataSetType* testDataset)
 	options = options.batch_size(batch_size).workers(16);
 	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
 
+	std::string purpose = net->getPurpose();
+
 	switch(config.datasetMode)
 	{
 		case DATASET_GEN:
@@ -182,7 +184,7 @@ void testSwitch(const Config& config, DataSetType* testDataset)
 		case DATASET_PASSFAIL:
 		case DATASET_DIR:
 		{
-			if(!net->getPurpose().starts_with("Classifier"))
+			if(purpose.find("Classifier") != 0)
 			{
 				Log(Log::ERROR)<<"Testing with this dataset only make sense with a classifier network";
 				return;
@@ -193,7 +195,7 @@ void testSwitch(const Config& config, DataSetType* testDataset)
 		case DATASET_COINCELLHELL_POSTDICT:
 		case DATASET_COINCELLHELL_PREDICT:
 		{
-			if(!net->getPurpose().starts_with("Classifier"))
+			if(purpose.find("Classifier") != 0)
 			{
 				Log(Log::ERROR)<<"Testing with this dataset only make sense with a classifier network";
 				return;

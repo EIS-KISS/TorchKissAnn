@@ -176,7 +176,7 @@ eis::EisSpectra CoinCellHellLoader<DataSelf>::loadSpectra(size_t index)
 }
 
 template <typename DataSelf>
-CoinCellHellLoader<DataSelf>::Metadata CoinCellHellLoader<DataSelf>::loadMetadata(const eis::EisSpectra& spectra)
+typename CoinCellHellLoader<DataSelf>::Metadata CoinCellHellLoader<DataSelf>::loadMetadata(const eis::EisSpectra& spectra)
 {
 	Metadata metadata = {};
 	for(size_t i = 0; i < spectra.labelNames.size(); ++i)
