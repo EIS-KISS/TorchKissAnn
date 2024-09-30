@@ -1,4 +1,5 @@
 #include "data/eisdataset.h"
+#include "log.h"
 #include <cstdint>
 
 template <typename DatasetAType, typename DatasetBType>
@@ -26,8 +27,9 @@ private:
 	}
 
 	template<typename Type>
-	void addDataset(EisDataset<Type>* dataset)
+	size_t addDataset(EisDataset<Type>* dataset)
 	{
+		size_t modelsAdded = 0;
 		for(size_t i = 0; i < dataset->size().value(); ++i)
 		{
 			std::string model = dataset->modelStringForClass(dataset->classForIndex(i));
@@ -36,12 +38,14 @@ private:
 			{
 				classStrings.push_back(model);
 				classIds.push_back(classStrings.size()-1);
+				++modelsAdded;
 			}
 			else
 			{
 				classIds.push_back(search-classStrings.begin());
 			}
 		}
+		return modelsAdded;
 	}
 
 public:
@@ -51,8 +55,11 @@ public:
 	{
 		assert(!datasetA->isMulticlass() && !datasetB->isMulticlass());
 		classIds.reserve(_datasetA->size().value()+_datasetB->size().value());
-		addDataset<DatasetAType>(_datasetA);
-		addDataset<DatasetBType>(_datasetB);
+		size_t modsFomA = addDataset<DatasetAType>(_datasetA);
+		size_t modsFromB = addDataset<DatasetBType>(_datasetB);
+
+		Log(Log::INFO)<<__func__<<" Added "<<modsFomA<<" Models from dataset a and an additional "<<modsFromB<<" from dataset b";
+		Log(Log::INFO)<<__func__<<"A Size: "<<_datasetA->size().value()<<" B size: "<<_datasetB->size().value()<<" A model count: "<<_datasetA->classCounts()<<" B model count: "<<_datasetB->classCounts();
 	}
 
 	virtual size_t outputSize() const override
