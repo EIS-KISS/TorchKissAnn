@@ -1,10 +1,12 @@
+#include <cerrno>
 #include <cstdint>
+#include <filesystem>
 #include <ios>
 #include <iostream>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
 #include <memory>
-#include <vector>
+#include <string>
 #include <torch/torch.h>
 
 #include "ann/classification.h"
@@ -27,8 +29,11 @@
 #include "data/loaders/coincellhellloader.h"
 #include "data/splitregressiondataset.h"
 #include "data/passfaildataset.h"
+#include "data/compositdataset.h"
 #include "options.h"
+#include "spectra.h"
 #include "trainlog.h"
+#include "tokenize.h"
 
 
 template <typename DataSetType>
@@ -43,7 +48,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 template <typename DataSetType>
 void trainWithSplitDataset(const Config& config, DataSetType* dataset)
 {
-	std::pair<SplitDataset<DataSetType>, SplitDataset<DataSetType>> datasets = createSplitDataset<DataSetType>(dataset, 0.1);
+	std::pair<SplitDataset<DataSetType>, SplitDataset<DataSetType>> datasets = SplitDataset<DataSetType>::createSplitDataset(dataset, 0.1);
 	trainSwitch<SplitDataset<DataSetType>, SplitDataset<DataSetType>>(config, &datasets.first, &datasets.second);
 }
 
@@ -283,6 +288,47 @@ template <> int train<CoinCellHellLoaderPredict>(const Config& config)
 	return 0;
 }
 
+template <> int train<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(const Config& config)
+{
+	std::vector<std::string> tokens = tokenize(config.fileName, ',', '"');
+	if(tokens.size() != 2)
+	{
+		Log(Log::ERROR)<<"the dataset filename needs to be: /path/for/model/list,/path/to/dir";
+		return 2;
+	}
+	EisGeneratorDatasetNoise genDataset(tokens[0], config.datasetSize, 100, false);
+	EisDirDataset dirDataset(tokens[1], 100);
+	CompositDataset<EisGeneratorDatasetNoise, EisDirDataset> dataset(&genDataset, &dirDataset);
+
+	trainWithSplitDataset<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(config, &dataset);
+	return 0;
+}
+
+template <typename DatasetType>
+void exportDataset(std::unique_ptr<TrainLog>& trainLog, EisDataset<DatasetType>* testDataset)
+{
+	std::filesystem::path dir = trainLog->getDir()/std::filesystem::path("testdata");
+	if(!std::filesystem::is_directory(dir) && !std::filesystem::create_directory(dir))
+	{
+		Log(Log::ERROR)<<__func__<<" could not create "<<dir<<" will not export data";
+		return;
+	}
+
+	for(size_t i = 0; i <testDataset->size().value(); ++i)
+	{
+		eis::EisSpectra spectra;
+		torch::data::Example<torch::Tensor, torch::Tensor> example = testDataset->get(i);
+		spectra.data = torchToEis(example.data);
+		spectra.model = testDataset->modelStringForClass(testDataset->classForIndex(i));
+		float* tensorDataPtr = example.target.contiguous().data_ptr<float>();
+		spectra.labels.assign(tensorDataPtr, tensorDataPtr+example.target.numel());
+		spectra.header = std::string("TorchKissAnn re-exported from ") + typeid(DatasetType).name();
+		std::filesystem::path path = dir/(std::to_string(i) + ".csv");
+		if(!spectra.saveToDisk(path))
+			Log(Log::ERROR)<<__func__<<" unable to save "<<path;
+	}
+}
+
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -311,6 +357,9 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		meta.testingFile = config.testFileName;
 		trainLog->saveMetadata(meta);
 	}
+
+	if(testDataset && config.exportTestDataset)
+		exportDataset<TestDataSetType>(trainLog, testDataset);
 
 	switch(config.mode)
 	{
@@ -455,6 +504,8 @@ int main(int argc, char** argv)
 			return train<PassFaillDataset<EisGeneratorDataset>>(config);
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
+		case DATASET_GEN_NOISE_DIR:
+			return train<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(config);
 		case DATASET_GEN_REGRESSION:
 			return train<ParameterRegressionDatasetGenerator>(config);
 		case DATASET_TAR_REGRESSION:

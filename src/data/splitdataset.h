@@ -36,6 +36,8 @@ public:
 	virtual c10::optional<torch::Tensor> freqRange() override;
 	virtual std::string dataLabel() const override;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs() override;
+
+	static std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> createSplitDataset(SourceDataset* dataset, double split);
 };
 
 
@@ -106,7 +108,7 @@ std::vector<std::pair<std::string, int64_t>> SplitDataset<SourceDataset>::extraI
 }
 
 template <typename SourceDataset>
-std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> createSplitDataset(SourceDataset* dataset, double split)
+std::pair<SplitDataset<SourceDataset>, SplitDataset<SourceDataset>> SplitDataset<SourceDataset>::createSplitDataset(SourceDataset* dataset, double split)
 {
 	size_t size = dataset->size().value();
 

@@ -33,6 +33,7 @@ static struct argp_option options[] =
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
+  {"export-test",	'e', 0,				0, 	"Exports the test dataset"},
   { 0 }
 };
 
@@ -103,6 +104,7 @@ struct Config
 	bool probeModel = false;
 	bool hyperparameters = false;
 	bool noGpu = false;
+	bool exportTestDataset = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -176,6 +178,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'n':
 			config->scriptPath = arg;
+			break;
+		case 'e':
+			config->exportTestDataset = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;
