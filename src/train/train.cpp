@@ -463,9 +463,11 @@ int main(int argc, char** argv)
 			return train<CoinCellHellLoaderPostdict>(config);
 		case DATASET_COINCELLHELL_PREDICT:
 			return train<CoinCellHellLoaderPredict>(config);
-		case DATASET_TAR:
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
+			break;
+		default:
+			Log(Log::ERROR)<<"Dataset not implemented";
 			break;
 	}
 

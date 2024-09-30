@@ -48,7 +48,7 @@ def exportTrainingArtifactsModels(model_path: str, meta: dict, outname: str):
 	os.rmdir(out_dir)
 
 
-def exportModel(model, meta, outname: str, train: bool = False) -> str:
+def exportModel(model, meta, outname: str, train: bool = False, output_prepend: str | None = None) -> str:
 	example_input = torch.randn((2 if train else 1, int(meta['inputSize'])), dtype=torch.float32)
 	model.eval()
 	example_output = model.forward(example_input)
@@ -72,7 +72,8 @@ def exportModel(model, meta, outname: str, train: bool = False) -> str:
 		onnxmeta.key = 'outputLabels'
 		value = ""
 		for label in meta['outputLabels']:
-			value = value + str(label) + ','
+			label_str = str(label) if output_prepend is None else output_prepend + str(label)
+			value = value + str(label_str) + ','
 		onnxmeta.value = value[:-1]
 	elif not checkCompositContainer(onnx_model.metadata_props, 'outputLabels'):
 		print("Warning: model lacks output labels")
@@ -141,6 +142,8 @@ if __name__ == "__main__":
 	parser.add_argument('--purpose', '-p', default=None, help="If set this will overide the purpose string of the network")
 	parser.add_argument('--input_name', '-i', default=None, help="If set this will overide the input description string")
 	parser.add_argument('--version', '-v', default=None, help="This will set the network version string to the given string")
+	parser.add_argument('--train', '-t', default=False, action="store_true", help="Also export files required to train onnx networks")
+	parser.add_argument('--output_prepend', default=None, help="Optional string to prepend to output labels")
 	args = parser.parse_args()
 
 	extra_files = {"meta.json": None}
@@ -153,9 +156,10 @@ if __name__ == "__main__":
 
 	basename = os.path.split(os.path.splitext(args.network)[0])[-1]
 	print("Exporting eval model")
-	exportModel(model, meta, basename, False)
-	print("Exporting tmp train model")
-	exportModel(model, meta, basename + "_train", True)
-	print("Exporting train model")
-	exportTrainingArtifactsModels(f"{basename}_train.onnx", meta, basename + "_train")
-	os.remove(f"{basename}_train.onnx")
+	exportModel(model, meta, basename, False, args.output_prepend)
+	if args.train:
+		print("Exporting tmp train model")
+		exportModel(model, meta, basename + "_train", True, args.output_prepend)
+		print("Exporting train model")
+		exportTrainingArtifactsModels(f"{basename}_train.onnx", meta, basename + "_train")
+		os.remove(f"{basename}_train.onnx")

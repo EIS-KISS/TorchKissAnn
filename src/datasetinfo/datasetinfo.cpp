@@ -26,6 +26,8 @@
 #include "data/eistotorch.h"
 #include "options.h"
 #include "tensoroperators.h"
+#include "tokenize.h"
+#include "data/compositdataset.h"
 
 template <typename DataSetType>
 std::string generateReport(EisDataset<DataSetType>* dataset)
@@ -161,6 +163,22 @@ int main(int argc, char** argv)
 			delete dataset;
 			break;
 		}
+		case DATASET_GEN_NOISE_DIR:
+		{
+			std::vector<std::string> tokens = tokenize(config.fileName, ',', '"');
+			if(tokens.size() != 2)
+			{
+				Log(Log::ERROR)<<"the dataset filename needs to be: /path/for/model/list,/path/to/dir";
+				return 2;
+			}
+			EisGeneratorDatasetNoise genDataset(tokens[0], config.datasetSize, 100, false);
+			EisDirDataset dirDataset(tokens[1], 100);
+			CompositDataset<EisGeneratorDatasetNoise, EisDirDataset> dataset(&genDataset, &dirDataset);
+			report = generateReport<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(&dataset, config.imageOutput);
+			break;
+		}
 		case DATASET_FDUP:
 		{
 			if(config.fileName.empty())
@@ -197,7 +215,7 @@ int main(int argc, char** argv)
 			break;
 		}
 		default:
-			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
+			Log(Log::ERROR)<<"Dataset not implmented";
 			break;
 	}
 

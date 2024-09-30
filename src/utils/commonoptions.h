@@ -1,12 +1,13 @@
 #pragma once
 
-#define DATASET_LIST "gen, gennoise, fdedup, passfail, dir, tar, genregression, tarregression, coincellhellpost, coincellhellpre"
+#define DATASET_LIST "gen, gennoise, gennoise-dir, fdedup, passfail, dir, tar, genregression, tarregression, coincellhellpost, coincellhellpre"
 
 typedef enum
 {
 	DATASET_INVALID = -1,
 	DATASET_GEN = 0,
 	DATASET_GEN_NOISE,
+	DATASET_GEN_NOISE_DIR,
 	DATASET_FDUP,
 	DATASET_PASSFAIL,
 	DATASET_DIR,
@@ -25,6 +26,8 @@ static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
 			return "gen";
 		case DATASET_GEN_NOISE:
 			return "gennoise";
+		case DATASET_GEN_NOISE_DIR:
+			return "gennoise-dir";
 		case DATASET_FDUP:
 			return "fdedup";
 		case DATASET_PASSFAIL:
@@ -52,6 +55,8 @@ static inline DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_GEN;
 	else if(in == datasetModeToStr(DATASET_GEN_NOISE))
 		return DATASET_GEN_NOISE;
+	else if(in == datasetModeToStr(DATASET_GEN_NOISE_DIR))
+			return DATASET_GEN_NOISE_DIR;
 	else if(in == datasetModeToStr(DATASET_FDUP))
 		return DATASET_FDUP;
 	else if(in == datasetModeToStr(DATASET_PASSFAIL))

@@ -52,7 +52,7 @@ public:
 		assert(!datasetA->isMulticlass() && !datasetB->isMulticlass());
 		classIds.reserve(_datasetA->size().value()+_datasetB->size().value());
 		addDataset<DatasetAType>(_datasetA);
-		addDataset<DatasetAType>(_datasetB);
+		addDataset<DatasetBType>(_datasetB);
 	}
 
 	virtual size_t outputSize() const override
@@ -65,7 +65,7 @@ public:
 		return classIds[index];
 	}
 
-	virtual std::string modelStringForClass(size_t classNum)
+	virtual std::string modelStringForClass(size_t classNum) override
 	{
 		return classStrings[classNum];
 	}

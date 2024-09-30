@@ -118,9 +118,9 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	torch::NoGradGuard no_grad;
 	float Loss = 0, Acc = 0;
 
-	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64));
-	torch::Tensor classCount = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64));
-	torch::Tensor histograms = torch::zeros({outputSize, outputSize}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
+	torch::Tensor classCount = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
+	torch::Tensor histograms = torch::zeros({outputSize, outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));

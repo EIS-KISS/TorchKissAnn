@@ -5,6 +5,7 @@
 #include <eisgenerator/eistype.h>
 #include <eisgenerator/translators.h>
 
+#include "model.h"
 #include "mpt.h"
 #include "../print.h"
 #include "log.h"
@@ -31,6 +32,7 @@ inputSize(inputSizeI)
 		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();
 		eis::EisSpectra spectra = eis::EisSpectra::loadFromDisk(dirent.path());
 		purgeEisParamBrackets(spectra.model);
+		eis::Model::removeSeriesResitance(spectra.model);
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
 			spectra.model = "Union";
 		auto search = std::find(modelStrs.begin(), modelStrs.end(), spectra.model);
