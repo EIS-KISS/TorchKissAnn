@@ -8,6 +8,8 @@ class CompositDataset : public EisDataset<CompositDataset<DatasetAType, DatasetB
 private:
 	EisDataset<DatasetAType>* _datasetA;
 	EisDataset<DatasetBType>* _datasetB;
+	size_t aSize;
+	size_t bSize;
 	std::vector<std::string> classStrings;
 	std::vector<int64_t> classIds;
 
@@ -17,10 +19,10 @@ private:
 
 		torch::data::Example<torch::Tensor, torch::Tensor> example ;
 
-		if(index >= _datasetA->size().value())
+		if(index >= aSize)
 			example = _datasetA->get(index);
 		else
-			example = _datasetB->get(index-_datasetA->size().value());
+			example = _datasetB->get(index-aSize);
 
 		example.target[0] = static_cast<int64_t>(classIds[index]);
 		return example;
@@ -57,9 +59,11 @@ public:
 		classIds.reserve(_datasetA->size().value()+_datasetB->size().value());
 		size_t modsFomA = addDataset<DatasetAType>(_datasetA);
 		size_t modsFromB = addDataset<DatasetBType>(_datasetB);
+		aSize = _datasetA->size().value();
+		bSize = _datasetB->size().value();
 
 		Log(Log::INFO)<<__func__<<" Added "<<modsFomA<<" Models from dataset a and an additional "<<modsFromB<<" from dataset b";
-		Log(Log::INFO)<<__func__<<"A Size: "<<_datasetA->size().value()<<" B size: "<<_datasetB->size().value()<<" A model count: "<<_datasetA->classCounts()<<" B model count: "<<_datasetB->classCounts();
+		Log(Log::INFO)<<__func__<<" A Size: "<<aSize<<" B size: "<<bSize<<" Size: "<<size().value();
 	}
 
 	virtual size_t outputSize() const override
