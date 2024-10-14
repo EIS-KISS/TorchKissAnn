@@ -22,6 +22,7 @@ inputSize(inputSizeI)
 		return;
 	}
 
+	size_t dataSize = 0;
 	for(const std::filesystem::directory_entry& dirent : std::filesystem::directory_iterator{directoryPath})
 	{
 		if(!dirent.is_regular_file() || dirent.path().extension() != ".csv")
@@ -29,6 +30,17 @@ inputSize(inputSizeI)
 		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();
 		eis::Spectra spectra = eis::Spectra::loadFromDisk(dirent.path());
 		purgeEisParamBrackets(spectra.model);
+
+		if(dataSize == 0)
+		{
+			dataSize = spectra.data.size();
+		}
+		else if(dataSize != spectra.data.size())
+		{
+			Log(Log::WARN)<<"Spectra at "<<dirent.path()<<" has length "<<spectra.data.size()<<" but expected "<<dataSize;
+			continue;
+		}
+
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
 			spectra.model = "Union";
 		auto search = std::find(modelStrs.begin(), modelStrs.end(), spectra.model);
