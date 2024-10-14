@@ -1,19 +1,19 @@
 #include "regressionloader.h"
 
+#include <algorithm>
 #include <cassert>
-#include <eisgenerator/eistype.h>
-#include <eisgenerator/model.h>
+#include <kisstype/type.h>
 #include <sstream>
+#include <string>
 
+#include "data/eisdataset.h"
 #include "microtar.h"
 #include "../eistotorch.h"
 #include "tensoroptions.h"
 #include "tokenize.h"
-#include "loaderror.h"
 
-ParameterRegressionDatasetLoader::ParameterRegressionDatasetLoader(const std::filesystem::path& pathI, bool drtI): path(pathI), drt(drtI)
+RegressionLoader::RegressionLoader(const std::filesystem::path& pathI): path(pathI)
 {
-	parameterCount = 0;
 	int ret = mtar_open(&tar, path.c_str(), "r");
 	if(ret != 0)
 	{
@@ -22,12 +22,32 @@ ParameterRegressionDatasetLoader::ParameterRegressionDatasetLoader(const std::fi
 	}
 
 	mtar_header_t header;
+	std::vector<std::string> labels;
+	size_t length = 0;
+	size_t outputCount = 0;
 	while((mtar_read_header(&tar, &header)) != MTAR_ENULLRECORD)
 	{
 		if(header.type == MTAR_TREG)
 		{
-			std::filesystem::path path = header.name;
-			files.push_back({path, header.size});
+			size_t pos = tar.pos;
+			eis::Spectra spectra = loadSpectraAtCurrentPos(header.size);
+			if(labels.empty())
+				labels = spectra.labelNames;
+			else if(!std::equal(labels.begin(), labels.end(), spectra.labelNames.begin(), spectra.labelNames.end()))
+				throw dataset_error(std::string("Not all spectra in ") + path.string() + "have the same labels");
+
+			if(length == 0)
+				length = spectra.data.size();
+			else if(length != spectra.data.size())
+				throw dataset_error(std::string("Not all spectra have the same number of datapoints"));
+
+			if(outputCount == 0)
+			{
+				std::vector<std::string> labelNames = getExtraInputsAndLabelNames(spectra).second;
+				outputCount = labelNames.size();
+			}
+
+			files.push_back({.path =  header.name, .pos = pos, .size = header.size});
 		}
 		mtar_next(&tar);
 	}
@@ -35,182 +55,141 @@ ParameterRegressionDatasetLoader::ParameterRegressionDatasetLoader(const std::fi
 		getImpl(0);
 }
 
-ParameterRegressionDatasetLoader::ParameterRegressionDatasetLoader(const ParameterRegressionDatasetLoader& in)
+RegressionLoader::RegressionLoader(const RegressionLoader& in)
 {
 	operator=(in);
 }
 
-ParameterRegressionDatasetLoader& ParameterRegressionDatasetLoader::operator=(const ParameterRegressionDatasetLoader& in)
+RegressionLoader& RegressionLoader::operator=(const RegressionLoader& in)
 {
-	parameterCount = in.parameterCount;
-	dataSizes = in.dataSizes;
+	files = in.files;
 	path = in.path;
 	int ret = mtar_open(&tar, path.c_str(), "r");
-	drt = in.drt;
 	if(ret != 0)
 	{
 		Log(Log::ERROR)<<"Unable to reopen tar file at "<<path;
 		assert(ret == 0);
 	}
-	files = in.files;
-	std::vector<int64_t> dataSizes = {};
 
 	return *this;
 }
 
-ParameterRegressionDatasetLoader::~ParameterRegressionDatasetLoader()
+RegressionLoader::~RegressionLoader()
 {
 	mtar_close(&tar);
 }
 
-std::string ParameterRegressionDatasetLoader::dataLabel() const
+eis::Spectra RegressionLoader::loadSpectraAtCurrentPos(size_t size)
 {
-	return "DRT";
-}
-
-eis::EisSpectra ParameterRegressionDatasetLoader::loadSpectra(size_t index)
-{
-	mtar_header_t header;
-	int ret = mtar_find(&tar, files[index].first.c_str(), &header);
+	char* filebuffer = new char[size+1];
+	filebuffer[size] = '\0';
+	int ret = mtar_read_data(&tar, filebuffer, size);
 	if(ret != 0)
 	{
-		Log(Log::ERROR)<<"Unable to find "<<files[index].first<<" in tar archive";
-		assert(ret == 0);
-	}
-
-	Log(Log::DEBUG)<<"Reading \""<<files[index].first.c_str()<<"\" of length "<<header.size<<'/'<<files[index].second<<" from tar";
-	char* filebuffer = new char[header.size+1];
-	filebuffer[header.size] = '\0';
-	ret = mtar_read_data(&tar, filebuffer, header.size);
-	if(ret != 0)
-	{
-		Log(Log::ERROR)<<"Unable to read "<<files[index].first<<" from tar archive";
+		Log(Log::ERROR)<<"Unable to read from tar archive";
 		assert(ret == 0);
 	}
 	std::stringstream ss(filebuffer);
 
-	eis::EisSpectra spectra = eis::EisSpectra::loadFromStream(ss);
+	eis::Spectra spectra = eis::Spectra::loadFromStream(ss);
 	delete[] filebuffer;
 
 	return spectra;
 }
 
-torch::data::Example<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoader::getImpl(size_t index)
+std::pair<std::vector<std::string>, std::vector<std::string>> RegressionLoader::getExtraInputsAndLabelNames(const eis::Spectra& spectra)
 {
-	eis::EisSpectra spectra = loadSpectra(index);
-
-	if(parameterCount == 0)
+	std::vector<std::string> labelNames;
+	std::vector<std::string> extraInputNames;
+	for(const std::string& label : spectra.labelNames)
 	{
-		parameterCount = spectra.labels.size();
-		if(parameterCount == 0)
-			throw loader_error("Parameter count of file " + files[index].first.string() + " is 0");
-	}
-	else if(parameterCount != spectra.labels.size())
-	{
-		throw loader_error("Parameter count of all files must be the same at " + std::to_string(parameterCount)
-			+ " however " + files[index].first.string() + " contains " + std::to_string(spectra.labels.size()));
+		if(label.find(extraInputStr) == 0)
+			extraInputNames.push_back(label);
+		else
+			labelNames.push_back(label);
 	}
 
-	torch::Tensor input = eisToTorch(spectra.data);
+	return {extraInputNames, labelNames};
+}
 
-	if(drt)
-		input = torch::split(input, input.numel()/2, 0)[0];
+std::vector<std::pair<std::string, int64_t>> RegressionLoader::extraInputs()
+{
+	mtar_seek(&tar, files[0].pos);
+	std::vector<std::pair<std::string, int64_t>> extraInputs;
+	for(const std::string& name : getExtraInputsAndLabelNames(loadSpectraAtCurrentPos(files[0].size)).first)
+	{
+		extraInputs.push_back({name, 1});
+		extraInputs.back().first.erase(extraInputs.back().first.begin(), extraInputs.back().first.begin()+extraInputStr.length());
+	}
+	return extraInputs;
+}
+
+torch::data::Example<torch::Tensor, torch::Tensor> RegressionLoader::getImpl(size_t index)
+{
+	if(index >= files.size())
+		throw dataset_error("index " + std::to_string(index) + "is out of range for dataset");
+	mtar_seek(&tar, files[index].pos);
+	eis::Spectra spectra = loadSpectraAtCurrentPos(files[index].size);
+	auto pair = getExtraInputsAndLabelNames(spectra);
+	std::vector<std::string> labelNames = pair.second;
+	std::vector<std::string> extraInputNames = pair.first;
+
+	torch::Tensor input;
+	if(extraInputNames.empty())
+	{
+		 input = eisToTorch(spectra.data);
+	}
+	else
+	{
+		std::vector<fvalue> extraInputs;
+		for(const std::string& name : labelNames)
+			extraInputs.push_back(spectra.getLabel(name));
+		input = eisToTorchExtra(spectra.data, extraInputs);
+	}
 
 	torch::TensorOptions options;
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	options = options.dtype(torch::kFloat32);
-	torch::Tensor output = torch::empty({static_cast<int64_t>(parameterCount)}, options);
-
-	if(dataSizes.empty())
-	{
-		dataSizes = output.sizes().vec();
-	}
-	else
-	{
-		if(dataSizes.size() != output.sizes().size())
-			throw loader_error("Dimmentions should be the same at " + std::to_string(dataSizes.size())
-				+ " however " + files[index].first.string() + " contains "
-				+ std::to_string(output.sizes().size()));
-
-		for(size_t i = 0; i < dataSizes.size(); ++i)
-		{
-			if(dataSizes[i] != output.sizes()[i])
-			{
-				throw loader_error("Output dimention " + std::to_string(i)
-				+ " is " + std::to_string(output.sizes()[i]) + " but "
-				+ std::to_string(dataSizes[i]) + " is expected");
-			}
-		}
-	}
+	torch::Tensor output = torch::empty({static_cast<int64_t>(labelNames.size())}, options);
 
 	size_t i = 0;
 	auto tensorAccessor = output.accessor<float, 1>();
-	for(double label : spectra.labels)
+	for(const std::string& labelNames : labelNames)
 	{
-		tensorAccessor[i] = label;
+		tensorAccessor[i] = spectra.getLabel(labelNames);
 		++i;
 	}
 
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 
-size_t ParameterRegressionDatasetLoader::outputSize() const
+size_t RegressionLoader::outputSize() const
 {
-	return parameterCount;
+	return outputCount;
 }
 
-c10::optional<size_t> ParameterRegressionDatasetLoader::size() const
+c10::optional<size_t> RegressionLoader::size() const
 {
 	return files.size();
 }
 
-size_t ParameterRegressionDatasetLoader::classForIndex(size_t index)
+std::string RegressionLoader::outputName(size_t output)
 {
-	(void)index;
-	return 0;
+	mtar_seek(&tar, files[0].pos);
+	std::vector<std::string> labelNames = getExtraInputsAndLabelNames(loadSpectraAtCurrentPos(files[0].size)).second;
+	return labelNames[output];
 }
 
-std::string ParameterRegressionDatasetLoader::modelStringForClass(size_t classNum)
-{
-	mtar_header_t header;
-	int ret = mtar_find(&tar, files[0].first.c_str(), &header);
-	if(ret != 0)
-		throw loader_error("Could not find file in tar file at " + files[0].first.string());
-
-	char* filebuffer = new char[header.size+1];
-	filebuffer[header.size] = '\0';
-	ret = mtar_read_data(&tar, filebuffer, header.size);
-	if(ret != 0)
-		throw loader_error("Could to read tar header for file at " + files[0].first.string());
-	std::stringstream ss(filebuffer);
-	eis::EisSpectra spectra = eis::EisSpectra::loadFromStream(ss);
-
-	delete[] filebuffer;
-
-	std::string modelStr = tokenize(spectra.model, '+')[0];
-	Log(Log::ERROR)<<modelStr;
-	eis::Model model(modelStr);
-
-	std::vector<eis::Componant*> componants = model.getFlatComponants();
-	for(eis::Componant* componant : componants)
-	{
-		if(classNum >= componant->paramCount())
-			classNum -= componant->paramCount();
-		else
-			return std::string(1, componant->getComponantChar()) + std::string("-") + std::to_string(classNum);
-	}
-	return model.getModelStr();
-}
-
-bool ParameterRegressionDatasetLoader::isMulticlass()
+bool RegressionLoader::isMulticlass()
 {
 	return true;
 }
 
-c10::optional<torch::Tensor> ParameterRegressionDatasetLoader::freqRange()
+c10::optional<torch::Tensor> RegressionLoader::freqRange()
 {
-	eis::EisSpectra spectra = loadSpectra(0);
+	mtar_seek(&tar, files[0].pos);
+	eis::Spectra spectra = loadSpectraAtCurrentPos(files[0].size);
 	fvalue front = spectra.data.front().omega;
 	fvalue back = spectra.data.back().omega;
 
@@ -220,18 +199,4 @@ c10::optional<torch::Tensor> ParameterRegressionDatasetLoader::freqRange()
 	out[1] = std::max(front, back);
 	out[2] = static_cast<fvalue>(spectra.data.size());
 	return out;
-}
-
-std::pair<torch::Tensor, torch::Tensor> ParameterRegressionDatasetLoader::getTargetScalesAndBias()
-{
-	eis::Model model(modelStringForClass(outputSize()+1));
-	std::vector<eis::Range> defaultRanges = model.getDefaultParameters();
-	torch::Tensor scales = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
-	torch::Tensor bias = torch::empty({static_cast<int64_t>(defaultRanges.size())}, tensorOptCpu<fvalue>(false));
-
-	for(size_t i = 0; i < defaultRanges.size(); ++i) {
-		scales[i] = defaultRanges[i].end-defaultRanges[i].start;
-		bias[i] = defaultRanges[i].start;
-	}
-	return {scales, bias};
 }

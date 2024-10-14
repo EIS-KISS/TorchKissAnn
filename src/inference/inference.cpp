@@ -1,8 +1,7 @@
-#include <cstddef>
 #include <cstdio>
 #include <eisgenerator/basicmath.h>
-#include <eisgenerator/eistype.h>
-#include <eisgenerator/spectra.h>
+#include <kisstype/type.h>
+#include <kisstype/spectra.h>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -11,21 +10,16 @@
 #include <eisgenerator/model.h>
 
 #include "commonoptions.h"
-#include "data/generators/eisgendatanoise.h"
 #include "tokenize.h"
 #include "utils/log.h"
 #include "options.h"
-#include "data/loaders/mpt.h"
 #include "data/loaders/dirloader.h"
 #include "data/eistotorch.h"
-#include "data/generators/eisgendata.h"
-#include "nearest/nearest.h"
 #include "utils/log.h"
 #include "ann/classification.h"
 #include "ann/regression.h"
 #include "gan/gan.h"
 #include "data/print.h"
-#include "data/filterdata.h"
 #include "globals.h"
 #include <fstream>
 
@@ -82,7 +76,7 @@ static std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(cons
 		case FILE_TYPE_CSV:
 			try
 			{
-				eis::EisSpectra spectra = eis::EisSpectra::loadFromDisk(fileName);
+				eis::Spectra spectra = eis::Spectra::loadFromDisk(fileName);
 				std::vector<eis::DataPoint> data = spectra.data;
 				std::vector<fvalue> extra;
 
@@ -109,8 +103,6 @@ static std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> grabData(cons
 				Log(Log::ERROR)<<"Could not load file(s): "<<ex.what();
 				return {{}, {}};
 			}
-		case FILE_TYPE_MPT:
-			return {loaders::mpt(fileName), {}};
 		case FILE_TYPE_GAN:
 		{
 			torch::Tensor data = gan::generate(fileName);
@@ -166,12 +158,12 @@ static torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::sh
 		case MODE_ANN:
 			output = ann::classification::use(input, net);
 			break;
-		case MODE_NN:
+/*		case MODE_NN:
 		{
 			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 1e6));
 			output = NearestNeighbor::use(input, dataset.get());
 			break;
-		}
+		}*/
 		default:
 			Log(Log::ERROR)<<"Not implemented";
 			return torch::Tensor();
@@ -191,16 +183,6 @@ static torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<an
 									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 }
 
-static torch::Tensor testGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
-{
-	EisGeneratorDataset dataset(classesPath, 10000, network->getInputSize(), 0, false, false);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::test(network, *dataLoader, dataset.size().value(),
-									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
-}
-
 static int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	if(config.spectraFileName.empty())
@@ -213,10 +195,6 @@ static int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 	{
 		testOnDir(config.spectraFileName, net);
 	}
-	else if(config.datasetMode == DATASET_GEN)
-	{
-		testGen(config.spectraFileName, net);
-	}
 	else
 	{
 		Log(Log::ERROR)<<"Dataset not implemented for this operation: "<<datasetModeToStr(config.datasetMode);
@@ -228,24 +206,6 @@ static int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
 static torch::Tensor confusionOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
 {
 	EisDirDataset dataset(datasetDir);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::confusion(network, *dataLoader);
-}
-
-static torch::Tensor confusionOnGen(const std::string& classesPath, std::shared_ptr<ann::Net> network)
-{
-	EisGeneratorDataset dataset(classesPath, 10000, network->getInputSize(), 0, false, false);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::confusion(network, *dataLoader);
-}
-
-static torch::Tensor confusionOnGenNoise(const std::string& classesPath, std::shared_ptr<ann::Net> network)
-{
-	EisGeneratorDatasetNoise dataset(classesPath, 10000, network->getInputSize(), false);
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
@@ -265,14 +225,6 @@ static int confusionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 	if(config.datasetMode == DATASET_DIR)
 	{
 		confusionMatrix = confusionOnDir(config.spectraFileName, net);
-	}
-	else if(config.datasetMode == DATASET_GEN)
-	{
-		confusionMatrix = confusionOnGen(config.spectraFileName, net);
-	}
-	else if(config.datasetMode == DATASET_GEN_NOISE)
-	{
-		confusionMatrix = confusionOnGenNoise(config.spectraFileName, net);
 	}
 	else
 	{
@@ -318,8 +270,6 @@ static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 
 	if(data.empty())
 		return 3;
-
-	filterData(data, net->getInputSize());
 
 	torch::Tensor input = eisToTorch(data);
 
@@ -427,9 +377,8 @@ static int reexportPipe(const Config& config)
 	std::vector<eis::DataPoint> data = grabData(config.spectraFileName, config.fileType, {}).first;
 	if(data.empty())
 		return 3;
-	filterData(data, DATA_WIDTH);
 	torch::Tensor input = eisToTorch(data);
-	eis::EisSpectra(torchToEis(input), "", "").saveToDisk("export.txt");
+	eis::Spectra(torchToEis(input), "", "").saveToDisk("export.txt");
 	return 0;
 }
 

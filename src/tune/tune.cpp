@@ -33,8 +33,8 @@ int main(int argc, char** argv)
 			break;
 
 		case MODE_REGRESSION:
-			ann::regression::parameterSearch();
-			break;
+			//ann::regression::parameterSearch();
+			//break;
 		default:
 			Log(Log::ERROR)<<"You must specify what to train: -m " MODE_LIST;
 			return 3;

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include <kisstype/type.h>
 
 #include "globals.h"
 #include "data/eisdataset.h"
@@ -34,7 +35,6 @@ public:
 	virtual c10::optional<size_t> size() const override;
 
 	virtual size_t outputSize() const override;
-	virtual size_t classForIndex(size_t index) override;
-	virtual std::string modelStringForClass(size_t classNum) override;
+	virtual std::string outputName(size_t output) override;
 	virtual torch::Tensor classCounts() override;
 };

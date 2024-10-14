@@ -1,11 +1,9 @@
 #include "regression.h"
 #include "ann/convnet.h"
 #include "ann/simplenet.h"
-#include "data/generators/parameterregressiondataset.h"
 
 #include <cstdint>
-#include <eisgenerator/eistype.h>
-#include <eisgenerator/model.h>
+#include <kisstype/type.h>
 #include <memory>
 #include <torch/optim/adamw.h>
 
@@ -64,7 +62,7 @@ struct Configuration
 	}
 };
 
-static double tryConfiguration(const Configuration config)
+/*static double tryConfiguration(const Configuration config)
 {
 	std::shared_ptr<ann::Net> net;
 
@@ -117,5 +115,5 @@ void ann::regression::parameterSearch()
 	losses.front().second.print(Log::INFO);
 	Log(Log::INFO)<<"Worst configuration with loss "<<losses.back().first<<'\n';
 	losses.back().second.print(Log::INFO);
-}
+}*/
 

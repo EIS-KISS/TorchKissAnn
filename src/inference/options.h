@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <vector>
 #include <argp.h>
 #include <iostream>
 #include "globals.h"
@@ -19,7 +18,7 @@ static struct argp_option options[] =
   {"network",		'n', "[FILE]",		0,	"Network file name" },
   {"input",			'i', "[FILE]",		0,	"Input file name" },
   {"dataset",	 	'd', "[STRING]",	0,	"The dataset type to test on :" DATASET_LIST},
-  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, mpt, trash, gen" },
+  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, trash, gen" },
   {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: ann, knn, anntest, annconfusion, regression, show"},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
@@ -89,8 +88,6 @@ static FileType parseFileType(const std::string& in)
 {
 	if(in.empty() || in == "csv")
 		return FILE_TYPE_CSV;
-	else if(in == "mpt")
-		return FILE_TYPE_MPT;
 	else if(in == "trash")
 		return FILE_TYPE_TRASH;
 	else if(in == "relaxis")

@@ -2,15 +2,12 @@
 
 #include <algorithm>
 #include <assert.h>
-#include <eisgenerator/eistype.h>
+#include <kisstype/spectra.h>
+#include <kisstype/type.h>
+
 #include <eisgenerator/translators.h>
 
-#include "model.h"
-#include "mpt.h"
-#include "../print.h"
 #include "log.h"
-#include "../../utils/tokenize.h"
-#include "../filterdata.h"
 #include "../eistotorch.h"
 
 using namespace eis;
@@ -30,9 +27,8 @@ inputSize(inputSizeI)
 		if(!dirent.is_regular_file() || dirent.path().extension() != ".csv")
 			continue;
 		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();
-		eis::EisSpectra spectra = eis::EisSpectra::loadFromDisk(dirent.path());
+		eis::Spectra spectra = eis::Spectra::loadFromDisk(dirent.path());
 		purgeEisParamBrackets(spectra.model);
-		eis::Model::removeSeriesResitance(spectra.model);
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
 			spectra.model = "Union";
 		auto search = std::find(modelStrs.begin(), modelStrs.end(), spectra.model);
@@ -68,11 +64,11 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t
 	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(fileNames[index].classNum);
 
-	eis::EisSpectra data;
+	eis::Spectra data;
 
 	try
 	{
-		data = eis::EisSpectra::loadFromDisk(fileNames[index].path);
+		data = eis::Spectra::loadFromDisk(fileNames[index].path);
 	}
 	catch(const eis::file_error& err)
 	{
@@ -87,15 +83,8 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t
 		assert(false);
 	}
 
-	filterData(data.data, inputSize);
-
 	torch::Tensor input = eisToTorch(data.data);
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
-}
-
-size_t EisDirDataset::classForIndex(size_t index)
-{
-	return fileNames[index].classNum;
 }
 
 size_t EisDirDataset::outputSize() const
@@ -132,12 +121,12 @@ torch::Tensor EisDirDataset::modelWeights()
 	return output;
 }
 
-std::string EisDirDataset::modelStringForClass(size_t classNum)
+std::string EisDirDataset::outputName(size_t output)
 {
-	if(classNum >= modelStrs.size())
+	if(output >= modelStrs.size())
 		return "invalid";
 	else
-		return *std::next(modelStrs.begin(), classNum);
+		return *std::next(modelStrs.begin(), output);
 }
 
 torch::Tensor EisDirDataset::classCounts()

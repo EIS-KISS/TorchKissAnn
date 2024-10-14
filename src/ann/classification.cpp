@@ -1,5 +1,10 @@
 #include "classification.h"
+
+#include <kisstype/spectra.h>
+
 #include "log.h"
+#include "randomgen.h"
+#include "../data/eistotorch.h"
 
 using namespace ann::classification;
 
@@ -49,7 +54,7 @@ void ann::classification::exportRandomSamples(const torch::Tensor& data, const t
 				for(int64_t j = 0; j < targets[i].size(0); ++j)
 				{
 					if((targets[i][j].template item<int64_t>()) == 1)
-						eis::EisSpectra(torchToEis(data.select(0, i)), "", "").saveToDisk(getSampleOutputFileName(outDir, true, j));
+						eis::Spectra(torchToEis(data.select(0, i)), "", "").saveToDisk(getSampleOutputFileName(outDir, true, j));
 				}
 			}
 		}
@@ -59,7 +64,7 @@ void ann::classification::exportRandomSamples(const torch::Tensor& data, const t
 			{
 				if((targets[i][j].template item<int64_t>()) == 1)
 				{
-					eis::EisSpectra spectra(torchToEis(data.select(0, i)), "", "");
+					eis::Spectra spectra(torchToEis(data.select(0, i)), "", "");
 					spectra.saveToDisk(getSampleOutputFileName(outDir, false, j));
 				}
 			}

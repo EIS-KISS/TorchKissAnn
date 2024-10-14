@@ -1,7 +1,5 @@
 #include <ATen/TensorIndexing.h>
-#include <cstddef>
-#include <cstdint>
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <filesystem>
 #include <iostream>
 #include <sciplot/Canvas.hpp>
@@ -13,21 +11,15 @@
 #include <sciplot/sciplot.hpp>
 #include <string>
 #include <torch/types.h>
-#include <vector>
 #include <limits>
 
-#include "data/generators/eisgendatanoise.h"
-#include "data/passfaildataset.h"
 #include "log.h"
-#include "data/generators/eisgendata.h"
-#include "data/generators/classextractordataset.h"
 #include "data/loaders/dirloader.h"
-#include "data/loaders/deduploader.h"
 #include "data/eistotorch.h"
+#include "data/classextractordataset.h"
 #include "options.h"
 #include "tensoroperators.h"
 #include "tokenize.h"
-#include "data/compositdataset.h"
 
 template <typename DataSetType>
 std::string generateReport(EisDataset<DataSetType>* dataset)
@@ -47,7 +39,7 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 	ss<<'\n';
 	for(size_t i = 0; i < dataset->outputSize(); ++i)
 	{
-		ss<<dataset->modelStringForClass(i);
+		ss<<dataset->outputName(i);
 		if(i+1 < dataset->outputSize())
 			ss<<",\t";
 	}
@@ -115,7 +107,7 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		sciplot::Figure fig({{plot}});
 		sciplot::Canvas canvas({{fig}});
 		canvas.size(1280, 768);
-		canvas.save(outDir/(dataset->modelStringForClass(i)+ ".png"));
+		canvas.save(outDir/(dataset->outputName(i)+ ".png"));
 	}
 	return true;
 }
@@ -137,70 +129,6 @@ int main(int argc, char** argv)
 	std::string report;
 	switch(config.datasetMode)
 	{
-		case DATASET_GEN:
-		{
-			EisGeneratorDataset *dataset;
-			if(config.fileName.empty())
-				dataset = EisGeneratorDataset::newDefaultDataset(100, config.datasetSize, 1, false);
-			else
-				dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, 100, 1, false, false);
-			report = generateReport<EisGeneratorDataset>(dataset);
-			if(!config.imageOutput.empty())
-				saveImages<EisGeneratorDataset>(dataset, config.imageOutput);
-			delete dataset;
-			break;
-		}
-		case DATASET_GEN_NOISE:
-		{
-			EisGeneratorDatasetNoise *dataset;
-			if(config.fileName.empty())
-				dataset = EisGeneratorDatasetNoise::newDefaultDataset(100, config.datasetSize, false);
-			else
-				dataset = new EisGeneratorDatasetNoise(config.fileName, config.datasetSize, 100, false);
-			report = generateReport<EisGeneratorDatasetNoise>(dataset);
-			if(!config.imageOutput.empty())
-				saveImages<EisGeneratorDatasetNoise>(dataset, config.imageOutput);
-			delete dataset;
-			break;
-		}
-		case DATASET_GEN_NOISE_DIR:
-		{
-			std::vector<std::string> tokens = tokenize(config.fileName, ',', '"');
-			if(tokens.size() != 2)
-			{
-				Log(Log::ERROR)<<"the dataset filename needs to be: /path/for/model/list,/path/to/dir";
-				return 2;
-			}
-			EisGeneratorDatasetNoise genDataset(tokens[0], config.datasetSize, 100, false);
-			EisDirDataset dirDataset(tokens[1], 100);
-			CompositDataset<EisGeneratorDatasetNoise, EisDirDataset> dataset(&genDataset, &dirDataset);
-			report = generateReport<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(&dataset);
-			if(!config.imageOutput.empty())
-				saveImages<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(&dataset, config.imageOutput);
-			break;
-		}
-		case DATASET_FDUP:
-		{
-			if(config.fileName.empty())
-			{
-				Log(Log::ERROR)<<"You must specify a valid dataset file to use";
-				return 2;
-			}
-			FastDedupDataset dataset(config.fileName);
-			report = generateReport<FastDedupDataset>(&dataset);
-			if(!config.imageOutput.empty())
-				saveImages<FastDedupDataset>(&dataset, config.imageOutput);
-			break;
-		}
-		case DATASET_PASSFAIL:
-		{
-			EisGeneratorDataset *origDataset = EisGeneratorDataset::newDefaultDataset(100, config.datasetSize, 0, false);
-			PassFaillDataset<EisGeneratorDataset> dataset(origDataset);
-			report = generateReport<PassFaillDataset<EisGeneratorDataset>>(&dataset);
-			if(!config.imageOutput.empty())
-				saveImages<PassFaillDataset<EisGeneratorDataset>>(&dataset, config.imageOutput);
-			break;
-		}
 		case DATASET_DIR:
 		{
 			if(config.fileName.empty())

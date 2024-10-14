@@ -41,7 +41,7 @@ private:
 	std::vector<int64_t> dataSizes = {};
 
 protected:
-	eis::EisSpectra loadSpectra(size_t index);
+	eis::Spectra loadSpectra(size_t index);
 	Metadata loadMetadata(const eis::EisSpectra& spectra);
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override = 0;
 

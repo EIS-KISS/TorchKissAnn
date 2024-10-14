@@ -8,9 +8,7 @@
 
 #include "net.h"
 #include "globals.h"
-#include "../data/generators/eisgendata.h"
-#include "../utils/randomgen.h"
-#include "../data/eistotorch.h"
+#include "../data/eisdataset.h"
 #include "log.h"
 #include "tensoroptions.h"
 #include "trainlog.h"
@@ -206,14 +204,14 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	bool noLabels = false;
 	for(int64_t i = 0; i < net->getOutputSize(); ++i)
 	{
-		std::string label = trainDataset->modelStringForClass(i);
+		std::string label = trainDataset->outputName(i);
 		if(label == "Unkown")
 		{
 			Log(Log::WARN)<<"This dataset dosent provide output labels";
 			noLabels = true;
 			break;
 		}
-		outputLables[i] = trainDataset->modelStringForClass(i);
+		outputLables[i] = label;
 	}
 	if(!noLabels)
 		net->setOutputLabels(outputLables);

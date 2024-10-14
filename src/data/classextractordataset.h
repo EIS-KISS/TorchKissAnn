@@ -37,10 +37,9 @@ public:
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
-			if(_dataset->classForIndex(i) == classNum)
-			{
+			torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(i);
+			if(torch::argmax(example.target).item().toUInt64() == classNum)
 				indexList.push_back(i);
-			}
 		}
 	}
 
@@ -49,14 +48,9 @@ public:
 		return 1;
 	}
 
-	virtual size_t classForIndex(size_t index) override
+	virtual std::string outputName(size_t classNum) override
 	{
-		return _classNum;
-	}
-
-	virtual std::string modelStringForClass(size_t classNum)
-	{
-		return _dataset->modelStringForClass(_classNum);
+		return _dataset->outputName(_classNum);
 	}
 
 	size_t getParentIndex(size_t index)

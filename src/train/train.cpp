@@ -5,6 +5,8 @@
 #include <iostream>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
+#include <kisstype/spectra.h>
+#include <kisstype/type.h>
 #include <memory>
 #include <string>
 #include <torch/torch.h>
@@ -14,26 +16,16 @@
 #include "ann/scriptnet.h"
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
-#include "ann/simplenet.h"
 #include "commonoptions.h"
 #include "gan/gan.h"
 #include "log.h"
-#include "data/splitdataset.h"
 #include "data/regressiondataset.h"
-#include "data/generators/eisgendata.h"
-#include "data/generators/eisgendatanoise.h"
-#include "data/generators/parameterregressiondataset.h"
 #include "data/loaders/regressionloader.h"
 #include "data/loaders/dirloader.h"
-#include "data/loaders/deduploader.h"
-#include "data/loaders/coincellhellloader.h"
-#include "data/splitregressiondataset.h"
-#include "data/passfaildataset.h"
-#include "data/compositdataset.h"
 #include "options.h"
-#include "spectra.h"
 #include "trainlog.h"
 #include "tokenize.h"
+#include "data/eistotorch.h"
 
 
 template <typename DataSetType>
@@ -45,108 +37,39 @@ void trainWithSplitDataset(const Config& config, DataSetType* dataset);
 template <typename DataSetType, typename TestDataSetType = DataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
 
-template <typename DataSetType>
-void trainWithSplitDataset(const Config& config, DataSetType* dataset)
+template <> int train<RegressionLoader>(const Config& config)
 {
-	std::pair<SplitDataset<DataSetType>, SplitDataset<DataSetType>> datasets = SplitDataset<DataSetType>::createSplitDataset(dataset, 0.1);
-	trainSwitch<SplitDataset<DataSetType>, SplitDataset<DataSetType>>(config, &datasets.first, &datasets.second);
-}
-
-template <> int train<FastDedupDataset>(const Config& config)
-{
-	FastDedupDataset* dataset = new FastDedupDataset(config.fileName);
-
-	if(!dataset->isOpen())
+	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
 	{
-		Log(Log::ERROR)<<"Could not load fast deduplicator dataset from "<<config.fileName;
+		Log(Log::ERROR)<<"A valid directory must be specified in conbination with the dir dataset";
 		return 1;
+	}
+
+	RegressionLoader dataset(config.fileName);
+	RegressionLoader* testDataset = nullptr;
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to load dataset from "<<config.fileName;
+		return 2;
 	}
 
 	if(!config.testFileName.empty())
 	{
-		Log(Log::WARN)<<"a seperate test dataset cant be used with EisDirDataset,"
-			<<"instead 25% of the training dataset is automaticly used as a testing datastet";
+		testDataset = new RegressionLoader(config.testFileName);
+		if(dataset.outputSize() != testDataset->outputSize())
+		{
+			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
+				<<"The traing dataset has "<<dataset.outputSize()
+				<<" and the test dataset has "<<testDataset->outputSize();
+			return 1;
+		}
 	}
 
-	trainWithSplitDataset<FastDedupDataset>(config, dataset);
-	delete dataset;
-	return 0;
-}
+	trainSwitch<RegressionLoader, RegressionLoader>(config, &dataset, testDataset);
 
-template <> int train<EisGeneratorDataset>(const Config& config)
-{
-	EisGeneratorDataset* dataset;
-	EisGeneratorDataset* testDataset = nullptr;
-
-	if(config.fileName.empty())
-		dataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize, config.noise, config.probeModel);
-	else
-		dataset = new EisGeneratorDataset(config.fileName, config.datasetSize, config.dataWidth, config.noise, config.probeModel);
-
-	if(config.testFileName.empty() && config.fileName.empty())
-		testDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize/10, config.noise, config.probeModel);
-	else if(!config.testFileName.empty())
-		testDataset = new EisGeneratorDataset(config.testFileName, config.datasetSize/10, config.dataWidth, config.noise, config.probeModel, false);
-
-	if(testDataset && dataset->outputSize() != testDataset->outputSize())
-	{
-		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
-			<<"The traing dataset has "<<dataset->outputSize()
-			<<" and the test dataset has "<<testDataset->outputSize();
-		return 1;
-	}
-
-	trainSwitch<EisGeneratorDataset>(config, dataset, testDataset);
-
-	delete dataset;
 	if(testDataset)
 		delete testDataset;
-	return 0;
-}
-
-
-template <> int train<EisGeneratorDatasetNoise>(const Config& config)
-{
-	EisGeneratorDatasetNoise* dataset;
-	EisGeneratorDatasetNoise* testDataset = nullptr;
-
-	if(config.fileName.empty())
-		dataset = EisGeneratorDatasetNoise::newDefaultDataset(config.dataWidth, config.datasetSize, config.probeModel);
-	else
-		dataset = new EisGeneratorDatasetNoise(config.fileName, config.datasetSize, config.dataWidth, config.probeModel);
-
-	if(config.testFileName.empty() && config.fileName.empty())
-		testDataset = EisGeneratorDatasetNoise::newDefaultDataset(config.dataWidth, config.datasetSize/10, config.probeModel);
-	else if(!config.testFileName.empty())
-		testDataset = new EisGeneratorDatasetNoise(config.testFileName, config.datasetSize/10, config.dataWidth, config.probeModel);
-
-	if(testDataset && dataset->outputSize() != testDataset->outputSize())
-	{
-		Log(Log::ERROR)<<"Training and test dataset dont have the same number of classes. "
-		<<"The traing dataset has "<<dataset->outputSize()
-		<<" and the test dataset has "<<testDataset->outputSize();
-		return 1;
-	}
-
-	trainSwitch<EisGeneratorDatasetNoise>(config, dataset, testDataset);
-
-	delete dataset;
-	if(testDataset)
-		delete testDataset;
-	return 0;
-}
-
-template <> int train<PassFaillDataset<EisGeneratorDataset>>(const Config& config)
-{
-	EisGeneratorDataset* origDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, config.datasetSize, config.noise, config.probeModel);
-	PassFaillDataset<EisGeneratorDataset> dataset(origDataset);
-
-	EisGeneratorDataset* origTestDataset = EisGeneratorDataset::newDefaultDataset(config.dataWidth, 3000, config.noise, config.probeModel);
-	PassFaillDataset<EisGeneratorDataset> testDataset(origTestDataset);
-
-	trainSwitch<PassFaillDataset<EisGeneratorDataset>, PassFaillDataset<EisGeneratorDataset>>(config, &dataset, &testDataset);
-
-	delete origDataset;
 	return 0;
 }
 
@@ -186,124 +109,6 @@ template <> int train<EisDirDataset>(const Config& config)
 	return 0;
 }
 
-template <> int train<ParameterRegressionDatasetGenerator>(const Config& config)
-{
-	if(config.fileName.empty())
-	{
-		Log(Log::ERROR)<<"Please specify a model as the filename for this dataset type";
-		return 1;
-	}
-	if(!config.testFileName.empty())
-	{
-		Log(Log::ERROR)<<"You can not specify a different model as the train dataset for this dataset type";
-		return 1;
-	}
-
-	ParameterRegressionDatasetGenerator dataset(config.fileName, config.dataWidth, 0, false, config.datasetSize);
-
-	if(dataset.size().value() == 0)
-	{
-		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
-		return 2;
-	}
-
-	trainSwitch<ParameterRegressionDatasetGenerator, ParameterRegressionDatasetGenerator>(config, &dataset, nullptr);
-	return 0;
-}
-
-template <> int train<ParameterRegressionDatasetLoader>(const Config& config)
-{
-	if(config.fileName.empty())
-	{
-		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
-		return 1;
-	}
-	if(!config.testFileName.empty())
-	{
-		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type";
-		return 1;
-	}
-
-	ParameterRegressionDatasetLoader dataset(config.fileName, true);
-
-	if(dataset.size().value() == 0)
-	{
-		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
-		return 2;
-	}
-
-	trainSwitch<ParameterRegressionDatasetLoader, ParameterRegressionDatasetLoader>(config, &dataset, nullptr);
-	return 0;
-}
-
-template <> int train<CoinCellHellLoaderPostdict>(const Config& config)
-{
-	if(config.fileName.empty())
-	{
-		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
-		return 1;
-	}
-	if(!config.testFileName.empty())
-	{
-		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type, the train datase will be automaticly split";
-		return 1;
-	}
-
-	CoinCellHellLoaderPostdict dataset(config.fileName);
-	std::pair<SplitRegressionDataset<CoinCellHellLoaderPostdict>, SplitRegressionDataset<CoinCellHellLoaderPostdict>> splitdatasets = SplitRegressionDataset<CoinCellHellLoaderPostdict>::createSplitRegressionDataset(&dataset, 0.1);
-
-	if(dataset.size().value() == 0)
-	{
-		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
-		return 2;
-	}
-
-	trainSwitch<SplitRegressionDataset<CoinCellHellLoaderPostdict>, SplitRegressionDataset<CoinCellHellLoaderPostdict>>(config, &splitdatasets.first, &splitdatasets.second);
-	return 0;
-}
-
-template <> int train<CoinCellHellLoaderPredict>(const Config& config)
-{
-	if(config.fileName.empty())
-	{
-		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
-		return 1;
-	}
-	if(!config.testFileName.empty())
-	{
-		Log(Log::ERROR)<<"You can not specify a different tar archive as a testing dataset with this dataset type, the train datase will be automaticly split";
-		return 1;
-	}
-
-	CoinCellHellLoaderPredict dataset(config.fileName);
-	std::pair<SplitRegressionDataset<CoinCellHellLoaderPredict>, SplitRegressionDataset<CoinCellHellLoaderPredict>> splitdatasets = SplitRegressionDataset<CoinCellHellLoaderPredict>::createSplitRegressionDataset(&dataset, 0.1);
-
-	if(dataset.size().value() == 0)
-	{
-		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
-		return 2;
-	}
-
-	trainSwitch<SplitRegressionDataset<CoinCellHellLoaderPredict>, SplitRegressionDataset<CoinCellHellLoaderPredict>>(config, &splitdatasets.first, &splitdatasets.second);
-	return 0;
-}
-
-template <> int train<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(const Config& config)
-{
-	std::vector<std::string> tokens = tokenize(config.fileName, ',', '"');
-	if(tokens.size() != 2)
-	{
-		Log(Log::ERROR)<<"the dataset filename needs to be: /path/for/model/list,/path/to/dir";
-		return 2;
-	}
-	EisGeneratorDatasetNoise genDataset(tokens[0], config.datasetSize, 100, false);
-	EisDirDataset dirDataset(tokens[1], 100);
-	CompositDataset<EisGeneratorDatasetNoise, EisDirDataset> dataset(&genDataset, &dirDataset);
-
-	trainWithSplitDataset<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(config, &dataset);
-	return 0;
-}
-
 template <typename DatasetType>
 void exportDataset(std::unique_ptr<TrainLog>& trainLog, EisDataset<DatasetType>* testDataset)
 {
@@ -316,16 +121,22 @@ void exportDataset(std::unique_ptr<TrainLog>& trainLog, EisDataset<DatasetType>*
 
 	for(size_t i = 0; i <testDataset->size().value(); ++i)
 	{
-		eis::EisSpectra spectra;
+		eis::Spectra spectra;
 		torch::data::Example<torch::Tensor, torch::Tensor> example = testDataset->get(i);
 		spectra.data = torchToEis(example.data);
-		spectra.model = testDataset->modelStringForClass(testDataset->classForIndex(i));
+		spectra.model = testDataset->outputName(torch::argmax(example.target).item().toUInt64());
 		float* tensorDataPtr = example.target.contiguous().data_ptr<float>();
 		spectra.labels.assign(tensorDataPtr, tensorDataPtr+example.target.numel());
 		spectra.header = std::string("TorchKissAnn re-exported from ") + typeid(DatasetType).name();
 		std::filesystem::path path = dir/(std::to_string(i) + ".csv");
-		if(!spectra.saveToDisk(path))
+		try
+		{
+			spectra.saveToDisk(path);
+		}
+		catch(const eis::file_error& err)
+		{
 			Log(Log::ERROR)<<__func__<<" unable to save "<<path;
+		}
 	}
 }
 
@@ -393,8 +204,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		}
 		case MODE_GAN:
 		{
-			EisGeneratorDataset dataset;
-			gan::train(trainLog.get(), &dataset, config.epochs, config.learingRate);
+			Log(Log::ERROR)<<"Currently not implemented use earlier version";
 			break;
 		}
 		break;
@@ -448,10 +258,8 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if((config.datasetMode != DATASET_GEN_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION &&
-		config.datasetMode != DATASET_COINCELLHELL_PREDICT &&
-		config.datasetMode != DATASET_COINCELLHELL_POSTDICT) &&
+	if((config.datasetMode != DATASET_DIR_REGRESSION &&
+		config.datasetMode != DATASET_TAR_REGRESSION) &&
 		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
 	{
 		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
@@ -494,26 +302,12 @@ int main(int argc, char** argv)
 
 	switch(config.datasetMode)
 	{
-		case DATASET_GEN:
-			return train<EisGeneratorDataset>(config);
-		case DATASET_GEN_NOISE:
-			return train<EisGeneratorDatasetNoise>(config);
-		case DATASET_FDUP:
-			return train<FastDedupDataset>(config);
-		case DATASET_PASSFAIL:
-			return train<PassFaillDataset<EisGeneratorDataset>>(config);
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
-		case DATASET_GEN_NOISE_DIR:
-			return train<CompositDataset<EisGeneratorDatasetNoise, EisDirDataset>>(config);
-		case DATASET_GEN_REGRESSION:
-			return train<ParameterRegressionDatasetGenerator>(config);
-		case DATASET_TAR_REGRESSION:
-			return train<ParameterRegressionDatasetLoader>(config);
-		case DATASET_COINCELLHELL_POSTDICT:
-			return train<CoinCellHellLoaderPostdict>(config);
-		case DATASET_COINCELLHELL_PREDICT:
-			return train<CoinCellHellLoaderPredict>(config);
+		case DATASET_DIR_REGRESSION:
+			return train<RegressionLoader>(config);
+		//case DATASET_TAR_REGRESSION:
+		//	return train<RegressionLoader>(config);
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;

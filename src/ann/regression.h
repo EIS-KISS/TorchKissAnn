@@ -210,7 +210,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	net->setOutputBiases(scalarAndBias.second);
 
 	std::stringstream purpose;
-	std::string modelString = trainDataset->modelStringForClass(trainDataset->outputSize()+1);
+	std::string modelString = trainDataset->outputName(trainDataset->outputSize()+1);
 	purpose<<"Regression,"<<modelString<<std::scientific;
 	if(trainDataset->freqRange().has_value())
 	{
@@ -248,14 +248,14 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	bool noLabels = false;
 	for(int64_t i = 0; i < net->getOutputSize(); ++i)
 	{
-		std::string label = trainDataset->modelStringForClass(i);
+		std::string label = trainDataset->outputName(i);
 		if(label == "Unkown")
 		{
 			Log(Log::WARN)<<"This dataset dosent provide output labels";
 			noLabels = true;
 			break;
 		}
-		outputLables[i] = trainDataset->modelStringForClass(i);
+		outputLables[i] = label;
 	}
 	if(!noLabels)
 		net->setOutputLabels(outputLables);
@@ -296,7 +296,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	return 0;
 }
 
-void parameterSearch();
+//void parameterSearch();
 
 
 }

@@ -1,41 +1,46 @@
 #pragma once
 
-#include <eisgenerator/eistype.h>
-#include <eisgenerator/model.h>
 #include <string>
 #include <filesystem>
+#include <vector>
+#include <kisstype/spectra.h>
 
 #include "data/regressiondataset.h"
 #include "microtar.h"
 
-class ParameterRegressionDatasetLoader :
-public RegressionDataset<ParameterRegressionDatasetLoader>
+class RegressionLoader :
+public RegressionDataset<RegressionLoader>
 {
-private:
-	size_t parameterCount;
-	std::vector<std::pair<std::filesystem::path, size_t>> files;
-	std::filesystem::path path;
-	bool drt;
-	mtar_t tar;
-	std::vector<int64_t> dataSizes = {};
-
-	eis::EisSpectra loadSpectra(size_t index);
-
 protected:
+	mtar_t tar;
+
+	struct File
+	{
+		std::string path;
+		size_t pos;
+		size_t size;
+	};
+
+	size_t outputCount;
+	std::vector<File> files;
+	std::filesystem::path path;
+	inline static const std::string extraInputStr = "exip_";
+
+	eis::Spectra loadSpectraAtCurrentPos(size_t size);
+	std::pair<std::vector<std::string>, std::vector<std::string>> getExtraInputsAndLabelNames(const eis::Spectra& spectra);
+
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 
 public:
-	explicit ParameterRegressionDatasetLoader(const std::filesystem::path& pathI, bool drtI = true);
-	ParameterRegressionDatasetLoader(const ParameterRegressionDatasetLoader& in);
-	ParameterRegressionDatasetLoader& operator=(const ParameterRegressionDatasetLoader& in);
-	~ParameterRegressionDatasetLoader();
+	explicit RegressionLoader(const std::filesystem::path& pathI);
+	RegressionLoader(const RegressionLoader& in);
+	RegressionLoader& operator=(const RegressionLoader& in);
+	~RegressionLoader();
 
 	virtual size_t outputSize() const override;
-	virtual size_t classForIndex(size_t index) override;
-	virtual std::string modelStringForClass(size_t classNum) override;
+	virtual std::string outputName(size_t output) override;
 	virtual c10::optional<size_t> size() const override;
 	virtual bool isMulticlass() override;
-	virtual std::string dataLabel() const override;
 	virtual c10::optional<torch::Tensor> freqRange() override;
-	virtual std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBias() override;
+	virtual std::vector<std::pair<std::string, int64_t>> extraInputs() override;
 };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <libsvm/svm.h>
 
 void printDataVect(const std::vector<eis::DataPoint>& in);

@@ -19,11 +19,11 @@ protected:
 public:
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 	virtual size_t outputSize() const = 0;
+	virtual std::string outputName(size_t output);
 	virtual c10::optional<size_t> size() const override = 0;
-	virtual size_t classForIndex(size_t index) = 0;
-	virtual std::string modelStringForClass(size_t classNum);
 	virtual bool isMulticlass();
 	bool createLabelMap(const ann::Net& net);
+
 	virtual torch::Tensor classCounts();
 	virtual torch::Tensor classWeights();
 	virtual size_t inputSize();
@@ -39,7 +39,7 @@ std::string EisDataset<DataSelf>::dataLabel() const
 }
 
 template <typename DataSelf>
-std::string EisDataset<DataSelf>::modelStringForClass(size_t classNum)
+std::string EisDataset<DataSelf>::outputName(size_t output)
 {
 	return std::string("Unkown");
 }
@@ -58,7 +58,7 @@ bool EisDataset<DataSelf>::createLabelMap(const ann::Net& net)
 
 	for(int64_t i = 0; i < outputSize(); ++i)
 	{
-		std::string model = modelStringForClass(i);
+		std::string model = outputName(i);
 		for(int64_t j = 0; j < net.getOutputLabels().size(); ++j)
 		{
 			if(net.getOutputLabels()[j] == model)
@@ -111,8 +111,6 @@ torch::Tensor EisDataset<DataSelf>::classWeights()
 
 	output = output/static_cast<double>(count);
 	output = torch::min(output)/output;
-
-	//output = torch::nn::functional::normalize(output, torch::nn::functional::NormalizeFuncOptions().p(2).dim(0));
 	return output;
 }
 
@@ -134,3 +132,15 @@ std::vector<std::pair<std::string, int64_t>> EisDataset<DataSelf>::extraInputs()
 {
 	return std::vector<std::pair<std::string, int64_t>>();
 }
+
+class dataset_error: public std::exception
+{
+	std::string whatStr;
+public:
+	dataset_error(const std::string& whatIn): whatStr(whatIn)
+	{}
+	virtual const char* what() const noexcept override
+	{
+		return whatStr.c_str();
+	}
+};

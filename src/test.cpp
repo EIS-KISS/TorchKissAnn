@@ -1,30 +1,24 @@
 #include <asm-generic/errno.h>
 #include <cstddef>
 #include <cstdint>
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <iostream>
-#include <eisgenerator/model.h>
 #include <libsvm/svm.h>
-#include <random>
 #include <torch/csrc/autograd/generated/variable_factories.h>
 #include <torch/optim.h>
 #include <filesystem>
 
 #include "ann/scriptnet.h"
 #include "data/eistotorch.h"
-#include "data/generators/eisgendata.h"
 #include "log.h"
 #include "tensoroperators.h"
-#include "utils/tokenize.h"
-#include "data/dataexport.h"
-#include "ann/convnet.h"
 #include "ann/simplenet.h"
 #include "data/loaders/dirloader.h"
-#include "data/generators/parameterregressiondataset.h"
 #include "tensoroptions.h"
 #include "loss/eisdistanceloss.h"
 #include "modelscript.h"
 #include "fit/fit.h"
+#include "tokenize.h"
 
 template<typename Dataset>
 void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<torch::Tensor, torch::Tensor>>* data)
@@ -40,18 +34,6 @@ void testLoader(torch::data::datasets::Dataset<Dataset, torch::data::Example<tor
 	for(auto& batch : *dataLoader)
 	{
 		std::cout<<"batchnum: "<<++i<<" size "<<batch.data.numel()<<std::endl;
-	}
-}
-
-void printDataset(EisGeneratorDataset* eisData)
-{
-	std::random_device rd;
-	std::default_random_engine rande(rd());
-	size_t dataSetSize = eisData->size().value();
-	for(size_t i = 0; i < 20; ++i)
-	{
-		size_t index = rande() % dataSetSize;
-		std::cout<<"spectrum "<<index<<":\n"<<eisData->get(index).data<<'\n';
 	}
 }
 
@@ -90,16 +72,6 @@ void testfs(const std::string& str, const std::string& prefix)
 	}
 }
 
-bool testEisGeneratorDataset()
-{
-	EisGeneratorDataset* dataset = EisGeneratorDataset::newDefaultDataset(100, 1e3, 0, false);
-	Log(Log::INFO)<<__func__<<" size: "<<dataset->size().value();
-	Log(Log::INFO)<<__func__<<" classes: "<<dataset->outputSize();
-
-	delete dataset;
-	return true;
-}
-
 bool reexportDirDataset()
 {
 	EisDirDataset dataset("realDataset/train");
@@ -107,11 +79,11 @@ bool reexportDirDataset()
 	Log(Log::INFO)<<__func__<<" classes: "<<dataset.outputSize();
 	torch::Tensor classCounts = dataset.classCounts();
 	for(size_t i = 0; i < dataset.outputSize(); ++i)
-		Log(Log::INFO)<<__func__<<" class "<<i<<", "<<classCounts[i].item().to<int64_t>()<<" examples: "<<dataset.modelStringForClass(i);
-	bool ret = saveDataset<EisDirDataset>("datasetexport", &dataset);
+		Log(Log::INFO)<<__func__<<" class "<<i<<", "<<classCounts[i].item().to<int64_t>()<<" examples: "<<dataset.outputName(i);
+	/*bool ret = saveDataset<EisDirDataset>("datasetexport", &dataset);
 	if(!ret)
-		Log(Log::ERROR)<<__func__<<" could not save dataset";
-	return ret;
+		Log(Log::ERROR)<<__func__<<" could not save dataset";*/
+	return true;
 }
 
 void testModelGrad()
@@ -129,20 +101,6 @@ bool testLinearToComplex()
 	torch::Tensor linear = complexToLinear(complex);
 	if(torch::sum(data-linear).item().toDouble() > 0.001)
 		return false;
-	return true;
-}
-
-bool testParaDataset()
-{
-	ParameterRegressionDatasetGenerator noDrtDds ("r{100}-r{100~1000}c{1e-6~1e-5}-r{100}c{1e-4~100e-4}", 100, 0, false);
-	ParameterRegressionDatasetGenerator drtDds("r{100}-r{100~1000}c{1e-6~1e-5}-r{100}c{1e-4~100e-4}", 100, 0, true);
-
-	torch::data::Example<torch::Tensor, torch::Tensor> example = noDrtDds.get(23);
-	torch::data::Example<torch::Tensor, torch::Tensor> exampleDrt = drtDds.get(23);
-
-	Log(Log::INFO)<<__func__<<" Parameters: "<<example.target;
-	Log(Log::INFO)<<__func__<<" Spectra: "<<linearToComplex(example.data);
-
 	return true;
 }
 

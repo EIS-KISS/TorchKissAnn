@@ -1,15 +1,9 @@
 set(SRC_FILES
-	data/generators/classextractordataset.cpp
-	data/generators/eisgendata.cpp
-	data/generators/eisgendatanoise.cpp
-	data/generators/parameterregressiondataset.cpp
-	data/loaders/mpt.cpp
 	data/loaders/dirloader.cpp
-	data/loaders/deduploader.cpp
 	data/loaders/regressionloader.cpp
-	data/loaders/coincellhellloader.cpp
 	data/eistotorch.cpp
 	data/print.cpp
+	data/classextractordataset.cpp
 	utils/tokenize.cpp
 	utils/log.cpp
 	utils/trainlog.cpp
@@ -29,7 +23,6 @@ set(SRC_FILES
 	ann/regression.cpp
 	loss/eisdistanceloss.cpp
 	fit/fit.cpp
-	nearest/nearest.cpp
 	globals.cpp
 	net.cpp
 )

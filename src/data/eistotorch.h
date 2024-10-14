@@ -1,6 +1,6 @@
 #pragma once
 
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <tensoroperators.h>
 
 #include <vector>
