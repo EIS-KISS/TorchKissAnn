@@ -13,6 +13,7 @@
 #include "tensoroptions.h"
 #include "trainlog.h"
 #include "tensoroperators.h"
+#include "indicators.hpp"
 #include <ATen/autocast_mode.h>
 
 namespace ann
@@ -43,6 +44,10 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).pos_weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
+
+	size_t batchesPerPrint = (data_size/batch_size)/1000;
+	if(batchesPerPrint == 0)
+		batchesPerPrint = 1;
 
 	for(auto& batch : loader)
 	{
@@ -76,7 +81,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		lossF += loss.template item<float>();
 		accF += acc.template item<float>();
 
-		if (index++ % 100 == 0 && index / 100 > 1)
+		if (index++ % batchesPerPrint == 0 )
 		{
 			auto end = std::min(data_size, (index + 1) * batch_size);
 			if(log)
@@ -123,8 +128,18 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
 
+	std::cout<<"Starting test cycle\n";
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Runing Eval: "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(data_size/batch_size)
+	);
 	for(const auto& batch : loader)
 	{
+		bar.tick();
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
@@ -167,6 +182,8 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		at::autocast::clear_cache();
 		at::autocast::set_enabled(false);
 	}
+
+	bar.mark_as_completed();
 
 	std::cout<<"Class predictions:\n";
 	std::cout<<histograms<<std::endl;
