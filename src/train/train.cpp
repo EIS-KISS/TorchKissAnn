@@ -40,9 +40,9 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisData
 template <typename DataSetType>
 int train(const Config& config)
 {
-	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
+	if(config.fileName.empty())
 	{
-		Log(Log::ERROR)<<"A valid directory must be specified in conbination with the dir dataset";
+		Log(Log::ERROR)<<"A valid file or directoy must be specified in conbination with the "<<datasetModeToStr(config.datasetMode)<<" dataset";
 		return 1;
 	}
 
