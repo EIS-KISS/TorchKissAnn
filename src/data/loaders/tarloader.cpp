@@ -9,6 +9,7 @@
 
 #include "log.h"
 #include "../eistotorch.h"
+#include "indicators.hpp"
 
 using namespace eis;
 
@@ -16,8 +17,19 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 {
 	loadTar(path);
 
+	indicators::show_console_cursor(false);
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Loading classes "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(files.size())
+	);
+
 	for(size_t i = 0; i < files.size(); ++i)
 	{
+		bar.tick();
 		eis::Spectra spectra = loadSpectraAtIndex(i);
 		purgeEisParamBrackets(spectra.model);
 
@@ -37,6 +49,9 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 		}
 		classIndexes.push_back(index);
 	}
+
+	bar.mark_as_completed();
+	indicators::show_console_cursor(true);
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisTarDataset::getImpl(size_t index)

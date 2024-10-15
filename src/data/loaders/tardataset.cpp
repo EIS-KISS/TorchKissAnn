@@ -1,5 +1,7 @@
 #include "tardataset.h"
 #include "data/eisdataset.h"
+#include "indicators.hpp"
+#include <filesystem>
 
 TarDataset::~TarDataset()
 {
@@ -39,8 +41,21 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 	mtar_header_t header;
 	std::vector<std::string> labels;
 	size_t length = 0;
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Loading " + path.string()),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true)
+	);
+
+	indicators::show_console_cursor(false);
+
+	double tarSize = static_cast<double>(std::filesystem::file_size(path));
+
 	while((mtar_read_header(&tar, &header)) != MTAR_ENULLRECORD)
 	{
+		bar.set_progress(tar.pos/tarSize);
 		if(header.type == MTAR_TREG)
 		{
 			size_t pos = tar.pos;
@@ -59,6 +74,9 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 		}
 		mtar_next(&tar);
 	}
+
+	bar.mark_as_completed();
+	indicators::show_console_cursor(false);
 }
 
 eis::Spectra TarDataset::loadSpectraAtCurrentPos(size_t size)

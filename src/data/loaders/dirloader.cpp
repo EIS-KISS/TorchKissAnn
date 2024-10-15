@@ -9,12 +9,23 @@
 
 #include "log.h"
 #include "../eistotorch.h"
+#include "indicators.hpp"
 
 using namespace eis;
 
 EisDirDataset::EisDirDataset(const std::filesystem::path& path)
 {
 	loadDir(path);
+
+	indicators::show_console_cursor(false);
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Loading classes "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(files.size())
+	);
 
 	for(size_t i = 0; i < files.size(); ++i)
 	{
@@ -37,6 +48,9 @@ EisDirDataset::EisDirDataset(const std::filesystem::path& path)
 		}
 		classIndexes.push_back(index);
 	}
+
+	bar.mark_as_completed();
+	indicators::show_console_cursor(true);
 }
 
 std::vector<std::pair<std::string, int64_t>> EisDirDataset::extraInputs()
