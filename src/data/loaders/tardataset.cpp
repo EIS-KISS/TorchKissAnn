@@ -40,11 +40,10 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 
 	mtar_header_t header;
 	std::vector<std::string> labels;
-	size_t length = 0;
 
 	indicators::BlockProgressBar bar(
 		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Loading " + path.string()),
+		indicators::option::PrefixText("Loading " + path.string() + ": "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true)
 	);
@@ -52,23 +51,23 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 	indicators::show_console_cursor(false);
 
 	double tarSize = static_cast<double>(std::filesystem::file_size(path));
+	size_t progress = 0;
 
 	while((mtar_read_header(&tar, &header)) != MTAR_ENULLRECORD)
 	{
-		bar.set_progress(tar.pos/tarSize);
+		if(static_cast<size_t>((tar.pos/tarSize)*100) > progress)
+		{
+			progress = static_cast<size_t>((tar.pos/tarSize)*100);
+			bar.set_progress(progress);
+		}
 		if(header.type == MTAR_TREG)
 		{
 			size_t pos = tar.pos;
-			eis::Spectra spectra = loadSpectraAtCurrentPos(header.size);
+			eis::Spectra spectra = loadSpectraHeaderAtCurrentPos(header.size);
 			if(labels.empty())
 				labels = spectra.labelNames;
 			else if(!std::equal(labels.begin(), labels.end(), spectra.labelNames.begin(), spectra.labelNames.end()))
 				throw dataset_error(std::string("Not all spectra in ") + path.string() + " have the same labels");
-
-			if(length == 0)
-				length = spectra.data.size();
-			else if(length != spectra.data.size())
-				throw dataset_error(std::string("Not all spectra have the same number of datapoints"));
 
 			files.push_back({.path =  header.name, .pos = pos, .size = header.size});
 		}
@@ -77,6 +76,32 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 
 	bar.mark_as_completed();
 	indicators::show_console_cursor(false);
+}
+
+eis::Spectra TarDataset::loadSpectraHeaderAtCurrentPos(size_t size)
+{
+	char* filebuffer = new char[size+1];
+	filebuffer[size] = '\0';
+	int ret = mtar_read_data(&tar, filebuffer, size);
+	if(ret != 0)
+	{
+		Log(Log::ERROR)<<"Unable to read from tar archive";
+		assert(ret == 0);
+	}
+	std::stringstream ss(filebuffer);
+
+	eis::Spectra spectra = eis::Spectra::loadHeaderFromStream(ss);
+	delete[] filebuffer;
+
+	return spectra;
+}
+
+eis::Spectra TarDataset::loadSpectraHeaderAtIndex(size_t index)
+{
+	if(index >= files.size())
+		throw dataset_error("index " + std::to_string(index) + " is out of range for dataset");
+	mtar_seek(&tar, files[index].pos);
+	return loadSpectraHeaderAtCurrentPos(files[index].size);
 }
 
 eis::Spectra TarDataset::loadSpectraAtCurrentPos(size_t size)

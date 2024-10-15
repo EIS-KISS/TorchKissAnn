@@ -23,7 +23,9 @@ protected:
 	std::vector<File> files;
 
 	void loadTar(const std::filesystem::path& path);
+	eis::Spectra loadSpectraHeaderAtCurrentPos(size_t size);
 	eis::Spectra loadSpectraAtCurrentPos(size_t size);
+	virtual eis::Spectra loadSpectraHeaderAtIndex(size_t index) override;
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) override;
 
 public:

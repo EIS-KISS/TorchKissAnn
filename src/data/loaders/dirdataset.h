@@ -17,6 +17,7 @@ protected:
 
 	void loadDir(const std::filesystem::path& path);
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) override;
+	virtual eis::Spectra loadSpectraHeaderAtIndex(size_t index) override;
 
 public:
 	DirDataset() = default;

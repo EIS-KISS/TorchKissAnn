@@ -21,16 +21,17 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 
 	indicators::BlockProgressBar bar(
 		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Loading classes "),
+		indicators::option::PrefixText("Loading classes: "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(files.size())
+		indicators::option::MaxProgress(files.size()/100)
 	);
 
 	for(size_t i = 0; i < files.size(); ++i)
 	{
-		bar.tick();
-		eis::Spectra spectra = loadSpectraAtIndex(i);
+		if(i % 100 == 0)
+			bar.tick();
+		eis::Spectra spectra = loadSpectraHeaderAtIndex(i);
 		purgeEisParamBrackets(spectra.model);
 
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
