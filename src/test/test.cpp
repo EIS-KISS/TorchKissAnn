@@ -8,6 +8,7 @@
 #include "log.h"
 #include "data/loaders/dirloader.h"
 #include "options.h"
+#include "globals.h"
 
 
 template <typename DataSetType>

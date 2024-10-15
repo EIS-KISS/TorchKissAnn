@@ -17,14 +17,14 @@
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
 #include "commonoptions.h"
-#include "gan/gan.h"
+#include "data/loaders/regressiondirloader.h"
+#include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/regressiondataset.h"
 #include "data/loaders/regressionloader.h"
 #include "data/loaders/dirloader.h"
 #include "options.h"
 #include "trainlog.h"
-#include "tokenize.h"
 #include "data/eistotorch.h"
 
 
@@ -37,7 +37,8 @@ void trainWithSplitDataset(const Config& config, DataSetType* dataset);
 template <typename DataSetType, typename TestDataSetType = DataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
 
-template <> int train<RegressionLoader>(const Config& config)
+template <typename DataSetType>
+int train(const Config& config)
 {
 	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
 	{
@@ -45,8 +46,8 @@ template <> int train<RegressionLoader>(const Config& config)
 		return 1;
 	}
 
-	RegressionLoader dataset(config.fileName);
-	RegressionLoader* testDataset = nullptr;
+	DataSetType dataset(config.fileName);
+	DataSetType* testDataset = nullptr;
 
 	if(dataset.size().value() == 0)
 	{
@@ -56,7 +57,7 @@ template <> int train<RegressionLoader>(const Config& config)
 
 	if(!config.testFileName.empty())
 	{
-		testDataset = new RegressionLoader(config.testFileName);
+		testDataset = new DataSetType(config.testFileName);
 		if(dataset.outputSize() != testDataset->outputSize())
 		{
 			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
@@ -66,43 +67,7 @@ template <> int train<RegressionLoader>(const Config& config)
 		}
 	}
 
-	trainSwitch<RegressionLoader, RegressionLoader>(config, &dataset, testDataset);
-
-	if(testDataset)
-		delete testDataset;
-	return 0;
-}
-
-template <> int train<EisDirDataset>(const Config& config)
-{
-	if(config.fileName.empty() || !std::filesystem::is_directory(config.fileName))
-	{
-		Log(Log::ERROR)<<"A valid directory must be specified in conbination with the dir dataset";
-		return 1;
-	}
-
-	EisDirDataset dataset(config.fileName);
-	EisDirDataset* testDataset = nullptr;
-
-	if(dataset.size().value() == 0)
-	{
-		Log(Log::ERROR)<<"Failed to load dataset from "<<config.fileName;
-		return 2;
-	}
-
-	if(!config.testFileName.empty())
-	{
-		testDataset = new EisDirDataset(config.testFileName);
-		if(dataset.outputSize() != testDataset->outputSize())
-		{
-			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
-				<<"The traing dataset has "<<dataset.outputSize()
-				<<" and the test dataset has "<<testDataset->outputSize();
-			return 1;
-		}
-	}
-
-	trainSwitch<EisDirDataset, EisDirDataset>(config, &dataset, testDataset);
+	trainSwitch<DataSetType, DataSetType>(config, &dataset, testDataset);
 
 	if(testDataset)
 		delete testDataset;
@@ -304,10 +269,12 @@ int main(int argc, char** argv)
 	{
 		case DATASET_DIR:
 			return train<EisDirDataset>(config);
+		case DATASET_TAR:
+			return train<EisTarDataset>(config);
 		case DATASET_DIR_REGRESSION:
-			return train<RegressionLoader>(config);
-		//case DATASET_TAR_REGRESSION:
-		//	return train<RegressionLoader>(config);
+			return train<RegressionLoaderDir>(config);
+		case DATASET_TAR_REGRESSION:
+			return train<RegressionLoaderTar>(config);
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;

@@ -1,6 +1,11 @@
 set(SRC_FILES
 	data/loaders/dirloader.cpp
+	data/loaders/tarloader.cpp
 	data/loaders/regressionloader.cpp
+	data/loaders/regressiondirloader.cpp
+	data/loaders/tardataset.cpp
+	data/loaders/dirdataset.cpp
+	data/loaders/eisspectradataset.cpp
 	data/eistotorch.cpp
 	data/print.cpp
 	data/classextractordataset.cpp

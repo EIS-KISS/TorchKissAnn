@@ -13,6 +13,10 @@
 #include <torch/types.h>
 #include <limits>
 
+#include "commonoptions.h"
+#include "data/loaders/regressionloader.h"
+#include "data/loaders/regressiondirloader.h"
+#include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/loaders/dirloader.h"
 #include "data/eistotorch.h"
@@ -126,20 +130,45 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	if(config.fileName.empty())
+	{
+		Log(Log::ERROR)<<"You must specify a valid dataset file to use";
+		return 2;
+	}
+
 	std::string report;
 	switch(config.datasetMode)
 	{
 		case DATASET_DIR:
 		{
-			if(config.fileName.empty())
-			{
-				Log(Log::ERROR)<<"You must specify a valid dataset file to use";
-				return 2;
-			}
 			EisDirDataset dataset(config.fileName);
 			report = generateReport<EisDirDataset>(&dataset);
 			if(!config.imageOutput.empty())
 				saveImages<EisDirDataset>(&dataset, config.imageOutput);
+			break;
+		}
+		case DATASET_TAR:
+		{
+			EisTarDataset dataset(config.fileName);
+			report = generateReport<EisTarDataset>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<EisTarDataset>(&dataset, config.imageOutput);
+			break;
+		}
+		case DATASET_TAR_REGRESSION:
+		{
+			RegressionLoaderTar dataset(config.fileName);
+			report = generateReport<RegressionLoaderTar>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<RegressionLoaderTar>(&dataset, config.imageOutput);
+			break;
+		}
+		case DATASET_DIR_REGRESSION:
+		{
+			RegressionLoaderDir dataset(config.fileName);
+			report = generateReport<RegressionLoaderDir>(&dataset);
+			if(!config.imageOutput.empty())
+				saveImages<RegressionLoaderDir>(&dataset, config.imageOutput);
 			break;
 		}
 		default:
