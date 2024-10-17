@@ -15,7 +15,7 @@ RegressionLoaderDir::RegressionLoaderDir(const std::filesystem::path& pathI)
 
 	outputCount = getExtraInputsAndLabelNames(loadSpectraAtIndex(0)).second.size();
 
-	if(files.size() > 0)
+	if(files->size() > 0)
 		getImpl(0);
 }
 
@@ -63,7 +63,7 @@ size_t RegressionLoaderDir::outputSize() const
 
 c10::optional<size_t> RegressionLoaderDir::size() const
 {
-	return files.size();
+	return files->size();
 }
 
 std::string RegressionLoaderDir::outputName(size_t output)

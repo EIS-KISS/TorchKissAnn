@@ -24,10 +24,10 @@ EisDirDataset::EisDirDataset(const std::filesystem::path& path)
 		indicators::option::PrefixText("Loading classes: "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(files.size())
+		indicators::option::MaxProgress(files->size())
 	);
 
-	for(size_t i = 0; i < files.size(); ++i)
+	for(size_t i = 0; i < files->size(); ++i)
 	{
 		eis::Spectra spectra = loadSpectraHeaderAtIndex(i);
 		purgeEisParamBrackets(spectra.model);
@@ -80,7 +80,7 @@ size_t EisDirDataset::outputSize() const
 
 c10::optional<size_t> EisDirDataset::size() const
 {
-	return files.size();
+	return files->size();
 }
 
 torch::Tensor EisDirDataset::modelWeights()

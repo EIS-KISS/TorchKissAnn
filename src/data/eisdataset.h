@@ -30,6 +30,8 @@ public:
 	virtual c10::optional<torch::Tensor> freqRange();
 	virtual std::string dataLabel() const;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
+
+	virtual ~EisDataset() = default;
 };
 
 template <typename DataSelf>

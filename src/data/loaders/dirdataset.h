@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <kisstype/spectra.h>
 #include <eisgenerator/translators.h>
+#include <memory>
 
 #include "data/loaders/eisspectradataset.h"
 
@@ -13,7 +14,7 @@ protected:
 		std::filesystem::path path;
 	};
 
-	std::vector<File> files;
+	std::shared_ptr<std::vector<File>> files;
 
 	void loadDir(const std::filesystem::path& path);
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) override;

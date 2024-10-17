@@ -1,6 +1,8 @@
 #pragma once
 #include <filesystem>
 #include <kisstype/spectra.h>
+#include <atomic>
+#include <memory>
 
 #include "microtar.h"
 #include "data/loaders/eisspectradataset.h"
@@ -11,6 +13,7 @@ private:
 		std::filesystem::path path;
 		mtar_t tar;
 		bool open = false;
+		inline static std::atomic<int> objCount = 0;
 
 protected:
 
@@ -20,7 +23,7 @@ protected:
 		size_t pos;
 		size_t size;
 	};
-	std::vector<File> files;
+	std::shared_ptr<std::vector<File>> files;
 
 	void loadTar(const std::filesystem::path& path);
 	eis::Spectra loadSpectraHeaderAtCurrentPos(size_t size);
@@ -29,7 +32,11 @@ protected:
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) override;
 
 public:
-	TarDataset() = default;
+	TarDataset()
+	{
+		++objCount;
+		std::cout<<__func__<<" "<<objCount<<'\n';
+	}
 	TarDataset(const TarDataset& in);
 	virtual ~TarDataset();
 

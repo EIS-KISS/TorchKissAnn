@@ -19,6 +19,7 @@ private:
 public:
 	explicit EisTarDataset(const std::filesystem::path& path);
 	EisTarDataset(const EisTarDataset& in) = default;
+	virtual ~EisTarDataset() = default;
 
 	torch::Tensor modelWeights();
 

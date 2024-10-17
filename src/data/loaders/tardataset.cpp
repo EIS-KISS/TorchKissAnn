@@ -1,16 +1,20 @@
 #include "tardataset.h"
 #include "data/eisdataset.h"
 #include "indicators.hpp"
+#include "microtar.h"
 #include <filesystem>
 
 TarDataset::~TarDataset()
 {
 	if(open)
 		mtar_close(&tar);
+	std::cout<<__func__<<" "<<--objCount<<'\n';
 }
 
 TarDataset::TarDataset(const TarDataset& in)
 {
+	++objCount;
+	std::cout<<__func__<<" "<<objCount<<'\n';
 	operator=(in);
 }
 
@@ -18,6 +22,8 @@ TarDataset& TarDataset::operator=(const TarDataset& in)
 {
 	files = in.files;
 	path = in.path;
+	if(open)
+		mtar_close(&tar);
 	if(in.open)
 	{
 		int ret = mtar_open(&tar, path.c_str(), "r");
@@ -31,6 +37,8 @@ TarDataset& TarDataset::operator=(const TarDataset& in)
 
 void TarDataset::loadTar(const std::filesystem::path& path)
 {
+	files.reset(new std::vector<File>);
+
 	int ret = mtar_open(&tar, path.c_str(), "r");
 	if(ret != 0)
 		throw dataset_error(path.string() + " is not a valid tar archive");
@@ -69,7 +77,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 			else if(!std::equal(labels.begin(), labels.end(), spectra.labelNames.begin(), spectra.labelNames.end()))
 				throw dataset_error(std::string("Not all spectra in ") + path.string() + " have the same labels");
 
-			files.push_back({.path =  header.name, .pos = pos, .size = header.size});
+			files->push_back({.path =  header.name, .pos = pos, .size = header.size});
 		}
 		mtar_next(&tar);
 	}
@@ -98,10 +106,10 @@ eis::Spectra TarDataset::loadSpectraHeaderAtCurrentPos(size_t size)
 
 eis::Spectra TarDataset::loadSpectraHeaderAtIndex(size_t index)
 {
-	if(index >= files.size())
+	if(!files || index >= files->size())
 		throw dataset_error("index " + std::to_string(index) + " is out of range for dataset");
-	mtar_seek(&tar, files[index].pos);
-	return loadSpectraHeaderAtCurrentPos(files[index].size);
+	mtar_seek(&tar, (*files)[index].pos);
+	return loadSpectraHeaderAtCurrentPos((*files)[index].size);
 }
 
 eis::Spectra TarDataset::loadSpectraAtCurrentPos(size_t size)
@@ -124,8 +132,8 @@ eis::Spectra TarDataset::loadSpectraAtCurrentPos(size_t size)
 
 eis::Spectra TarDataset::loadSpectraAtIndex(size_t index)
 {
-	if(index >= files.size())
+	if(!files || index >= files->size())
 		throw dataset_error("index " + std::to_string(index) + " is out of range for dataset");
-	mtar_seek(&tar, files[index].pos);
-	return loadSpectraAtCurrentPos(files[index].size);
+	mtar_seek(&tar, (*files)[index].pos);
+	return loadSpectraAtCurrentPos((*files)[index].size);
 }

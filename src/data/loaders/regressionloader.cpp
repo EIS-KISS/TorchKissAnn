@@ -14,7 +14,7 @@ RegressionLoaderTar::RegressionLoaderTar(const std::filesystem::path& pathI)
 
 	outputCount = getExtraInputsAndLabelNames(loadSpectraAtIndex(0)).second.size();
 
-	if(files.size() > 0)
+	if(files->size() > 0)
 		getImpl(0);
 }
 
@@ -62,7 +62,7 @@ size_t RegressionLoaderTar::outputSize() const
 
 c10::optional<size_t> RegressionLoaderTar::size() const
 {
-	return files.size();
+	return files->size();
 }
 
 std::string RegressionLoaderTar::outputName(size_t output)

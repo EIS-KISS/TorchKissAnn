@@ -24,10 +24,10 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 		indicators::option::PrefixText("Loading classes: "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(files.size()/100)
+		indicators::option::MaxProgress(files->size()/100)
 	);
 
-	for(size_t i = 0; i < files.size(); ++i)
+	for(size_t i = 0; i < files->size(); ++i)
 	{
 		if(i % 100 == 0)
 			bar.tick();
@@ -77,7 +77,7 @@ size_t EisTarDataset::outputSize() const
 
 c10::optional<size_t> EisTarDataset::size() const
 {
-	return files.size();
+	return files->size();
 }
 
 torch::Tensor EisTarDataset::modelWeights()
