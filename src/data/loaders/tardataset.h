@@ -1,7 +1,6 @@
 #pragma once
 #include <filesystem>
 #include <kisstype/spectra.h>
-#include <atomic>
 #include <memory>
 
 #include "microtar.h"
@@ -13,7 +12,6 @@ private:
 		std::filesystem::path path;
 		mtar_t tar;
 		bool open = false;
-		inline static std::atomic<int> objCount = 0;
 
 protected:
 
@@ -32,11 +30,7 @@ protected:
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) override;
 
 public:
-	TarDataset()
-	{
-		++objCount;
-		std::cout<<__func__<<" "<<objCount<<'\n';
-	}
+	TarDataset() = default;
 	TarDataset(const TarDataset& in);
 	virtual ~TarDataset();
 

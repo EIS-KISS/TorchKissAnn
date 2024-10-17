@@ -8,13 +8,10 @@ TarDataset::~TarDataset()
 {
 	if(open)
 		mtar_close(&tar);
-	std::cout<<__func__<<" "<<--objCount<<'\n';
 }
 
 TarDataset::TarDataset(const TarDataset& in)
 {
-	++objCount;
-	std::cout<<__func__<<" "<<objCount<<'\n';
 	operator=(in);
 }
 
