@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include <eisgenerator/translators.h>
+#include <torch/types.h>
 
 #include "log.h"
 #include "../eistotorch.h"
@@ -111,12 +112,13 @@ std::string EisDirDataset::outputName(size_t output)
 torch::Tensor EisDirDataset::classCounts()
 {
 	torch::TensorOptions options;
-	options = options.dtype(torch::kFloat32);
+	options = options.dtype(torch::kInt64);
 	options = options.layout(torch::kStrided);
 	options = options.device(torch::kCPU);
 	torch::Tensor out = torch::zeros({static_cast<int64_t>(outputSize())}, options);
+	auto outAcc = out.accessor<int64_t, 1>();
 
 	for(size_t classNum : classIndexes)
-		out[classNum] = out[classNum] + 1;
+		outAcc[classNum] = outAcc[classNum] + 1;
 	return out;
 }
