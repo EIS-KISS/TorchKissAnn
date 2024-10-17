@@ -16,12 +16,12 @@ void DirDataset::loadDir(const std::filesystem::path& path)
 		indicators::option::BarWidth(50),
 		indicators::option::PrefixText("Loading " + path.string() + ": "),
 		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
 		indicators::option::MaxProgress(files->size())
 	);
 
 	for(const std::filesystem::directory_entry& dirent : std::filesystem::directory_iterator{directoryPath})
 	{
+		bar.tick();
 		if(!dirent.is_regular_file() || dirent.path().extension() != ".csv")
 			continue;
 		Log(Log::DEBUG)<<"Using: "<<dirent.path().filename();

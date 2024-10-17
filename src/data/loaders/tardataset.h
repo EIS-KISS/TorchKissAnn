@@ -9,9 +9,10 @@
 class TarDataset: public EisSpectraDataset
 {
 private:
-		std::filesystem::path path;
-		mtar_t tar;
-		bool open = false;
+	std::filesystem::path path;
+	mtar_t tar;
+	bool open = false;
+	std::vector<std::string> labels;
 
 protected:
 

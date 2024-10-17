@@ -44,7 +44,6 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 	open = true;
 
 	mtar_header_t header;
-	std::vector<std::string> labels;
 
 	indicators::BlockProgressBar bar(
 		indicators::option::BarWidth(50),
@@ -66,16 +65,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 			bar.set_progress(progress);
 		}
 		if(header.type == MTAR_TREG)
-		{
-			size_t pos = tar.pos;
-			eis::Spectra spectra = loadSpectraHeaderAtCurrentPos(header.size);
-			if(labels.empty())
-				labels = spectra.labelNames;
-			else if(!std::equal(labels.begin(), labels.end(), spectra.labelNames.begin(), spectra.labelNames.end()))
-				throw dataset_error(std::string("Not all spectra in ") + path.string() + " have the same labels");
-
-			files->push_back({.path =  header.name, .pos = pos, .size = header.size});
-		}
+			files->push_back({.path =  header.name, .pos = tar.pos, .size = header.size});
 		mtar_next(&tar);
 	}
 
@@ -123,6 +113,11 @@ eis::Spectra TarDataset::loadSpectraAtCurrentPos(size_t size)
 
 	eis::Spectra spectra = eis::Spectra::loadFromStream(ss);
 	delete[] filebuffer;
+
+	if(labels.empty())
+		labels = spectra.labelNames;
+	else if(!std::equal(labels.begin(), labels.end(), spectra.labelNames.begin(), spectra.labelNames.end()))
+		throw dataset_error(std::string("Not all spectra in ") + path.string() + " have the same labels");
 
 	return spectra;
 }
