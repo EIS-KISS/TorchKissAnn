@@ -34,6 +34,7 @@ static struct argp_option options[] =
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
   {"export-test",	'e', 0,				0, 	"Exports the test dataset"},
+  {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
   { 0 }
 };
 
@@ -105,6 +106,7 @@ struct Config
 	bool hyperparameters = false;
 	bool noGpu = false;
 	bool exportTestDataset = false;
+	bool noWeights = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -181,6 +183,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'e':
 			config->exportTestDataset = true;
+			break;
+		case 'g':
+			config->noWeights = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

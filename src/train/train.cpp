@@ -110,7 +110,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 {
 	Log(Log::INFO)<<"Training with"<<(trainDataset->isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<trainDataset->size().value()<<" with "<<trainDataset->outputSize()<<" classes";
-	Log(Log::INFO)<<" Using weights:\n"<<trainDataset->classWeights()<<'\n';
+	if(!config.noWeights)
+		Log(Log::INFO)<<" Using weights:\n"<<trainDataset->classWeights()<<'\n';
 
 	std::unique_ptr<TrainLog> trainLog;
 
@@ -143,14 +144,28 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		{
 			Log(Log::INFO)<<"Training classification network with simple net";
 			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->inputSize(), trainDataset->outputSize(), 4, config.extraLayers, true));
-			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::classification::train<DataSetType, TestDataSetType>(
+				trainLog.get(),
+				net,
+				trainDataset,
+				testDataset,
+				config.epochs,
+				config.learingRate,
+				config.noWeights);
 			break;
 		}
 		case MODE_ANN_CONV:
 		{
 			Log(Log::INFO)<<"Training classification network with conv net";
 			std::shared_ptr<ann::Net> net(new ann::ConvNet(trainDataset->inputSize(), trainDataset->outputSize(), 4, config.extraLayers, true));
-			ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::classification::train<DataSetType, TestDataSetType>(
+				trainLog.get(),
+				net,
+				trainDataset,
+				testDataset,
+				config.epochs,
+				config.learingRate,
+				config.noWeights);
 			break;
 		}
 		case MODE_ANN_SCRIPT:
@@ -159,7 +174,14 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			{
 				Log(Log::INFO)<<"Training classification network with script net loaded from "<<config.scriptPath;
 				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, config.dataWidth, trainDataset->outputSize()));
-				ann::classification::train<DataSetType, TestDataSetType>(trainLog.get(), net, trainDataset, testDataset, config.epochs, config.learingRate);
+				ann::classification::train<DataSetType, TestDataSetType>(
+					trainLog.get(),
+					net,
+					trainDataset,
+					testDataset,
+					config.epochs,
+					config.learingRate,
+					config.noWeights);
 			}
 			catch(const ann::ScriptNet::load_errror& err)
 			{
