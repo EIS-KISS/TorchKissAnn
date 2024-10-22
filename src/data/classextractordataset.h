@@ -37,8 +37,8 @@ public:
 		size_t dataSetSize = _dataset->size().value();
 		for(size_t i = 0; i < dataSetSize; ++i)
 		{
-			torch::data::Example<torch::Tensor, torch::Tensor> example = _dataset->get(i);
-			if(torch::argmax(example.target).item().toUInt64() == classNum)
+			torch::Tensor target = _dataset->getTarget(i);
+			if(target.item().toUInt64() == classNum)
 				indexList.push_back(i);
 		}
 	}

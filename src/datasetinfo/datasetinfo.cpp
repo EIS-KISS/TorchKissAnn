@@ -22,8 +22,9 @@
 #include "data/eistotorch.h"
 #include "data/classextractordataset.h"
 #include "options.h"
+#include "randomgen.h"
 #include "tensoroperators.h"
-#include "tokenize.h"
+#include "indicators.hpp"
 
 template <typename DataSetType>
 std::string generateReport(EisDataset<DataSetType>* dataset)
@@ -67,6 +68,27 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		Log(Log::INFO)<<"Processing class "<<i+1<<" of "<<outputSize;
 		ClassExtractorDataset<DataSetType> extractedClass(dataset, i);
 
+		std::set<size_t> ids;
+
+		if(extractedClass.size().value() < 1000)
+		{
+			Log(Log::INFO)<<"Class has "<<extractedClass.size().value()<<" examples";
+			for(size_t i = 0; i < extractedClass.size().value(); ++i)
+				ids.insert(i);
+		}
+		else
+		{
+			Log(Log::INFO)<<"Class has "<<extractedClass.size().value()<<" examples; will decimate to 500";
+			while(ids.size() < 500)
+				ids.insert(rd::rand(extractedClass.size().value()));
+		}
+
+		if(ids.empty())
+		{
+			Log(Log::ERROR)<<"Dataset dose not have examples every class it claims to have!!!";
+			return false;
+		}
+
 		sciplot::Plot2D plot;
 		plot.xlabel("Re");
 		plot.ylabel("Im");
@@ -76,9 +98,17 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		double ymin = std::numeric_limits<double>::max();
 		double ymax = std::numeric_limits<double>::min();
 
-		for(size_t j = 0; j < extractedClass.size().value(); ++j)
+		indicators::BlockProgressBar bar(
+			indicators::option::BarWidth(50),
+			indicators::option::PrefixText("Processing spectra: "),
+			indicators::option::ShowElapsedTime(true),
+			indicators::option::ShowRemainingTime(true),
+			indicators::option::MaxProgress(ids.size())
+		);
+
+		for(auto j : ids)
 		{
-			Log(Log::INFO)<<"Processing spectra "<<j+1<<" of "<<extractedClass.size().value();
+			bar.tick();
 			torch::data::Example<torch::Tensor, torch::Tensor> example = extractedClass.get(j);
 			std::pair<std::valarray<double>, std::valarray<double>> data = torchToValarray<double>(example.data.to(torch::kFloat64));
 
@@ -112,6 +142,7 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		sciplot::Canvas canvas({{fig}});
 		canvas.size(1280, 768);
 		canvas.save(outDir/(dataset->outputName(i)+ ".png"));
+		bar.mark_as_completed();
 	}
 	return true;
 }

@@ -15,6 +15,7 @@ private:
 	std::vector<size_t> classIndexes;
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
+	virtual torch::Tensor getTargetImpl(size_t index) override;
 
 public:
 	explicit EisTarDataset(const std::filesystem::path& path);

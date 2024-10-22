@@ -133,7 +133,7 @@ void TrainLog::logTestLoss(size_t epoch, size_t step, double loss, double acc, s
 	if(plotThread && plotThread->joinable())
 		plotThread->join();
 
-	if(lossTestIter >= 10 && lossTestIter % 10 == 0)
+	if(lossTrainIter > 2)
 		plotThread = new std::thread(TrainLog::plot, logDir, testLossCurve, true);
 }
 

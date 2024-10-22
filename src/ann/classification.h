@@ -39,7 +39,6 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 {
 	size_t index = 0;
 	network->train();
-	float lossF = 0;
 	float accF = 0;
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).pos_weight(classWeights));
@@ -78,14 +77,13 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 		loss.backward();
 		optimizer.step();
 
-		lossF += loss.template item<float>();
 		accF += acc.template item<float>();
 
 		if (index++ % batchesPerPrint == 0 )
 		{
 			auto end = std::min(data_size, (index + 1) * batch_size);
 			if(log)
-				log->logTrainLoss(epoch, end, (lossF/end)*100, accF/end, data_size);
+				log->logTrainLoss(epoch, end, loss.template item<float>()*100, accF/end, data_size);
 		}
 	}
 }
@@ -135,7 +133,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		indicators::option::PrefixText("Runing Eval: "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/batch_size)
+		indicators::option::MaxProgress(data_size/(batch_size*16))
 	);
 	for(const auto& batch : loader)
 	{
@@ -236,6 +234,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>(trainDataset->map(torch::data::transforms::Stack<>()), options);
+	options = options.batch_size(batch_size*16).workers(JOBS);
 	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
 	size_t active_parameters = 0;

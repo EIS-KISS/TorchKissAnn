@@ -15,9 +15,11 @@ private:
 
 protected:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) = 0;
+	virtual torch::Tensor getTargetImpl(size_t index);
 
 public:
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
+	torch::Tensor getTarget(size_t index);
 	virtual size_t outputSize() const = 0;
 	virtual std::string outputName(size_t output);
 	virtual c10::optional<size_t> size() const override = 0;
@@ -50,6 +52,25 @@ template <typename DataSelf>
 bool EisDataset<DataSelf>::isMulticlass()
 {
 	return false;
+}
+
+template <typename DataSelf>
+torch::Tensor EisDataset<DataSelf>::getTarget(size_t index)
+{
+	torch::Tensor target = getTargetImpl(index);
+	if(!isMulticlass())
+	{
+		auto search = labelMap.find(target[0].item().to<int64_t>());
+		if(search != labelMap.end())
+			target[0] = search->second;
+	}
+	return target;
+}
+
+template <typename DataSelf>
+torch::Tensor EisDataset<DataSelf>::getTargetImpl(size_t index)
+{
+	return getImpl(index).target;
 }
 
 template <typename DataSelf>

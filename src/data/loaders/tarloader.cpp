@@ -60,15 +60,8 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisTarDataset::getImpl(size_t
 {
 	eis::Spectra data = loadSpectraAtIndex(index);
 
-	torch::TensorOptions options;
-	options = options.layout(torch::kStrided);
-	options = options.device(torch::kCPU);
-	options = options.dtype(torch::kInt64);
-	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(classIndexes[index]);
-
 	torch::Tensor input = eisToTorch(data.data);
-	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
+	return torch::data::Example<torch::Tensor, torch::Tensor>(input, EisTarDataset::getTargetImpl(index));
 }
 
 size_t EisTarDataset::outputSize() const
@@ -94,6 +87,18 @@ torch::Tensor EisTarDataset::modelWeights()
 	float* tensorDataPtr = output.contiguous().data_ptr<float>();
 	for(size_t classNum : classIndexes)
 		++tensorDataPtr[classNum];
+
+	return output;
+}
+
+torch::Tensor EisTarDataset::getTargetImpl(size_t index)
+{
+	torch::TensorOptions options;
+	options = options.layout(torch::kStrided);
+	options = options.device(torch::kCPU);
+	options = options.dtype(torch::kInt64);
+	torch::Tensor output = torch::zeros({1}, options);
+	output[0] = static_cast<float>(classIndexes[index]);
 
 	return output;
 }
