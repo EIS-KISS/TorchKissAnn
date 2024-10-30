@@ -43,7 +43,7 @@ void choose_device(bool forceCpu)
 {
 	if(torch::cuda::is_available() && !forceCpu)
 	{
-		Log(Log::INFO)<<"Training on GPU";
+		Log(Log::INFO)<<"Using GPU";
 		offload_type = torch::kCUDA;
 
 		Log(Log::INFO)<<"Found "<<torch::cuda::device_count()<<" GPUs";
@@ -68,7 +68,7 @@ void choose_device(bool forceCpu)
 	}
 	else
 	{
-		Log(Log::INFO)<<"Training on CPU";
+		Log(Log::INFO)<<"Using CPU";
 		offload_type = torch::kCPU;
 		offload_device = new torch::Device(offload_type, 0);
 	}
