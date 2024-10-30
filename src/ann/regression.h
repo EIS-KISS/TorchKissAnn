@@ -53,7 +53,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	float lossAccumulator = 0;
 	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
-	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10;
+	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
 
 	std::vector<torch::OrderedDict<std::string, torch::Tensor>> parameters;
 
@@ -96,8 +96,8 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		}
 
 		loss = lossFn(prediction, targets);
-		torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
-		loss = loss + (negatives.sum()/negatives.numel());
+		/*torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
+		loss = loss + (negatives.sum()/negatives.numel());*/
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -139,8 +139,18 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	return 0;
 }
 
+struct TestReturn
+{
+	torch::Tensor predictions;
+	torch::Tensor targets;
+
+	torch::Tensor mse;
+	torch::Tensor r2;
+	double loss;
+};
+
 template <typename DataLoader, typename LossFn>
-double test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size, size_t epoch = 0, TrainLog* log = nullptr)
+TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size, size_t epoch = 0, TrainLog* log = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard noGrad;
@@ -178,7 +188,24 @@ double test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, si
 	std::cout<<"Test mse: "<<alltargetmse<<std::endl;
 	if(log)
 		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
-	return (lossAccumulator / index);
+
+	TestReturn ret;
+	ret.loss = (lossAccumulator / index);
+	ret.predictions = allpredictions*network->getOutputScalars() + network->getOutputBiases();
+	ret.targets = alltargets*network->getOutputScalars() + network->getOutputBiases();
+	ret.mse = alltargetmse;
+	ret.r2 = r2scores;
+
+	return ret;
+}
+
+template <typename DatasetType>
+std::string purposeString(RegressionDataset<DatasetType>* dataset)
+{
+	std::stringstream purpose;
+	std::string regressionTarget = dataset->targetName();
+	purpose<<"Regression,"<<regressionTarget;
+	return purpose.str();
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
@@ -209,19 +236,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	net->setOutputScalars(scalarAndBias.first);
 	net->setOutputBiases(scalarAndBias.second);
 
-	std::stringstream purpose;
-	std::string modelString = trainDataset->outputName(trainDataset->outputSize()+1);
-	purpose<<"Regression,"<<modelString<<std::scientific;
-	if(trainDataset->freqRange().has_value())
-	{
-		torch::Tensor freqs = trainDataset->freqRange().value();
-		purpose<<','<<freqs[0].item().toDouble()<<','<<freqs[1].item().toDouble()<<','<<freqs[2].item().toDouble();
-	}
-	else
-	{
-		Log(Log::WARN)<<"Dataset dosent give a frequency range";
-	}
-	net->setPurpose(purpose.str());
+	net->setPurpose(purposeString(trainDataset));
 	net->setExtraInputs(trainDataset->extraInputs());
 
 	net->to(*offload_device);
@@ -234,9 +249,9 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	{
 		Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
 			<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
-			<<"and will be based on "<<modelString;
+			<<"and will be based on "<<trainDataset->targetName();
 		torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
-		lossEis.reset(new EisDistanceLoss(modelString, omega));
+		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega));
 	}
 	else
 	{

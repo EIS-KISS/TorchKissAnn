@@ -1,28 +1,31 @@
+#include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
 #include <memory>
 #include <torch/torch.h>
+#include <valarray>
 
+#include "ann/classification.h"
+#include "ann/regression.h"
 #include "commonoptions.h"
+#include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/loaders/dirloader.h"
+#include "data/loaders/regressiondirloader.h"
+#include "data/loaders/regressionloader.h"
 #include "options.h"
 #include "globals.h"
-
-
-template <typename DataSetType>
-int test(const Config& config);
-
-template <typename DataSetType>
-void testSwitch(const Config& config, DataSetType* testDataset);
+#include "tokenize.h"
+#include "ploting.h"
 
 template <typename T>
 int test(const Config& config)
 {
 	if(config.fileName.empty())
 	{
-		Log(Log::ERROR)<<"Please specify a filename of a valid tar file";
+		Log(Log::ERROR)<<"Please specify a filename of a valid dataset file";
 		return 1;
 	}
 
@@ -34,62 +37,143 @@ int test(const Config& config)
 		return 2;
 	}
 
-	testSwitch<T>(config, &dataset);
-	return 0;
-}
-
-template <typename DataSetType>
-void testSwitch(const Config& config, DataSetType* testDataset)
-{
-	Log(Log::INFO)<<"Testing with"<<(testDataset->isMulticlass() ? " muliclass" : "")<<
-		" dataset of size "<<testDataset->size().value()<<" with "<<testDataset->outputSize()<<" classes";
-	Log(Log::INFO)<<" Using weights:\n"<<testDataset->classWeights()<<'\n';
-
 	std::shared_ptr<ann::Net> net(ann::Net::newNetFromCheckpointDir(config.netpath));
+	if(!net)
+	{
+		Log(Log::ERROR)<<"Could not load network from "<<config.netpath;
+		return 1;
+	}
+
+	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
+		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
+		dataset.outputSize()<<" and an input size of "<<dataset.inputSize();
+
+	std::string type = tokenize(net->getPurpose(), ',')[0];
+	if(type != "Classifier")
+	{
+		Log(Log::ERROR)<<"The network loaded from "<<config.netpath<<" is not a classifier network, can not test this network on this dataset!";
+		return 1;
+	}
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
-	auto testDataLoader = torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
-	std::string purpose = net->getPurpose();
-
-	switch(config.datasetMode)
-	{
-		default:
-			Log(Log::ERROR)<<__func__<<" unsuported dataset";
-			return;
-	}
+	ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
+	return 0;
 }
 
-bool check_options(const Config& config)
+template <typename T>
+int testRegression(const Config& config)
 {
-	if(config.mode == MODE_INVALID)
+	if(config.fileName.empty())
 	{
-		Log(Log::ERROR)<<"You must specify what to test: -m " MODE_LIST;
-		return false;
+		Log(Log::ERROR)<<"Please specify a filename of a valid dataset file";
+		return 1;
 	}
 
-	if(config.datasetMode == DATASET_INVALID)
+	T dataset(config.fileName);
+
+	if(dataset.size().value() == 0)
 	{
-		Log(Log::ERROR)<<"You must specify what dataset to use: -d " DATASET_LIST;
-		return false;
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
 	}
 
-	if((config.datasetMode != DATASET_DIR_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION) &&
-		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
+	std::shared_ptr<ann::Net> net(ann::Net::newNetFromCheckpointDir(config.netpath));
+
+	if(!net)
 	{
-		Log(Log::ERROR)<<"The regression mode can only be tested with a regression dataset";
-		return false;
+		Log(Log::ERROR)<<"Could not load network from "<<config.netpath;
+		return 1;
 	}
 
-	if(config.netpath.empty())
+	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
+		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
+		dataset.outputSize()<<" and an input size of "<<dataset.inputSize();
+
+	std::string type = tokenize(net->getPurpose(), ',')[0];
+	if(type != "Regression")
 	{
-		Log(Log::ERROR)<<"A network to test must be supplied via -n";
-		return false;
+		Log(Log::ERROR)<<"The network loaded from "<<config.netpath<<" is not a classifier network, can not test this network on this dataset!";
+		return 1;
 	}
 
-	return true;
+	Log(Log::INFO)<<"Network was traind to be "<<net->getPurpose()<<", we are testing against "<<ann::regression::purposeString(&dataset);
+
+	if(net->getOutputSize() !=  static_cast<int64_t>(dataset.outputSize()))
+	{
+		Log(Log::ERROR)<<"Network has "<<net->getOutputSize()<<" outputs but the dataset has "<<dataset.outputSize()<<" outputs";
+		return 1;
+	}
+	else
+	{
+		std::vector<std::string> netOutputs = net->getOutputLabels();
+		for(size_t i = 0; i < netOutputs.size(); ++i)
+		{
+			if(netOutputs[i] != dataset.outputName(i))
+			{
+				Log(Log::ERROR)<<"Network has "<<netOutputs[i]<<" as its "<<i<<(i != 1 ? "st" : "th")<<" output but the dataset has "<<dataset.outputName(i);
+				return 1;
+			}
+		}
+	}
+
+	if(net->getExtraInputs().size() != dataset.extraInputs().size())
+	{
+		Log(Log::ERROR)<<"Network requries "<<net->getExtraInputs().size()<<" extra inputs but the dataset has "<<dataset.extraInputs().size()<<" extra inputs";
+		return 1;
+	}
+	else
+	{
+		std::vector<std::pair<std::string, int64_t>> netExtraInputs = net->getExtraInputs();
+		std::vector<std::pair<std::string, int64_t>> dataExtraInputs = dataset.extraInputs();
+		for(size_t i = 0; i < net->getExtraInputs().size(); ++i)
+		{
+			if(netExtraInputs[i].first != dataExtraInputs[i].first)
+			{
+				Log(Log::ERROR)<<"Network requries "<<netExtraInputs[i].first<<" as extra input "<<i<<" but the dataset dose not provide this";
+				return 1;
+			}
+		}
+	}
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(16);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+
+	std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
+	ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
+
+	torch::Tensor targets = ret.targets.contiguous();
+	auto targetAccessor = targets.accessor<float, 2>();
+	torch::Tensor predictions = ret.predictions.contiguous();
+	auto predictionsAccessor = predictions.accessor<float, 2>();
+
+	std::cout<<config.outputDir<<std::endl;
+	std::filesystem::create_directory(config.outputDir);
+
+	for(int64_t output = 0; output < net->getOutputSize(); ++output)
+	{
+		std::valarray<double> targetsVarr(targets.size(0));
+		std::valarray<double> predictionsVarr(targets.size(0));
+		std::valarray<double> sequence(targets.size(0));
+		std::valarray<double> error(targets.size(0));
+		for(int64_t i = 0; i < targets.size(0); ++i)
+		{
+			targetsVarr[i] = targetAccessor[i][output];
+			predictionsVarr[i] = predictionsAccessor[i][output];
+
+			sequence[i] = i;
+			error[i] = (predictionsVarr[i] - targetsVarr[i])/targetsVarr[i];
+		}
+		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+".svg"), "Target", "Prediction", targetsVarr, predictionsVarr, false, false, true);
+		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), net->getOutputLabels()[output], "Error", targetsVarr, error, false, false, true);
+	}
+
+	Log(Log::INFO)<<"Mse:\n"<<ret.mse<<"\n\n R2:\n"<<ret.r2;
+
+	return 0;
 }
 
 int main(int argc, char** argv)
@@ -101,21 +185,25 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	if(config.netpath.empty())
+	{
+		Log(Log::ERROR)<<"A path to a checkpoint directory must be given";
+		return 1;
+	}
+
 	choose_device(config.noGpu);
 	batch_size = config.batchSize;
-
-	if(!check_options(config))
-		return 3;
-
-	Log(Log::INFO)<<"Testing "<<testModeToStr(config.mode);
 
 	switch(config.datasetMode)
 	{
 		case DATASET_DIR:
 			return test<EisDirDataset>(config);
-		case DATASET_DIR_REGRESSION:
-		case DATASET_TAR_REGRESSION:
 		case DATASET_TAR:
+			return test<EisTarDataset>(config);
+		case DATASET_DIR_REGRESSION:
+			return testRegression<RegressionLoaderDir>(config);
+		case DATASET_TAR_REGRESSION:
+			return testRegression<RegressionLoaderTar>(config);
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;

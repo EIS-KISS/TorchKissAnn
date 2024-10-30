@@ -20,11 +20,8 @@ static struct argp_option options[] =
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"model", 		'm', "[STRING]",	0,	"model to train: " MODE_LIST},
   {"dataset", 		'd', "[STRING]",	0,	"dataset type to use for training: " DATASET_LIST},
-  {"dataset-size",	's', "[NUMBER]",	0,	"the size of the training dataset to use when using a generated or semi-generated dataset"},
-  {"data-width",	'w', "[NUMBER]",	0,	"the width of the sweep used"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"test",			't', "[STRING]",	0,	"filename for the test dataset"},
-  {"noise",			'x', "[AMPLITUDE]",	0,	"noise amplitude to be applied to generated spectra"},
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the training batch"},
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"probe-model",	'p', 0,				0,	"use probe model (l{5e-7})"},
@@ -33,7 +30,6 @@ static struct argp_option options[] =
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
-  {"export-test",	'e', 0,				0, 	"Exports the test dataset"},
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
   { 0 }
 };
@@ -95,17 +91,11 @@ struct Config
 	std::filesystem::path testFileName;
 	std::filesystem::path outputDir;
 	std::filesystem::path scriptPath;
-	double noise = 0;
 	double learingRate = 0.005;
 	size_t batchSize = 256;
 	size_t epochs = 30;
-	size_t datasetSize = 2e6;
-	size_t dataWidth = 100;
 	size_t extraLayers = 3;
-	bool probeModel = false;
-	bool hyperparameters = false;
 	bool noGpu = false;
-	bool exportTestDataset = false;
 	bool noWeights = false;
 };
 
@@ -145,12 +135,6 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 't':
 			config->testFileName.assign(arg);
 			break;
-		case 'x':
-			if(arg)
-				config->noise = std::stod(std::string(arg));
-			else
-				config->noise = 0.02;
-			break;
 		case 'o':
 			config->outputDir.assign(arg);
 			break;
@@ -159,12 +143,6 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'i':
 			config->epochs = std::stoul(std::string(arg));
-			break;
-		case 's':
-			config->datasetSize = std::stoul(std::string(arg));
-			break;
-		case 'p':
-			config->probeModel = true;
 			break;
 		case 'l':
 			config->extraLayers = std::stoul(std::string(arg));
@@ -175,14 +153,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'c':
 			config->noGpu = true;
 			break;
-		case 'w':
-			config->dataWidth = std::stod(std::string(arg));
-			break;
 		case 'n':
 			config->scriptPath = arg;
-			break;
-		case 'e':
-			config->exportTestDataset = true;
 			break;
 		case 'g':
 			config->noWeights = true;

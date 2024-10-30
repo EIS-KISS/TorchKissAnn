@@ -25,7 +25,6 @@
 #include "data/loaders/dirloader.h"
 #include "options.h"
 #include "trainlog.h"
-#include "data/eistotorch.h"
 
 
 template <typename DataSetType>
@@ -74,37 +73,6 @@ int train(const Config& config)
 	return 0;
 }
 
-template <typename DatasetType>
-void exportDataset(std::unique_ptr<TrainLog>& trainLog, EisDataset<DatasetType>* testDataset)
-{
-	std::filesystem::path dir = trainLog->getDir()/std::filesystem::path("testdata");
-	if(!std::filesystem::is_directory(dir) && !std::filesystem::create_directory(dir))
-	{
-		Log(Log::ERROR)<<__func__<<" could not create "<<dir<<" will not export data";
-		return;
-	}
-
-	for(size_t i = 0; i <testDataset->size().value(); ++i)
-	{
-		eis::Spectra spectra;
-		torch::data::Example<torch::Tensor, torch::Tensor> example = testDataset->get(i);
-		spectra.data = torchToEis(example.data);
-		spectra.model = testDataset->outputName(torch::argmax(example.target).item().toUInt64());
-		float* tensorDataPtr = example.target.contiguous().data_ptr<float>();
-		spectra.labels.assign(tensorDataPtr, tensorDataPtr+example.target.numel());
-		spectra.header = std::string("TorchKissAnn re-exported from ") + typeid(DatasetType).name();
-		std::filesystem::path path = dir/(std::to_string(i) + ".csv");
-		try
-		{
-			spectra.saveToDisk(path);
-		}
-		catch(const eis::file_error& err)
-		{
-			Log(Log::ERROR)<<__func__<<" unable to save "<<path;
-		}
-	}
-}
-
 template <typename DataSetType, typename TestDataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, EisDataset<TestDataSetType>* testDataset)
 {
@@ -127,16 +95,12 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		meta.multiClass = trainDataset->isMulticlass();
 		meta.learingRate = config.learingRate;
 		meta.extraLayers = config.extraLayers;
-		meta.noise = config.noise;
 		meta.dataset = datasetModeToStr(config.datasetMode);
 		meta.datasetSize = trainDataset->size().value();
 		meta.trainingFile = config.fileName;
 		meta.testingFile = config.testFileName;
 		trainLog->saveMetadata(meta);
 	}
-
-	if(testDataset && config.exportTestDataset)
-		exportDataset<TestDataSetType>(trainLog, testDataset);
 
 	switch(config.mode)
 	{
@@ -173,7 +137,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			try
 			{
 				Log(Log::INFO)<<"Training classification network with script net loaded from "<<config.scriptPath;
-				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, config.dataWidth, trainDataset->outputSize()));
+				std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, true, trainDataset->inputSize(), trainDataset->outputSize()));
 				ann::classification::train<DataSetType, TestDataSetType>(
 					trainLog.get(),
 					net,

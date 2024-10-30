@@ -14,11 +14,10 @@ torch::Tensor ann::regression::use(torch::Tensor input, std::shared_ptr<Net> net
 {
 	torch::NoGradGuard noGrad;
 	net->eval();
-	torch::Tensor output = net->forward(input.reshape({1, net->getInputSize()}));
+	torch::Tensor output = net->forward(input);
 	torch::Tensor outputScalars = net->getOutputScalars();
 	torch::Tensor outputBias    = net->getOutputBiases();
-	Log(Log::DEBUG)<<"Output:\n"<<output<<"\nOutputScalers:\n"<<outputScalars;
-	output = (output*outputScalars+outputBias).reshape({output.numel()});
+	output = (output*outputScalars+outputBias);
 	return output;
 }
 

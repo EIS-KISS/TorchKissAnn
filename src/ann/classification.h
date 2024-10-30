@@ -202,7 +202,7 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate)
+		   size_t epochs, double learingRate, bool noWeights)
 {
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	if(testDataset)
@@ -230,6 +230,12 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	}
 	if(!noLabels)
 		net->setOutputLabels(outputLables);
+
+	torch::Tensor classWeights;
+	if(noWeights)
+		classWeights = torch::ones({static_cast<int64_t>(trainDataset->outputSize())}).to(*offload_device);
+	else
+		classWeights = trainDataset->classWeights().to(*offload_device);
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
@@ -259,11 +265,11 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
-				  trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), trainLog);
+			classWeights, trainDataset->isMulticlass(), trainLog);
 		if(testDataset)
 		{
 			test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
-				 trainDataset->classWeights().to(*offload_device), trainDataset->isMulticlass(), i, trainLog);
+				classWeights, trainDataset->isMulticlass(), i, trainLog);
 		}
 
 		trainLog->saveNetwork(net);
