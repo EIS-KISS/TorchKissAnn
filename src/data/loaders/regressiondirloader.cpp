@@ -69,7 +69,7 @@ c10::optional<size_t> RegressionLoaderDir::size() const
 std::string RegressionLoaderDir::outputName(size_t output)
 {
 	std::vector<std::string> labelNames = getExtraInputsAndLabelNames(loadSpectraAtIndex(0)).second;
-	return labelNames[output];
+	return labelNames.at(output);
 }
 
 bool RegressionLoaderDir::isMulticlass()
@@ -94,4 +94,12 @@ c10::optional<torch::Tensor> RegressionLoaderDir::freqRange()
 std::vector<std::pair<std::string, int64_t>> RegressionLoaderDir::extraInputs()
 {
 	return DirDataset::extraInputs();
+}
+
+const std::string RegressionLoaderDir::targetName()
+{
+	eis::Spectra spectra = loadSpectraAtIndex(0);
+	if(spectra.model.empty())
+		return "Unkown";
+	return spectra.model;
 }

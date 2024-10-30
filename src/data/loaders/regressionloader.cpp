@@ -94,3 +94,11 @@ std::vector<std::pair<std::string, int64_t>> RegressionLoaderTar::extraInputs()
 {
 	return TarDataset::extraInputs();
 }
+
+const std::string RegressionLoaderTar::targetName()
+{
+	eis::Spectra spectra = loadSpectraAtIndex(0);
+	if(spectra.model.empty())
+		return "Unkown";
+	return spectra.model;
+}

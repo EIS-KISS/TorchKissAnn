@@ -9,6 +9,7 @@ class RegressionDataset: public EisDataset<DataSelf>
 {
 public:
 	virtual std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBias();
+	virtual const std::string targetName();
 };
 
 template <typename DataSelf>
@@ -24,5 +25,10 @@ std::pair<torch::Tensor, torch::Tensor> RegressionDataset<DataSelf>::getTargetSc
 		min = torch::minimum(targets, min);
 	}
 	return {(max-min), min};
+}
+
+template <typename DataSelf> const std::string RegressionDataset<DataSelf>::targetName()
+{
+	return "Unkown";
 }
 
