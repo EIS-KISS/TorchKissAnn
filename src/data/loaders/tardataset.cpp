@@ -70,7 +70,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 	}
 
 	bar.mark_as_completed();
-	indicators::show_console_cursor(false);
+	indicators::show_console_cursor(true);
 }
 
 eis::Spectra TarDataset::loadSpectraHeaderAtCurrentPos(size_t size)
