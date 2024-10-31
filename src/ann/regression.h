@@ -191,10 +191,10 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 
 	TestReturn ret;
 	ret.loss = (lossAccumulator / index);
-	ret.predictions = allpredictions*network->getOutputScalars() + network->getOutputBiases();
-	ret.targets = alltargets*network->getOutputScalars() + network->getOutputBiases();
-	ret.mse = alltargetmse;
-	ret.r2 = r2scores;
+	ret.predictions = allpredictions.cpu()*network->getOutputScalars() + network->getOutputBiases();
+	ret.targets = alltargets.cpu()*network->getOutputScalars() + network->getOutputBiases();
+	ret.mse = alltargetmse.cpu();
+	ret.r2 = r2scores.cpu();
 
 	return ret;
 }
