@@ -165,7 +165,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	for(const auto& batch : loader)
 	{
 		torch::Tensor data = batch.data.to(*offload_device);
-		torch::Tensor targets = (batch.target.to(*offload_device)-network->getOutputBiases())/network->getOutputScalars();
+		torch::Tensor targets = ((batch.target-network->getOutputBiases())/network->getOutputScalars()).to(*offload_device);
 
 		torch::Tensor output = network->forward(data);
 
