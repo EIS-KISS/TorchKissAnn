@@ -201,7 +201,7 @@ torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim)
 		if(output.numel() == 0)
 			output = in;
 		else
-			torch::cat({output, in}, dim);
+			output = torch::cat({output, in}, dim);
 	}
 	return output;
 }

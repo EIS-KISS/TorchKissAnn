@@ -113,8 +113,9 @@ int testRegression(const Config& config)
 		{
 			if(netOutputs[i] != dataset.outputName(i))
 			{
-				Log(Log::ERROR)<<"Network has "<<netOutputs[i]<<" as its "<<i<<(i != 1 ? "st" : "th")<<" output but the dataset has "<<dataset.outputName(i);
-				return 1;
+				Log(config.ignoreMissmatch ? Log::INFO : Log::ERROR)<<"Network has "<<netOutputs[i]<<" as its "<<i<<(i != 1 ? "st" : "th")<<" output but the dataset has "<<dataset.outputName(i);
+				if(!config.ignoreMissmatch)
+					return 1;
 			}
 		}
 	}
