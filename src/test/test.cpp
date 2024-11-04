@@ -98,8 +98,8 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, const C
 		r2s[i] = returns[i].r2.item<float>();
 		loss[i] = returns[i].loss;
 	}
-	save2dPlot(config.outputDir/"r2_importance.svg", "Input", "r2", indecies, r2s);
-	save2dPlot(config.outputDir/"loss_importance.svg", "Input", "loss", indecies, loss);
+	save2dPlot(config.outputDir/"r2_importance.svg", "Input", "r2", indecies, r2s, false, false, true);
+	save2dPlot(config.outputDir/"loss_importance.svg", "Input", "loss", indecies, loss, false, false, true);
 
 	return 0;
 }
