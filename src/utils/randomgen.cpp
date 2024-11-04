@@ -6,6 +6,12 @@
 
 static std::default_random_engine randomEngine;
 
+double rd::rand(double min, double max)
+{
+	std::uniform_real_distribution<double> dist(min, max);
+	return dist(randomEngine);
+}
+
 double rd::rand(double max)
 {
 	static std::uniform_real_distribution<double> dist(0, 1);

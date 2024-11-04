@@ -10,6 +10,7 @@
 #include "ann/classification.h"
 #include "ann/regression.h"
 #include "commonoptions.h"
+#include "data/eisdataset.h"
 #include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/loaders/dirloader.h"
@@ -19,6 +20,7 @@
 #include "globals.h"
 #include "tokenize.h"
 #include "ploting.h"
+#include "type.h"
 
 template <typename T>
 int test(const Config& config)
@@ -60,6 +62,45 @@ int test(const Config& config)
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
 	ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
+	return 0;
+}
+
+template <typename T>
+int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, const Config& config)
+{
+	std::vector<ann::regression::TestReturn> returns(dataset->inputSize());
+
+	std::pair<torch::Tensor, torch::Tensor> ranges = dataset->inputRanges();
+
+	for(size_t i = 0; i < dataset->inputSize(); ++i)
+	{
+		std::vector<DropDesc> desc(dataset->inputSize(), {0, 0, 0, 0});
+		desc[i].dropout = true;
+		desc[i].max = ranges.first[i].item<float>();
+		desc[i].min = ranges.second[i].item<float>();
+		desc[i].strength = 1;
+
+		dataset->setDropouts(desc);
+
+		torch::data::DataLoaderOptions options;
+		options = options.batch_size(batch_size).workers(16);
+		auto dataLoader = torch::data::make_data_loader(dataset->map(torch::data::transforms::Stack<>()), options);
+		std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
+		returns[i] = ann::regression::test(net, *dataLoader, *lossMse, dataset->size().value());
+	}
+
+	std::valarray<double> indecies(dataset->inputSize());
+	std::valarray<double> r2s(dataset->inputSize());
+	std::valarray<double> loss(dataset->inputSize());
+	for(size_t i = 0; i < dataset->inputSize(); ++i)
+	{
+		indecies[i] = i;
+		r2s[i] = returns[i].r2.item<float>();
+		loss[i] = returns[i].loss;
+	}
+	save2dPlot(config.outputDir/"r2_importance.svg", "Input", "r2", indecies, r2s);
+	save2dPlot(config.outputDir/"loss_importance.svg", "Input", "loss", indecies, loss);
+
 	return 0;
 }
 
@@ -151,7 +192,6 @@ int testRegression(const Config& config)
 	torch::Tensor predictions = ret.predictions.contiguous();
 	auto predictionsAccessor = predictions.accessor<float, 2>();
 
-	std::cout<<config.outputDir<<std::endl;
 	std::filesystem::create_directory(config.outputDir);
 
 	for(int64_t output = 0; output < net->getOutputSize(); ++output)
@@ -172,7 +212,10 @@ int testRegression(const Config& config)
 		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), net->getOutputLabels()[output], "Error", targetsVarr, error, false, false, true);
 	}
 
-	Log(Log::INFO)<<"Mse:\n"<<ret.mse<<"\n\n R2:\n"<<ret.r2;
+	Log(Log::INFO)<<"\nMse:\n"<<ret.mse<<"\n\n R2:\n"<<ret.r2;
+
+	if(config.inputImportance)
+		return inputImportanceRegression<T>(net, &dataset, config);
 
 	return 0;
 }

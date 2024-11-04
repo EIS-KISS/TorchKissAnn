@@ -161,9 +161,18 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	torch::Tensor alltargets = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Runing Eval: "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(data_size/(batch_size))
+	);
+
 	size_t index = 0;
 	for(const auto& batch : loader)
 	{
+		bar.tick();
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = ((batch.target-network->getOutputBiases())/network->getOutputScalars()).to(*offload_device);
 
@@ -180,6 +189,8 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 		lossAccumulator += loss.template item<float>();
 		index++;
 	}
+
+	bar.mark_as_completed();
 
 	alltargetmse = alltargetmse / index;
 

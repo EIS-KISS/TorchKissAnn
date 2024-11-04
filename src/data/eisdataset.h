@@ -1,10 +1,21 @@
 #pragma once
 #include <cstdint>
-#include <optional>
+#include <limits>
 #include <string>
 #include <map>
 
 #include "net.h"
+#include "tensoroptions.h"
+#include "indicators.hpp"
+#include "randomgen.h"
+
+struct DropDesc
+{
+	bool dropout;
+	float max;
+	float min;
+	float strength;
+};
 
 template <typename DataSelf>
 class EisDataset:
@@ -12,6 +23,7 @@ public torch::data::datasets::Dataset<DataSelf, torch::data::Example<torch::Tens
 {
 private:
 	std::map<int64_t, int64_t> labelMap;
+	std::vector<DropDesc> dropouts;
 
 protected:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) = 0;
@@ -25,6 +37,8 @@ public:
 	virtual c10::optional<size_t> size() const override = 0;
 	virtual bool isMulticlass();
 	bool createLabelMap(const ann::Net& net);
+	void setDropouts(const std::vector<DropDesc>& dropouts);
+	const std::vector<DropDesc>& getDropouts();
 
 	virtual torch::Tensor classCounts();
 	virtual torch::Tensor classWeights();
@@ -32,6 +46,7 @@ public:
 	virtual c10::optional<torch::Tensor> freqRange();
 	virtual std::string dataLabel() const;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
+	virtual std::pair<torch::Tensor, torch::Tensor> inputRanges();
 
 	virtual ~EisDataset() = default;
 };
@@ -112,6 +127,18 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::get(siz
 			data.target[0] = search->second;
 	}
 
+	if(!dropouts.empty())
+	{
+		for(size_t i = 0; i < dropouts.size(); ++i)
+		{
+			if(dropouts[i].dropout)
+			{
+				float random = rd::rand(dropouts[i].min, dropouts[i].max);
+				data.data[i] = data.data[i]*(1-dropouts[i].strength) + random*dropouts[i].strength;
+			}
+		}
+	}
+
 	return data;
 }
 
@@ -167,3 +194,50 @@ public:
 		return whatStr.c_str();
 	}
 };
+
+template <typename DataSelf>
+std::pair<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::inputRanges()
+{
+	torch::Tensor min = torch::full({static_cast<int64_t>(inputSize())}, std::numeric_limits<float>::max(), tensorOptCpu<float>());
+	torch::Tensor max = torch::full({static_cast<int64_t>(inputSize())}, std::numeric_limits<float>::lowest(), tensorOptCpu<float>());
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(16);
+	auto dataLoader = torch::data::make_data_loader(this->map(torch::data::transforms::Stack<>()), options);
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Computing dataset ranges: "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(size().value()/batch_size)
+	);
+
+	indicators::show_console_cursor(false);
+
+	for(const auto& batch : *dataLoader)
+	{
+		bar.tick();
+
+		torch::Tensor inputs = batch.data;
+		max = torch::maximum(std::get<0>(inputs.max(0)), max);
+		min = torch::minimum(std::get<0>(inputs.min(0)), min);
+	}
+
+	bar.mark_as_completed();
+	indicators::show_console_cursor(true);
+	return {max, min};
+}
+
+template <typename DataSelf>
+void EisDataset<DataSelf>::setDropouts(const std::vector<DropDesc>& dropouts)
+{
+	assert(dropouts.size() == inputSize());
+	this->dropouts = dropouts;
+}
+
+template <typename DataSelf>
+const std::vector<DropDesc >& EisDataset<DataSelf>::getDropouts()
+{
+	return dropouts;
+}

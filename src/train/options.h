@@ -24,7 +24,6 @@ static struct argp_option options[] =
   {"test",			't', "[STRING]",	0,	"filename for the test dataset"},
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the training batch"},
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
-  {"probe-model",	'p', 0,				0,	"use probe model (l{5e-7})"},
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},

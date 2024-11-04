@@ -18,6 +18,7 @@ static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
   {"quiet", 		'q', 0,				0,	"only output data" },
+  {"input-importance", 'p', 0,			0,	"compute imput importance"},
   {"dataset", 		'd', "[STRING]",	0,	"dataset type to use for testing: " DATASET_LIST},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
@@ -48,6 +49,7 @@ struct Config
 	size_t batchSize = 256;
 	bool noGpu = false;
 	bool ignoreMissmatch = false;
+	bool inputImportance = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -89,6 +91,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'i':
 			config->ignoreMissmatch = true;
+			break;
+		case 'p':
+			config->inputImportance = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;
