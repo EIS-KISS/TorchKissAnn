@@ -66,7 +66,7 @@ int test(const Config& config)
 }
 
 template <typename T>
-int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, const Config& config)
+int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, const Config& config)
 {
 	std::vector<ann::regression::TestReturn> returns(dataset->inputSize());
 
@@ -75,10 +75,13 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, const C
 	for(size_t i = 0; i < dataset->inputSize(); ++i)
 	{
 		std::vector<DropDesc> desc(dataset->inputSize(), {0, 0, 0, 0});
-		desc[i].dropout = true;
-		desc[i].max = ranges.first[i].item<float>();
-		desc[i].min = ranges.second[i].item<float>();
-		desc[i].strength = 1;
+		for(size_t j = (static_cast<int64_t>(i) - window) > 0 ? static_cast<int64_t>(i) - window : 0; j <= i+window && j < dataset->inputSize(); ++j)
+		{
+			desc[j].dropout = true;
+			desc[j].max = ranges.first[j].item<float>();
+			desc[j].min = ranges.second[j].item<float>();
+			desc[j].strength = 1;
+		}
 
 		dataset->setDropouts(desc);
 
@@ -98,8 +101,8 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, const C
 		r2s[i] = returns[i].r2.item<float>();
 		loss[i] = returns[i].loss;
 	}
-	save2dPlot(config.outputDir/"r2_importance.svg", "Input", "r2", indecies, r2s, false, false, true);
-	save2dPlot(config.outputDir/"loss_importance.svg", "Input", "loss", indecies, loss, false, false, true);
+	save2dPlot(config.outputDir/("r2_importance_"+std::to_string(window)+".svg"), "Input", "r2", indecies, r2s, false, false, true);
+	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), "Input", "loss", indecies, loss, false, false, true);
 
 	return 0;
 }
@@ -215,7 +218,11 @@ int testRegression(const Config& config)
 	Log(Log::INFO)<<"\nMse:\n"<<ret.mse<<"\n\n R2:\n"<<ret.r2;
 
 	if(config.inputImportance)
-		return inputImportanceRegression<T>(net, &dataset, config);
+	{
+		inputImportanceRegression<T>(net, &dataset, 1, config);
+		inputImportanceRegression<T>(net, &dataset, 4, config);
+		inputImportanceRegression<T>(net, &dataset, 16, config);
+	}
 
 	return 0;
 }
