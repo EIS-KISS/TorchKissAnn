@@ -18,6 +18,7 @@ set(SRC_FILES
 	utils/modelscript.cpp
 	utils/ploting.cpp
 	utils/r2score.cpp
+	utils/save.cpp
 	gan/networks.cpp
 	gan/simplenet.cpp
 	gan/gan.cpp

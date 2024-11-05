@@ -107,7 +107,6 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			Log(Log::DEBUG)<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
 			Log(Log::DEBUG)<<"prediction pow:\n"<<prediction<<'\n';
 			Log(Log::DEBUG)<<"loss:\n"<<loss<<'\n';
-			saveTensorForPytorch("pred.zip", predictionOrig);
 			return -1;
 		}
 

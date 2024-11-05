@@ -7,6 +7,7 @@
 #include <torch/script.h>
 
 #include "log.h"
+#include "save.h"
 
 torch::Tensor toeplitz(const torch::Tensor& b, const torch::Tensor a)
 {
@@ -62,71 +63,6 @@ torch::Tensor unargmax(const torch::Tensor& in, int64_t size)
 	return multiClassTargets;
 }
 
-template<typename DataType>
-static void save2dTensorToCsv(const torch::Tensor& tensor, std::iostream& stream)
-{
-	auto tensorAcesssor = tensor.accessor<DataType, 2>();
-	for(int i = 0; i < tensorAcesssor.size(0); ++i)
-	{
-		for(int j = 0; j < tensorAcesssor.size(1); ++j)
-		{
-			stream<<tensorAcesssor[i][j];
-			if(j+1 < tensorAcesssor.size(1))
-				stream<<", ";
-		}
-		stream<<'\n';
-	}
-}
-
-template<typename DataType>
-static void save1dTensorToCsv(const torch::Tensor& tensor, std::iostream& stream)
-{
-	auto tensorAcesssor = tensor.accessor<DataType, 1>();
-
-	for(int i = 0; i < tensorAcesssor.size(0); ++i)
-	{
-		stream<<tensorAcesssor[i];
-		if(i+1 < tensorAcesssor.size(0))
-			stream<<", ";
-	}
-	stream<<'\n';
-}
-
-bool saveTensorToCsv(const std::filesystem::path& path, const torch::Tensor& tensor, const std::string& name)
-{
-	std::fstream file;
-	file.open(path, std::ios_base::out);
-	if(!file.is_open())
-	{
-		Log(Log::ERROR)<<"can not open "<<path<<" for writing\n";
-		return false;
-	}
-
-	file<<std::scientific;
-	file<<name<<'\n';
-	if(tensor.dim() == 2)
-	{
-		if(tensor.dtype() == torch::kFloat32)
-			save2dTensorToCsv<float>(tensor, file);
-		else
-			save2dTensorToCsv<int64_t>(tensor, file);
-	}
-	else if(tensor.dim() == 1)
-	{
-		if(tensor.dtype() == torch::kFloat32)
-			save1dTensorToCsv<float>(tensor, file);
-		else
-			save1dTensorToCsv<int64_t>(tensor, file);
-	}
-	else
-	{
-		Log(Log::ERROR)<<"can not save "<<tensor.dim()<<" dimentional tensor\n";
-		return false;
-	}
-	file.close();
-	return true;
-}
-
 bool saveTensorForPytorch(const std::filesystem::path& path, const torch::Tensor& tensor)
 {
 	std::fstream file;
@@ -141,33 +77,6 @@ bool saveTensorForPytorch(const std::filesystem::path& path, const torch::Tensor
 	file.write(tensorBinary.data(), tensorBinary.size());
 	file.close();
 	return true;
-}
-
-std::string tensorToString(const torch::Tensor& tensor)
-{
-	std::stringstream ss;
-	ss<<std::scientific;
-
-	if(tensor.dim() == 2)
-	{
-		if(tensor.dtype() == torch::kFloat32)
-			save2dTensorToCsv<float>(tensor, ss);
-		else
-			save2dTensorToCsv<int64_t>(tensor, ss);
-	}
-	else if(tensor.dim() == 1)
-	{
-		if(tensor.dtype() == torch::kFloat32)
-			save1dTensorToCsv<float>(tensor, ss);
-		else
-			save1dTensorToCsv<int64_t>(tensor, ss);
-	}
-	else
-	{
-		Log(Log::ERROR)<<"cant convert "<<tensor.dim()<<" dimentional tensor to string\n";
-		return "";
-	}
-	return ss.str();
 }
 
 torch::Tensor linearToComplex(torch::Tensor& in)
@@ -188,6 +97,34 @@ torch::Tensor complexToLinear(torch::Tensor& in)
 	assert(out.size(0) == in.numel()*2);
 	return out;
 }
+
+std::string tensorToString(const torch::Tensor& tensor)
+{
+	std::stringstream ss;
+	ss<<std::scientific;
+
+	if(tensor.dim() == 2)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			csv::save2dTensorToCsv<float>(tensor, ss);
+		else
+			csv::save2dTensorToCsv<int64_t>(tensor, ss);
+	}
+	else if(tensor.dim() == 1)
+	{
+		if(tensor.dtype() == torch::kFloat32)
+			csv::save1dTensorToCsv<float>(tensor, ss);
+		else
+			csv::save1dTensorToCsv<int64_t>(tensor, ss);
+	}
+	else
+	{
+		Log(Log::ERROR)<<"cant convert "<<tensor.dim()<<" dimentional tensor to string\n";
+		return "";
+	}
+	return ss.str();
+}
+
 
 
 torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim)

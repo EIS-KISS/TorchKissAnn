@@ -5,7 +5,7 @@
 #include <json/json.h>
 
 #include "log.h"
-#include "tensoroperators.h"
+#include "save.h"
 #include "gitrev.h"
 #include "ploting.h"
 
@@ -151,7 +151,7 @@ void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
 		++i;
 	} while(std::filesystem::exists(path));
 
-	bool ret = saveTensorToCsv(path, tensor, name+ ", " + std::to_string(i-1));
+	bool ret = csv::save(path, tensor, name+ ", " + std::to_string(i-1));
 	if(!ret)
 		throw log_error("Could not save tensor to " + static_cast<std::string>(path));
 }

@@ -18,9 +18,10 @@
 #include "data/loaders/regressionloader.h"
 #include "options.h"
 #include "globals.h"
+#include "tensoroperators.h"
 #include "tokenize.h"
 #include "ploting.h"
-#include "type.h"
+#include "save.h"
 
 template <typename T>
 int test(const Config& config)
@@ -93,15 +94,24 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 	}
 
 	std::valarray<double> indecies(dataset->inputSize());
-	std::valarray<double> r2s(dataset->inputSize());
+	std::vector<torch::Tensor> r2s(dataset->inputSize());
 	std::valarray<double> loss(dataset->inputSize());
 	for(size_t i = 0; i < dataset->inputSize(); ++i)
 	{
 		indecies[i] = i;
-		r2s[i] = returns[i].r2.item<float>();
+		r2s[i] = returns[i].r2;
 		loss[i] = returns[i].loss;
 	}
-	save2dPlot(config.outputDir/("r2_importance_"+std::to_string(window)+".svg"), "Input", "r2", indecies, r2s, false, false, true);
+
+	for(size_t i = 0; i < dataset->outputSize(); ++i)
+	{
+		std::valarray<double> r2(dataset->inputSize());
+		for(size_t j = 0; j < dataset->inputSize(); ++j)
+			r2[i] = r2s[i][j].item<float>();
+		csv::save(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".csv"), r2, "r2");
+		save2dPlot(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".svg"), "Input", "r2", indecies, r2, false, false, true);
+	}
+	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), loss, "loss importance");
 	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), "Input", "loss", indecies, loss, false, false, true);
 
 	return 0;
@@ -211,11 +221,13 @@ int testRegression(const Config& config)
 			sequence[i] = i;
 			error[i] = (predictionsVarr[i] - targetsVarr[i])/targetsVarr[i];
 		}
+		csv::save(config.outputDir/(net->getOutputLabels()[output]+"_target.csv"), targetsVarr, "target");
+		csv::save(config.outputDir/(net->getOutputLabels()[output]+"_prediction.csv"), predictionsVarr, "prediction");
 		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+".svg"), "Target", "Prediction", targetsVarr, predictionsVarr, false, false, true);
 		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), net->getOutputLabels()[output], "Error", targetsVarr, error, false, false, true);
 	}
 
-	Log(Log::INFO)<<"\nMse:\n"<<ret.mse<<"\n\n R2:\n"<<ret.r2;
+	Log(Log::INFO)<<"\nMse:\n"<<tensorToString(ret.mse)<<"\n\n R2:\n"<<tensorToString(ret.r2);
 
 	if(config.inputImportance)
 	{
