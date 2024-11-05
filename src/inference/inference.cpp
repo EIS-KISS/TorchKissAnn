@@ -158,104 +158,12 @@ static torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::sh
 		case MODE_ANN:
 			output = ann::classification::use(input, net);
 			break;
-/*		case MODE_NN:
-		{
-			std::unique_ptr<EisGeneratorDataset> dataset (EisGeneratorDataset::newDefaultDataset(DATA_WIDTH, 1e6));
-			output = NearestNeighbor::use(input, dataset.get());
-			break;
-		}*/
 		default:
 			Log(Log::ERROR)<<"Not implemented";
 			return torch::Tensor();
 	}
 	output = output.reshape({output.numel()});
 	return output;
-}
-
-
-static torch::Tensor testOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
-{
-	EisDirDataset dataset(datasetDir);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::test(network, *dataLoader, dataset.size().value(),
-									 dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
-}
-
-static int testPipe(const Config& config, std::shared_ptr<ann::Net> net)
-{
-	if(config.spectraFileName.empty())
-	{
-		Log(Log::ERROR)<<"You must specify a dataset to test on\n";
-		return 1;
-	}
-
-	if(config.datasetMode == DATASET_DIR)
-	{
-		testOnDir(config.spectraFileName, net);
-	}
-	else
-	{
-		Log(Log::ERROR)<<"Dataset not implemented for this operation: "<<datasetModeToStr(config.datasetMode);
-		return 1;
-	}
-	return 0;
-}
-
-static torch::Tensor confusionOnDir(const std::string& datasetDir, std::shared_ptr<ann::Net> network)
-{
-	EisDirDataset dataset(datasetDir);
-	torch::data::DataLoaderOptions options;
-	options = options.batch_size(batch_size).workers(JOBS);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	return ann::classification::confusion(network, *dataLoader);
-}
-
-static int confusionPipe(const Config& config, std::shared_ptr<ann::Net> net)
-{
-	if(config.spectraFileName.empty())
-	{
-		Log(Log::ERROR)<<"You must specify a dataset to test on\n";
-		return 1;
-	}
-
-	torch::Tensor confusionMatrix;
-
-	if(config.datasetMode == DATASET_DIR)
-	{
-		confusionMatrix = confusionOnDir(config.spectraFileName, net);
-	}
-	else
-	{
-		Log(Log::ERROR)<<"Dataset not implemented for this operation: "<<datasetModeToStr(config.datasetMode);
-		return 1;
-	}
-
-	std::string path = "./confusion.csv";
-	std::ofstream file(path);
-	if(!file.is_open())
-	{
-		Log(Log::ERROR)<<"Coult not open "<<path<<" for writeing";
-		return 1;
-	}
-
-	file<<std::setw(10)<<",";
-	for(int64_t i = 0; i < net->getOutputSize(); ++i)
-		file<<net->getOutputLabels()[i]<<", ";
-	file<<'\n';
-
-	for(int64_t row = 0; row < net->getOutputSize(); ++row)
-	{
-		file<<net->getOutputLabels()[row]<<", ";
-		for(int64_t col = 0; col < net->getOutputSize(); ++col)
-			file<<confusionMatrix[row][col].item<long>()<<", ";
-		file<<'\n';
-	}
-
-	Log(Log::INFO)<<"Saved confsion matrix to "<<path;
-
-	return 0;
 }
 
 static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
@@ -386,10 +294,7 @@ static bool requiresNetwork(PredictionMode mode)
 {
 	switch(mode)
 	{
-		case MODE_NN:
 		case MODE_ANN:
-		case MODE_ANN_TEST:
-		case MODE_ANN_CONFUSION:
 		case MODE_REGRESSION:
 			return true;
 		case MODE_SHOW:
@@ -442,13 +347,8 @@ int main(int argc, char** argv)
 
 	switch(config.mode)
 	{
-		case MODE_NN:
 		case MODE_ANN:
 			return classifyPipeline(config, net);
-		case MODE_ANN_TEST:
-			return testPipe(config, net);
-		case MODE_ANN_CONFUSION:
-			return confusionPipe(config, net);
 		case MODE_REGRESSION:
 			return regressionPipe(config, net);
 		case MODE_SHOW:

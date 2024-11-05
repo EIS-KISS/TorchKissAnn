@@ -29,10 +29,7 @@ typedef enum
 {
 	MODE_INVALID = -1,
 	MODE_ANN = 0,
-	MODE_ANN_TEST,
-	MODE_ANN_CONFUSION,
 	MODE_REGRESSION,
-	MODE_NN,
 	MODE_SHOW,
 	MODE_REEXPORT
 } PredictionMode;
@@ -60,10 +57,6 @@ static PredictionMode parseMode(const std::string& in)
 {
 	if(in.empty() || in == "ann")
 		return MODE_ANN;
-	else if(in == "anntest")
-		return MODE_ANN_TEST;
-	else if(in == "annconfusion")
-		return MODE_ANN_CONFUSION;
 	else if (in == "regression")
 		return MODE_REGRESSION;
 	else if (in == "show")

@@ -110,10 +110,19 @@ torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
 	return confusionMatrix;
 }
 
+struct TestReturn
+{
+	torch::Tensor predictions;
+	torch::Tensor targets;
+	torch::Tensor histograms;
+	torch::Tensor acc;
+	double loss;
+};
+
 template <typename DataLoader>
-torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
+TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
 				   int64_t outputSize, torch::Tensor classWeights, bool isMulticlass, size_t epoch = 0,
-				   TrainLog* log = nullptr, const std::string& outputDir = "", double outputProb = 0)
+				   TrainLog* log = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
@@ -122,6 +131,9 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
 	torch::Tensor classCount = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
 	torch::Tensor histograms = torch::zeros({outputSize, outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
+
+	torch::Tensor allpredictions = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alltargets = torch::empty({0}, tensorOptDevice<float>(false));
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -145,6 +157,9 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
 
+		allpredictions = safeConcat({allpredictions, output}, 0);
+		alltargets = safeConcat({alltargets, targets}, 0);
+
 		if(!isMulticlass)
 		{
 			loss = lossNll->forward(output, targets.to(torch::kInt64));
@@ -161,9 +176,6 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 		torch::Tensor hits = multiClassHits(output, targets, 0.25);
 		torch::Tensor acc = hits.sum();
-
-		if(!outputDir.empty())
-			exportRandomSamples(data, targets, hits, outputDir, outputProb);
 
 		for(int i = 0; i < hits.size(0); ++i)
 		{
@@ -183,21 +195,22 @@ torch::Tensor test(std::shared_ptr<Net> network, DataLoader& loader, size_t data
 
 	bar.mark_as_completed();
 
-	std::cout<<"Class predictions:\n";
-	std::cout<<histograms<<std::endl;
-
+	classAcc = classAcc/classCount;
 	if(log)
 	{
+		log->logTestLoss(epoch, data_size, (Loss / data_size)*100, Acc/data_size, data_size);
 		for(int i = 0; i < histograms.size(0); ++i)
 			log->logTensor("class_predictions", histograms.select(0, i));
 	}
 
-	classAcc = classAcc/classCount;
-	std::cout<<"Test class acc:\n"<<classAcc<<'\n';
-	std::cout<<"Test Loss: "<<(Loss / data_size)*100<< "\tAcc: " <<Acc / data_size<< std::endl;
-	if(log)
-		log->logTestLoss(epoch, data_size, (Loss / data_size)*100, Acc/data_size, data_size);
-	return classAcc;
+	TestReturn ret;
+	ret.targets = alltargets.cpu();
+	ret.predictions = allpredictions.cpu();
+	ret.histograms = histograms.cpu();
+	ret.acc = classAcc.cpu();
+	ret.loss = (Loss / data_size)*100;
+
+	return ret;
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>

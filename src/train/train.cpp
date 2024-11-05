@@ -26,7 +26,6 @@
 #include "options.h"
 #include "trainlog.h"
 
-
 template <typename DataSetType>
 int train(const Config& config);
 

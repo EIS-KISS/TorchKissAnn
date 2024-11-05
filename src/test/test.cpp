@@ -24,6 +24,43 @@
 #include "save.h"
 
 template <typename T>
+int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, const Config& config)
+{
+	std::vector<double> losses(dataset->inputSize());
+
+	std::pair<torch::Tensor, torch::Tensor> ranges = dataset->inputRanges();
+
+	for(size_t i = 0; i < dataset->inputSize(); ++i)
+	{
+		std::vector<DropDesc> desc(dataset->inputSize(), {0, 0, 0, 0});
+		for(size_t j = (static_cast<int64_t>(i) - window) > 0 ? static_cast<int64_t>(i) - window : 0; j <= i+window && j < dataset->inputSize(); ++j)
+		{
+			desc[j].dropout = true;
+			desc[j].max = ranges.first[j].item<float>();
+			desc[j].min = ranges.second[j].item<float>();
+			desc[j].strength = 1;
+		}
+
+		dataset->setDropouts(desc);
+
+		torch::data::DataLoaderOptions options;
+		options = options.batch_size(batch_size).workers(16);
+		auto dataLoader = torch::data::make_data_loader(dataset->map(torch::data::transforms::Stack<>()), options);
+		torch::Tensor weights =  torch::ones({static_cast<int64_t>(dataset->outputSize())}).to(*offload_device);
+		losses[i] = ann::classification::test(net, *dataLoader, dataset->size().value(), dataset->outputSize(), weights, dataset->isMulticlass()).loss;
+	}
+
+	std::vector<double> indecies(dataset->inputSize());
+	for(size_t i = 0; i < dataset->inputSize(); ++i)
+		indecies[i] = i;
+
+	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), losses, "loss importance");
+	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), "Input", "loss", indecies, losses, false, false, true);
+
+	return 0;
+}
+
+template <typename T>
 int test(const Config& config)
 {
 	if(config.fileName.empty())
@@ -62,7 +99,23 @@ int test(const Config& config)
 	options = options.batch_size(batch_size).workers(16);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
-	ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
+	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
+	Log(Log::INFO)<<"Test loss: "<<testRet.loss<<"\nAcc:\n"<<tensorToString(testRet.acc);
+	Log(Log::INFO)<<"Class Historgrams:\n";
+	for(int i = 0; i < testRet.histograms.size(0); ++i)
+	{
+		Log(Log::INFO)<<"Class "<<i<<":\n";
+		for(int j = 0; j < testRet.histograms.size(1); ++i)
+			Log(Log::INFO)<<tensorToString(testRet.histograms.select(0, i))<<'\n';
+	}
+
+	if(config.inputImportance)
+	{
+		inputImportance<T>(net, &dataset, 1, config);
+		inputImportance<T>(net, &dataset, 4, config);
+		inputImportance<T>(net, &dataset, 16, config);
+	}
+
 	return 0;
 }
 

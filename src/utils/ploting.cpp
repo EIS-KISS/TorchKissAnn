@@ -6,7 +6,7 @@
 #ifdef ENABLE_PLOTTING
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-				std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
 {
 	sciplot::Plot2D plot;
 	plot.xlabel(xLabel);
@@ -44,10 +44,16 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	return true;
 }
 
+bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
+	std::vector<double> xData, std::vector<double> yData, bool square, bool log, bool points)
+{
+	return save2dPlot(path, xLabel, yLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), square, log, points);
+}
+
 #else
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-				std::valarray<double> xData, std::valarray<double> yData, bool square)
+	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
 {
 	(void)path;
 	(void)yLabel;
