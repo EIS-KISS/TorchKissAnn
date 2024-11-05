@@ -160,7 +160,7 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 	{
 		std::valarray<double> r2(dataset->inputSize());
 		for(size_t j = 0; j < dataset->inputSize(); ++j)
-			r2[i] = r2s[i][j].item<float>();
+			r2[j] = r2s[j][i].item<float>();
 		csv::save(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".csv"), r2, "r2");
 		save2dPlot(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".svg"), "Input", "r2", indecies, r2, false, false, true);
 	}
