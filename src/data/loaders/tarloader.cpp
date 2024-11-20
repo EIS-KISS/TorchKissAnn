@@ -111,6 +111,11 @@ std::string EisTarDataset::outputName(size_t output)
 		return *std::next(modelStrs.begin(), output);
 }
 
+c10::optional<torch::Tensor> EisTarDataset::frequencies()
+{
+	return EisSpectraDataset::frequencies();
+}
+
 torch::Tensor EisTarDataset::classCounts()
 {
 	torch::TensorOptions options;

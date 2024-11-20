@@ -111,6 +111,23 @@ ann::Net::Net(const Json::Value& node)
 				outputBiases[i] = biases[i].asFloat();
 		}
 	}
+
+	if(node.isMember("inputFrequencies"))
+	{
+		Json::Value freqs = node["inputFrequencies"];
+		if(!freqs.isArray() || freqs.size() != inputSize)
+		{
+			Log(Log::WARN)<<"Could not get input frequencies for network";
+			if(freqs.size() != inputSize)
+				Log(Log::WARN)<<"The array has the wrong size at "<<freqs.size();
+		}
+		else
+		{
+			inputFrequencies = torch::zeros({inputSize}, tensorOptCpu<float>(false));
+			for(Json::ArrayIndex i = 0; i < freqs.size(); ++i)
+				inputFrequencies[i] = freqs[i].asFloat();
+		}
+	}
 }
 
 void ann::Net::setOutputScalars(const torch::Tensor& tensor)
@@ -180,6 +197,28 @@ void ann::Net::getConfiguration(Json::Value& node)
 	for(int64_t i = 0; i < outputSize; ++i)
 		biases[static_cast<int>(i)] = outputBiases[i].item().toFloat();
 	node["outputBiases"] = biases;
+
+	if(inputFrequencies.numel() != 0)
+	{
+		assert(inputFrequencies.size(0) == inputSize);
+		assert(inputFrequencies.dim() == 1);
+		Json::Value frequencies(Json::ValueType::arrayValue);
+		frequencies.resize(inputSize);
+		for(int64_t i = 0; i < inputSize; ++i)
+			biases[static_cast<int>(i)] = inputFrequencies[i].item().toFloat();
+		node["inputFrequencies"] = biases;
+	}
+}
+
+void ann::Net::setInputFrequencies(const torch::Tensor& tensor)
+{
+	if(tensor.dim() != 1 || tensor.size(0) != inputSize)
+	{
+		Log(Log::WARN)<<"Attempted to set input frequencies of size "<< tensor.size(0)<<" for a network with an input size of "<<inputSize<<" ignoreing";
+		return;
+	}
+
+	inputFrequencies = tensor;
 }
 
 const std::vector<std::string>& ann::Net::getOutputLabels() const
@@ -190,7 +229,10 @@ const std::vector<std::string>& ann::Net::getOutputLabels() const
 void ann::Net::setOutputLabels(const std::vector<std::string>& outputLabelsI)
 {
 	if(static_cast<int64_t>(outputLabelsI.size()) != outputSize)
+	{
 		Log(Log::WARN)<<"Attempted to set output labels of size "<<outputLabelsI.size()<<" for a network with a output size of "<<outputSize<<" ignoreing";
+		return;
+	}
 
 	outputLabels = outputLabelsI;
 }

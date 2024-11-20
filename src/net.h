@@ -16,6 +16,7 @@ protected:
 	int64_t inputSize;
 	int64_t outputSize;
 	std::string inputLabel = "EIS";
+	torch::Tensor inputFrequencies;
 	std::vector<std::string> outputLabels;
 	std::string purpose = "Unkown";
 	std::vector<std::pair<std::string, int64_t>> extraInputs;
@@ -39,6 +40,7 @@ public:
 	void setInputLabel(const std::string& inputLabel);
 	void setOutputScalars(const torch::Tensor& tensor);
 	void setOutputBiases(const torch::Tensor& tensor);
+	void setInputFrequencies(const torch::Tensor& tensor);
 	torch::Tensor getOutputScalars();
 	torch::Tensor getOutputBiases();
 	void setExtraInputs(const std::vector<std::pair<std::string, int64_t>>& in);

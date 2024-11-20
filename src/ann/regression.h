@@ -94,7 +94,6 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			Log(Log::ERROR)<<prediction<<"\nPrediction after scaleing contains NAN!\nData:\n"<<data;
 			return -1;
 		}
-
 		loss = lossFn(prediction, targets);
 		/*torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
 		loss = loss + (negatives.sum()/negatives.numel());*/
@@ -248,6 +247,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 
 	net->setPurpose(purposeString(trainDataset));
 	net->setExtraInputs(trainDataset->extraInputs());
+	net->setInputFrequencies(trainDataset->frequencies().value());
 
 	net->to(*offload_device);
 
@@ -292,7 +292,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	//options.batch_size(5);
 	auto testDataLoader =
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
-	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0.001));
 
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{

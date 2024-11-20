@@ -77,18 +77,9 @@ bool RegressionLoaderDir::isMulticlass()
 	return true;
 }
 
-c10::optional<torch::Tensor> RegressionLoaderDir::freqRange()
+c10::optional<torch::Tensor> RegressionLoaderDir::frequencies()
 {
-	eis::Spectra spectra = loadSpectraAtIndex(0);
-	fvalue front = spectra.data.front().omega;
-	fvalue back = spectra.data.back().omega;
-
-	torch::Tensor out = torch::zeros({3}, tensorOptCpu<fvalue>(false));
-
-	out[0] = std::min(front, back);
-	out[1] = std::max(front, back);
-	out[2] = static_cast<fvalue>(spectra.data.size());
-	return out;
+	return EisSpectraDataset::frequencies();
 }
 
 std::vector<std::pair<std::string, int64_t>> RegressionLoaderDir::extraInputs()

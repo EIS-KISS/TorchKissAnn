@@ -28,4 +28,5 @@ public:
 	virtual std::string outputName(size_t output) override;
 	virtual torch::Tensor classCounts() override;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs() override;
+	virtual c10::optional<torch::Tensor> frequencies() override;
 };

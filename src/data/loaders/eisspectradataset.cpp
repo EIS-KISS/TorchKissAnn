@@ -1,4 +1,5 @@
 #include "eisspectradataset.h"
+#include "data/eistotorch.h"
 
 std::pair<std::vector<std::string>, std::vector<std::string>> EisSpectraDataset::getExtraInputsAndLabelNames(const eis::Spectra& spectra)
 {
@@ -25,4 +26,13 @@ std::vector<std::pair<std::string, int64_t>> EisSpectraDataset::extraInputs()
 		out.back().first.erase(out.back().first.begin(), out.back().first.begin()+extraInputStr.length());
 	}
 	return out;
+}
+
+torch::Tensor EisSpectraDataset::frequencies()
+{
+	eis::Spectra spectra = loadSpectraAtIndex(0);
+	std::vector<fvalue> omega(spectra.data.size());
+	for(size_t i = 0; i < spectra.data.size(); ++i)
+		omega[i] = spectra.data[i].omega;
+	return fvalueVectorToTensor(omega);
 }

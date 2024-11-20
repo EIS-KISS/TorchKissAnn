@@ -43,7 +43,7 @@ public:
 	virtual torch::Tensor classCounts();
 	virtual torch::Tensor classWeights();
 	virtual size_t inputSize();
-	virtual c10::optional<torch::Tensor> freqRange();
+	virtual c10::optional<torch::Tensor> frequencies();
 	virtual std::string dataLabel() const;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
 	virtual std::pair<torch::Tensor, torch::Tensor> inputRanges();
@@ -165,7 +165,7 @@ torch::Tensor EisDataset<DataSelf>::classWeights()
 }
 
 template <typename DataSelf>
-c10::optional<torch::Tensor> EisDataset<DataSelf>::freqRange()
+c10::optional<torch::Tensor> EisDataset<DataSelf>::frequencies()
 {
 	return c10::optional<torch::Tensor>();
 }

@@ -10,4 +10,5 @@ protected:
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) = 0;
 	virtual eis::Spectra loadSpectraHeaderAtIndex(size_t index) = 0;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
+	torch::Tensor frequencies();
 };

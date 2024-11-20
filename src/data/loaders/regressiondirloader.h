@@ -22,7 +22,7 @@ public:
 	virtual std::string outputName(size_t output) override;
 	virtual c10::optional<size_t> size() const override;
 	virtual bool isMulticlass() override;
-	virtual c10::optional<torch::Tensor> freqRange() override;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs() override;
 	virtual const std::string targetName() override;
+	virtual c10::optional<torch::Tensor> frequencies() override;
 };

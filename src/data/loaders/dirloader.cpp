@@ -122,3 +122,8 @@ torch::Tensor EisDirDataset::classCounts()
 		outAcc[classNum] = outAcc[classNum] + 1;
 	return out;
 }
+
+c10::optional<torch::Tensor> EisDirDataset::frequencies()
+{
+	return EisSpectraDataset::frequencies();
+}
