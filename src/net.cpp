@@ -9,6 +9,7 @@
 #include "tensoroptions.h"
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
+#include "ann/autoencoder.h"
 
 using namespace ann;
 
@@ -247,6 +248,8 @@ std::shared_ptr<Net> ann::Net::newNetFromConfiguation(const Json::Value& node)
 		return std::shared_ptr<Net>(new ann::SimpleNet(node));
 	else if(type == typeid(ann::ScriptNet).name())
 		return std::shared_ptr<Net>(new ann::ScriptNet(node, true));
+	else if(type == typeid(ann::ScriptNet).name())
+		return std::shared_ptr<Net>(new ann::AutoEncoder(node));
 	return nullptr;
 }
 

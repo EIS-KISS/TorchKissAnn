@@ -29,17 +29,6 @@ static struct argp_option options[] =
   { 0 }
 };
 
-typedef enum
-{
-	MODE_INVALID = -1,
-	MODE_ANN = 0,
-	MODE_ANN_CONV,
-	MODE_ANN_SCRIPT,
-	MODE_GAN,
-	MODE_REGRESSION,
-	MODE_REGRESSION_SCRIPT
-} TestMode;
-
 struct Config
 {
 	DatasetMode datasetMode = DATASET_INVALID;

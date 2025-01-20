@@ -24,9 +24,6 @@ namespace classification
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
-template <typename DatasetType>
-void train(std::string fileName, EisDataset<DatasetType>* trainDataset, bool convNet, size_t epochs = 30);
-
 torch::Tensor multiClassHits(const torch::Tensor& prediction, torch::Tensor targets, double thresh = 0.5);
 
 void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
@@ -153,7 +150,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
-		at::autocast::set_enabled(true);
+		at::autocast::set_autocast_enabled(at::kCUDA, true);
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
 
@@ -190,7 +187,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		Acc += acc.template item<float>();
 
 		at::autocast::clear_cache();
-		at::autocast::set_enabled(false);
+		at::autocast::set_autocast_enabled(at::kCUDA, false);
 	}
 
 	bar.mark_as_completed();

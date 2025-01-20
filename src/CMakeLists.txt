@@ -27,6 +27,7 @@ set(SRC_FILES
 	ann/scriptnet.cpp
 	ann/classification.cpp
 	ann/regression.cpp
+	ann/autoencoder.cpp
 	loss/eisdistanceloss.cpp
 	fit/fit.cpp
 	globals.cpp

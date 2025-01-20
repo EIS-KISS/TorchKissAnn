@@ -193,8 +193,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	alltargetmse = alltargetmse / index;
 
 	torch::Tensor r2scores = r2score(allpredictions, alltargets);
-	std::cout<<"Test r2: "<<r2scores<<std::endl;
-	std::cout<<"Test mse: "<<alltargetmse<<std::endl;
 	if(log)
 		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
 
@@ -309,7 +307,12 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			return -1;
 
 		if(testDataset)
-			test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
+		{
+			TestReturn testret = test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
+			Log(Log::INFO)<<"Test r2: "<<testret.r2;
+			Log(Log::INFO)<<"Test mse: "<<testret.mse;
+		}
+
 
 		if(trainLog)
 			trainLog->saveNetwork(net);
@@ -320,8 +323,6 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		trainLog->saveNetwork(net, true);
 	return 0;
 }
-
-//void parameterSearch();
 
 
 }

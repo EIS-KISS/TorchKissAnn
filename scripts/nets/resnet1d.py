@@ -36,7 +36,8 @@ class MyConv1dPadSame(nn.Module):
         net = self.conv(net)
 
         return net
-        
+
+
 class MyMaxPool1dPadSame(nn.Module):
     """
     extend nn.MaxPool1d to support SAME padding
@@ -283,5 +284,4 @@ class ResNet1D(nn.Module):
         # out = self.softmax(out)
         if self.verbose:
             print('softmax', out.shape)
-        
         return out

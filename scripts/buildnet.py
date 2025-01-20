@@ -2,6 +2,7 @@ import torch
 from nets.resnet1d import ResNet1D
 from nets.simplenet import SimpleNet
 from nets.convnet import ConvNet
+from nets.upsamplenet import UpsampleNet
 import json
 import argparse
 
@@ -75,8 +76,20 @@ def build_convnet(input_size: int, output_size: int):
 	save(script, input_size, output_size, "convnet")
 
 
+def build_upsamplenet(input_size: int, output_size: int):
+	module = UpsampleNet(input_size, output_size, 4, 3)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"UpsampleNet output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "upsamplenet")
+
+
 if __name__ == "__main__":
-	valid_network_types = "simple, conv, resnet"
+	valid_network_types = "simple, conv, resnet, upsamplenet"
 	parser = argparse.ArgumentParser("TorchScript network generation script")
 	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
 	parser.add_argument('--output_size', '-o', type=int, required=True, help="Number of output classes")
@@ -89,6 +102,8 @@ if __name__ == "__main__":
 		build_convnet(args.input_size, args.output_size)
 	elif args.type == "resnet":
 		build_resnet(args.output_size)
+	elif args.type == "upsamplenet":
+		build_upsamplenet(args.input_size, args.output_size)
 	else:
 		print(f"{args.type} is not a valid network type valid types are: {valid_network_types}")
 		exit(1)
