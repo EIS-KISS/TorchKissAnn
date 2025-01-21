@@ -26,7 +26,6 @@
 #include <kisstype/type.h>
 #include <algorithm>
 
-#include <eisgenerator/translators.h>
 #include <torch/types.h>
 
 #include "log.h"
@@ -34,6 +33,24 @@
 #include "indicators.hpp"
 
 using namespace eis;
+
+static void purgeEisParamBrackets(std::string& in)
+{
+	int bracketCounter = 0;
+
+	std::string out;
+
+	for(size_t i = 0; i < in.size(); ++i)
+	{
+		if(in[i] == '{' || in[i] == '[' || in[i] == '<')
+			++bracketCounter;
+		if(bracketCounter == 0)
+			out.push_back(in[i]);
+		if(in[i] == '}' || in[i] == ']' || in[i] == '>')
+			--bracketCounter;
+	}
+	in = out;
+}
 
 EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 {

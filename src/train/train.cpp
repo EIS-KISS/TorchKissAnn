@@ -24,8 +24,6 @@
 #include <filesystem>
 #include <ios>
 #include <iostream>
-#include <eisgenerator/model.h>
-#include <eisgenerator/log.h>
 #include <kisstype/spectra.h>
 #include <kisstype/type.h>
 #include <memory>
@@ -294,7 +292,6 @@ int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
 	Log::level = Log::INFO;
-	eis::Log::level = eis::Log::ERROR;
 
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);

@@ -21,7 +21,6 @@
 #pragma once
 #include <filesystem>
 #include <kisstype/spectra.h>
-#include <eisgenerator/translators.h>
 #include <memory>
 
 #include "data/loaders/eisspectradataset.h"
