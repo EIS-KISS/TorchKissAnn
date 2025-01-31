@@ -21,7 +21,7 @@
 import torch
 
 
-class Conv1dSamePad(nn.Module):
+class Conv1dSamePad(torch.nn.Module):
 	def __init__(self, in_channels, out_channels, kernel_size, stride, groups=1):
 		super(Conv1dSamePad, self).__init__()
 		self.in_channels = in_channels
@@ -51,7 +51,7 @@ class Conv1dSamePad(nn.Module):
 		return net
 
 
-class MaxpoolSamePad(nn.Module):
+class MaxpoolSamePad(torch.nn.Module):
 	def __init__(self, kernel_size):
 		super(MaxpoolSamePad, self).__init__()
 		self.kernel_size = kernel_size
@@ -72,7 +72,7 @@ class MaxpoolSamePad(nn.Module):
 		return net
 
 
-class ResnetBlock(nn.Module):
+class ResnetBlock(torch.nn.Module):
 	def __init__(self, in_channels, out_channels, kernel_size, stride, groups, downsample, use_bn, use_do, is_first_block=False):
 		super(ResnetBlock, self).__init__()
 
@@ -154,7 +154,7 @@ class ResnetBlock(nn.Module):
 		return out
 
 
-class ResNet1D(nn.Module):
+class ResNet1D(torch.nn.Module):
 	def __init__(self, in_channels, base_filters, kernel_size, stride, groups, n_classes,
 					downsample_gap=2, increasefilter_gap=4, use_bn=True, use_do=True, verbose=False):
 		super(ResNet1D, self).__init__()
