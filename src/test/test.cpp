@@ -28,6 +28,8 @@
 #include <torch/torch.h>
 #include <valarray>
 
+#include "ann/autoencoder.h"
+#include "ann/autoencode.h"
 #include "ann/classification.h"
 #include "ann/regression.h"
 #include "commonoptions.h"
@@ -82,7 +84,7 @@ int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, c
 }
 
 template <typename T>
-int test(const Config& config)
+int test(std::shared_ptr<ann::Net> net, const Config& config)
 {
 	if(config.fileName.empty())
 	{
@@ -96,13 +98,6 @@ int test(const Config& config)
 	{
 		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
 		return 2;
-	}
-
-	std::shared_ptr<ann::Net> net(ann::Net::newNetFromCheckpointDir(config.netpath));
-	if(!net)
-	{
-		Log(Log::ERROR)<<"Could not load network from "<<config.netpath;
-		return 1;
 	}
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
@@ -193,7 +188,7 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 }
 
 template <typename T>
-int testRegression(const Config& config)
+int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 {
 	if(config.fileName.empty())
 	{
@@ -209,14 +204,6 @@ int testRegression(const Config& config)
 		return 2;
 	}
 
-	std::shared_ptr<ann::Net> net(ann::Net::newNetFromCheckpointDir(config.netpath));
-
-	if(!net)
-	{
-		Log(Log::ERROR)<<"Could not load network from "<<config.netpath;
-		return 1;
-	}
-
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
 		dataset.outputSize()<<" and an input size of "<<dataset.inputSize();
@@ -228,7 +215,7 @@ int testRegression(const Config& config)
 		return 1;
 	}
 
-	Log(Log::INFO)<<"Network was traind to be "<<net->getPurpose()<<", we are testing against "<<ann::regression::purposeString(&dataset);
+	Log(Log::INFO)<<"Network was trained to be "<<net->getPurpose()<<", we are testing against "<<ann::regression::purposeString(&dataset);
 
 	if(net->getOutputSize() !=  static_cast<int64_t>(dataset.outputSize()))
 	{
@@ -314,6 +301,86 @@ int testRegression(const Config& config)
 	return 0;
 }
 
+template <typename T>
+int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
+{
+	T dataset(config.fileName);
+
+	if(dataset.size().value() == 0)
+	{
+		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
+		return 2;
+	}
+
+	std::string type = tokenize(net->getPurpose(), ',')[0];
+	if(type != "Autoencoder")
+	{
+		Log(Log::ERROR)<<"The network loaded from "<<config.netpath<<" is not a autoencoder network, can not test this network on this dataset!";
+		return 1;
+	}
+
+	Log(Log::INFO)<<"Network was trained to be "<<net->getPurpose()<<'\n';
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(16);
+	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
+	ann::autoencode::TestReturn ret = ann::autoencode::test(net, *dataLoader,  *lossMse, dataset.size().value());
+
+	Log(Log::INFO)<<"Mse: "<<ret.mse.mean().item()<<'\n';
+
+	assert(ret.latents.dim() == 2);
+
+	auto latentAccesor = ret.latents.accessor<float, 2>();
+	std::valarray<double> x(ret.latents.size(0));
+	std::valarray<double> y(ret.latents.size(0));
+	std::valarray<double> z(ret.latents.size(0));
+
+	std::filesystem::create_directory(config.outputDir);
+
+	std::cout<<"latent sizes: \n"<<ret.latents.sizes()<<std::endl;
+	std::cout<<"ret.latents.size(1): \n"<<ret.latents.size(1)<<std::endl;
+
+	for(int64_t i = 0; i < ret.latents.size(0); ++i)
+	{
+		switch(ret.latents.size(1))
+		{
+			default:
+			case 3:
+				z[i] = latentAccesor[i][2];
+			case 2:
+				y[i] = latentAccesor[i][1];
+			case 1:
+				x[i] = latentAccesor[i][0];
+				break;
+			case 0:
+				assert(false);
+		}
+	}
+
+	csv::save("out/latents.csv", ret.latents, "latents");
+
+	switch(ret.latents.size(1))
+	{
+		default:
+		case 3:
+			save3dPlot(config.outputDir/"latent.svg", "x", "y", "z", x, y, z, false);
+			break;
+		case 2:
+			save2dPlot(config.outputDir/"latent.svg", "x", "y", x, y, false, false, true);
+			break;
+		case 1:
+			for(int64_t i = 0; i < ret.latents.size(0); ++i)
+				y[i] = i;
+			save2dPlot(config.outputDir/"latent.svg", "n", "x", y, x, false, false, true);
+			break;
+		case 0:
+			assert(false);
+	}
+
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	std::cout<<std::setprecision(5)<<std::fixed<<std::setw(3);
@@ -323,28 +390,58 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	choose_device(config.noGpu);
+	batch_size = config.batchSize;
+
 	if(config.netpath.empty())
 	{
 		Log(Log::ERROR)<<"A path to a checkpoint directory must be given";
 		return 1;
 	}
 
-	choose_device(config.noGpu);
-	batch_size = config.batchSize;
+	std::shared_ptr<ann::Net> net(ann::Net::newNetFromCheckpointDir(config.netpath));
 
-	switch(config.datasetMode)
+	if(!net)
 	{
-		case DATASET_DIR:
-			return test<EisDirDataset>(config);
-		case DATASET_TAR:
-			return test<EisTarDataset>(config);
-		case DATASET_DIR_REGRESSION:
-			return testRegression<RegressionLoaderDir>(config);
-		case DATASET_TAR_REGRESSION:
-			return testRegression<RegressionLoaderTar>(config);
-		case DATASET_INVALID:
-			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
-			break;
+		Log(Log::ERROR)<<"Could not load network from "<<config.netpath;
+		return 1;
+	}
+	std::shared_ptr<ann::AutoEncoder> autoencoder = std::dynamic_pointer_cast<ann::AutoEncoder>(net);
+
+
+	if(autoencoder)
+	{
+		switch(config.datasetMode)
+		{
+			case DATASET_DIR:
+				return testAutoencoder<EisDirDataset>(autoencoder, config);
+			case DATASET_TAR:
+				return testAutoencoder<EisTarDataset>(autoencoder, config);
+			case DATASET_DIR_REGRESSION:
+				return testAutoencoder<RegressionLoaderDir>(autoencoder, config);
+			case DATASET_TAR_REGRESSION:
+				return testAutoencoder<RegressionLoaderTar>(autoencoder, config);
+			case DATASET_INVALID:
+				Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
+				break;
+		}
+	}
+	else
+	{
+		switch(config.datasetMode)
+		{
+			case DATASET_DIR:
+				return test<EisDirDataset>(net, config);
+			case DATASET_TAR:
+				return test<EisTarDataset>(net, config);
+			case DATASET_DIR_REGRESSION:
+				return testRegression<RegressionLoaderDir>(net, config);
+			case DATASET_TAR_REGRESSION:
+				return testRegression<RegressionLoaderTar>(net, config);
+			case DATASET_INVALID:
+				Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
+				break;
+		}
 	}
 
 	free_device();

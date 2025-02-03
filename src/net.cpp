@@ -269,7 +269,7 @@ std::shared_ptr<Net> ann::Net::newNetFromConfiguation(const Json::Value& node)
 		return std::shared_ptr<Net>(new ann::SimpleNet(node));
 	else if(type == typeid(ann::ScriptNet).name())
 		return std::shared_ptr<Net>(new ann::ScriptNet(node, true));
-	else if(type == typeid(ann::ScriptNet).name())
+	else if(type == typeid(ann::AutoEncoder).name())
 		return std::shared_ptr<Net>(new ann::AutoEncoder(node));
 	return nullptr;
 }

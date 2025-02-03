@@ -27,7 +27,7 @@
 #include "utils/log.h"
 #include "commonoptions.h"
 
-#define MODE_LIST "ann, conv, script, gan, regression, regression_script"
+#define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder"
 
 inline const char *argp_program_version = "TorchKissAnnTest";
 inline const char *argp_program_bug_address = "<carl@uvos.xyz>";

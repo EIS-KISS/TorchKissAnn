@@ -29,3 +29,9 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
                 std::vector<double> xData, std::vector<double> yData, bool square = false, bool log = false, bool points = false);
+
+bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
+                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log = false);
+
+bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
+                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log = false);

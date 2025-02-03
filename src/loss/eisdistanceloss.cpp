@@ -23,7 +23,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <torch/linalg.h>
 #include <torch/nn/options/loss.h>
 
 #include "modelscript.h"
