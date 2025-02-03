@@ -96,6 +96,7 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 struct TestReturn
 {
 	torch::Tensor latents;
+	torch::Tensor datasetTargets;
 
 	torch::Tensor mse;
 	double loss;
@@ -110,6 +111,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	float lossAccumulator = 0;
 
 	torch::Tensor alllatets = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alldatasettargets = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
 	indicators::BlockProgressBar bar(
@@ -130,6 +132,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 		torch::Tensor output = network->forward(data, latent);
 
 		alllatets = safeConcat({alllatets, latent}, 0);
+		alldatasettargets = safeConcat({alldatasettargets, batch.targets}, 0);
 
 		torch::Tensor loss = lossFn(output, data);
 		torch::Tensor mse = torch::nn::functional::mse_loss(output, data, torch::nn::functional::MSELossFuncOptions(torch::kNone));
@@ -148,6 +151,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	ret.loss = (lossAccumulator / index);
 	ret.latents = alllatets.cpu();
 	ret.mse = alltargetmse.cpu();
+	ret.datasetTargets = alldatasettargets.cpu();
 
 	return ret;
 }
