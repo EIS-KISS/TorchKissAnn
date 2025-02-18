@@ -42,9 +42,12 @@
 #include "options.h"
 #include "globals.h"
 #include "tensoroperators.h"
+#include "tensoroptions.h"
 #include "tokenize.h"
 #include "ploting.h"
 #include "save.h"
+#include "colortabel.h"
+#include "data/eistotorch.h"
 
 template <typename T>
 int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, const Config& config)
@@ -117,13 +120,13 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
 	Log(Log::INFO)<<"Test loss: "<<testRet.loss<<"\nAcc:\n"<<tensorToString(testRet.acc);
-	Log(Log::INFO)<<"Class Historgrams:\n";
+	/*Log(Log::INFO)<<"Class Historgrams:\n";
 	for(int i = 0; i < testRet.histograms.size(0); ++i)
 	{
 		Log(Log::INFO)<<"Class "<<i<<":\n";
 		for(int j = 0; j < testRet.histograms.size(1); ++i)
-			Log(Log::INFO)<<tensorToString(testRet.histograms.select(0, i))<<'\n';
-	}
+			Log(Log::INFO)<<tensorToString(testRet.histograms.select(i, j))<<'\n';
+	}*/
 
 	if(config.inputImportance)
 	{
@@ -338,8 +341,7 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 
 	std::filesystem::create_directory(config.outputDir);
 
-	std::cout<<"latent sizes: \n"<<ret.latents.sizes()<<std::endl;
-	std::cout<<"ret.latents.size(1): \n"<<ret.latents.size(1)<<std::endl;
+	std::cout<<"target sizes: \n"<<ret.datasetTargets.sizes()<<std::endl;
 
 	for(int64_t i = 0; i < ret.latents.size(0); ++i)
 	{
@@ -358,7 +360,36 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		}
 	}
 
-	csv::save("out/latents.csv", ret.latents, "latents");
+	csv::save(config.outputDir/"latents.csv", ret.latents, "x ,y, z");
+
+	if(config.outputMoreImages)
+	{
+		std::filesystem::path imgDir = config.outputDir/"images";
+		std::filesystem::create_directory(imgDir);
+		for(int64_t i = 0; i < ret.outputs.size(0); ++i)
+		{
+			std::pair<std::valarray<double>, std::valarray<double>> output = torchToValarray<double>(ret.outputs[i].to(torch::kFloat64));
+			std::pair<std::valarray<double>, std::valarray<double>> referance = torchToValarray<double>(ret.inputs[i].to(torch::kFloat64));
+
+			save2dPlot(imgDir/("output_" + std::to_string(i) + ".png"), "Re(Z)", "Im(Z)", {output, referance});
+		}
+	}
+
+	if(ret.latents.size(0) == ret.datasetTargets.size(0) && ret.datasetTargets.size(1) == 1)
+	{
+		torch::Tensor metadata = torch::zeros({ret.latents.size(0), 4}, tensorOptCpu<float>(false));
+		auto metadataAcesssor = metadata.accessor<float, 2>();
+		for(int64_t i = 0; i < ret.latents.size(0); ++i)
+		{
+			std::array<int, 3> rgb = color::getColor(static_cast<color::color>(ret.datasetTargets[i].item().toInt()+1));
+			metadataAcesssor[i][0] = ret.datasetTargets[i].item().toFloat();
+			metadataAcesssor[i][1] = rgb[0];
+			metadataAcesssor[i][2] = rgb[1];
+			metadataAcesssor[i][3] = rgb[2];
+		}
+
+		csv::save(config.outputDir/"latents-with-meta.csv", torch::cat({ret.latents, metadata}, 1), "x ,y, z, class, r, g, b");
+	}
 
 	switch(ret.latents.size(1))
 	{

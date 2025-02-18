@@ -28,16 +28,29 @@
 #ifdef ENABLE_PLOTTING
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square, bool log, bool points)
 {
-	sciplot::Plot2D plot;
+		sciplot::Plot2D plot;
 	plot.xlabel(xLabel);
 	plot.ylabel(yLabel);
 
-	double xMin = xData.min();
-	double xMax = xData.max();
-	double yMin = yData.min();
-	double yMax = yData.max();
+	std::valarray<double> xMaxC(data.size());
+	std::valarray<double> xMinC(data.size());
+	std::valarray<double> yMaxC(data.size());
+	std::valarray<double> yMinC(data.size());
+
+	for(size_t i = 0; i < data.size(); ++i)
+	{
+		xMaxC[i] = data[i].first.max();
+		xMinC[i] = data[i].first.min();
+		yMaxC[i] = data[i].second.max();
+		yMinC[i] = data[i].second.min();
+	}
+
+	double xMin = xMinC.min();
+	double xMax = xMaxC.max();
+	double yMin = yMinC.min();
+	double yMax = yMaxC.max();
 
 	if(square)
 	{
@@ -53,10 +66,13 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	if(log)
 		plot.ytics().logscale(10);
 
-	if(points)
-		plot.drawPoints(xData, yData);
-	else
-		plot.drawCurve(xData, yData);
+	for(const std::pair<std::valarray<double>, std::valarray<double>>& curve : data)
+	{
+		if(points)
+			plot.drawPoints(curve.first, curve.second);
+		else
+			plot.drawCurve(curve.first, curve.second);
+	}
 	plot.legend().hide();
 
 	sciplot::Figure fig({{plot}});
@@ -64,6 +80,13 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	canvas.size(640, 480);
 	canvas.save(path);
 	return true;
+}
+
+
+bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
+	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+{
+	return save2dPlot(path, xLabel, yLabel, {{xData, yData}}, square, log, points);
 }
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,

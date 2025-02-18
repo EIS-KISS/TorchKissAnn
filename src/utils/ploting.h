@@ -28,6 +28,9 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
                 std::valarray<double> xData, std::valarray<double> yData, bool square = false, bool log = false, bool points = false);
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
+                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square = false, bool log = false, bool points = false);
+
+bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
                 std::vector<double> xData, std::vector<double> yData, bool square = false, bool log = false, bool points = false);
 
 bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,

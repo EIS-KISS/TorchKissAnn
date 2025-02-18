@@ -162,7 +162,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		indicators::option::PrefixText("Runing Eval: "),
 		indicators::option::ShowElapsedTime(true),
 		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size*16))
+		indicators::option::MaxProgress(data_size/(batch_size))
 	);
 	for(const auto& batch : loader)
 	{
@@ -270,7 +270,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
 	auto trainDataLoader = torch::data::make_data_loader<torch::data::samplers::RandomSampler>(trainDataset->map(torch::data::transforms::Stack<>()), options);
-	options = options.batch_size(batch_size*16).workers(JOBS);
+	options = options.batch_size(batch_size).workers(JOBS);
 	auto testDataLoader = testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 
 	size_t active_parameters = 0;
