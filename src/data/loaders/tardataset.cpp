@@ -23,6 +23,7 @@
 #include "data/eisdataset.h"
 #include "indicators.hpp"
 #include "microtar.h"
+#include "tokenize.h"
 #include <filesystem>
 
 TarDataset::~TarDataset()
@@ -86,7 +87,11 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 			bar.set_progress(progress);
 		}
 		if(header.type == MTAR_TREG)
-			files->push_back({.path =  header.name, .pos = tar.pos, .size = header.size});
+		{
+			std::vector<std::string> nametokens = tokenize(header.name, '.');
+			if(nametokens.back() == "csv" || nametokens.back() == "CSV")
+				files->push_back({.path =  header.name, .pos = tar.pos, .size = header.size});
+		}
 		mtar_next(&tar);
 	}
 
