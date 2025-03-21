@@ -21,6 +21,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include "net.h"
@@ -48,6 +49,7 @@ public:
 	virtual torch::Tensor forward(torch::Tensor x);
 
 	torch::Tensor forward(torch::Tensor x, torch::Tensor& latent);
+	int64_t getLatentSize();
 
 	virtual void getConfiguration(Json::Value& node);
 	virtual bool saveToCheckpointDir(const std::filesystem::path& path);

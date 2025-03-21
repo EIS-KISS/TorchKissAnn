@@ -115,6 +115,11 @@ bool ann::AutoEncoder::loadWeightsFromDir(const std::filesystem::path& path)
 	return encoder && decoder;
 }
 
+int64_t ann::AutoEncoder::getLatentSize()
+{
+	return encoder->getOutputSize();
+}
+
 void ann::AutoEncoder::getConfiguration(Json::Value& node)
 {
 	Net::getConfiguration(node);
