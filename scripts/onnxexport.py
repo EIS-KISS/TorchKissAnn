@@ -24,7 +24,6 @@ import sys
 import json
 import os
 import onnxruntime as ort
-from onnxruntime.training import artifacts as ortart
 import argparse
 import tarfile
 import io
@@ -39,37 +38,8 @@ def checkCompositContainer(container, key: str) -> bool:
 	return False
 
 
-def exportTrainingArtifactsModels(model_path: str, meta: dict, outname: str):
-	onnx_model = onnx.load(model_path)
-
-	requires_grad = [param.name for param in onnx_model.graph.initializer if "weight" in param.name or "bias" in param.name]
-
-	out_dir = os.path.join(TMP_DIRECTORY, 'train_artifacts')
-	if not os.path.exists(out_dir):
-		os.makedirs(out_dir)
-	ortart.generate_artifacts(onnx_model, requires_grad=requires_grad, frozen_params=None,
-	                          loss=ortart.LossType.CrossEntropyLoss, optimizer=ortart.OptimType.AdamW, artifact_directory=out_dir)
-
-	try:
-		os.remove(f"{outname}.tar")
-	except FileNotFoundError:
-		pass
-	tar = tarfile.open(f"{outname}.tar", mode="x")
-	for filename in os.listdir(out_dir):
-		path = os.path.join(out_dir, filename)
-		tar.add(path, arcname=os.path.split(path)[-1])
-		os.remove(path)
-	jsonstr = json.dumps(meta, indent='\t')
-	jsonio = io.BytesIO(jsonstr.encode('utf-8'))
-	jsontarinfo = tarfile.TarInfo("meta.json")
-	jsontarinfo.size = len(jsonstr)
-	tar.addfile(jsontarinfo, jsonio)
-	tar.close()
-	os.rmdir(out_dir)
-
-
-def exportModel(model, meta, outname: str, train: bool = False, output_prepend: str | None = None) -> str:
-	example_input = torch.randn((2 if train else 1, int(meta['inputSize'])), dtype=torch.float32)
+def exportModel(model, meta, outname: str, output_prepend: str | None = None) -> str:
+	example_input = torch.randn((1, int(meta['inputSize'])), dtype=torch.float32)
 	model.eval()
 	example_output = model.forward(example_input)
 
@@ -81,7 +51,7 @@ def exportModel(model, meta, outname: str, train: bool = False, output_prepend: 
 		output_names = [args.purpose]
 
 	torch.onnx.export(model, example_input, f"{outname}.onnx", verbose=True,
-		training=torch.onnx.TrainingMode.TRAINING if train else torch.onnx.TrainingMode.EVAL,
+		training=torch.onnx.TrainingMode.EVAL,
 		input_names=input_names, output_names=output_names, do_constant_folding=False)
 
 	onnx_model = onnx.load(f"{basename}.onnx")
@@ -162,7 +132,6 @@ if __name__ == "__main__":
 	parser.add_argument('--purpose', '-p', default=None, help="If set this will overide the purpose string of the network")
 	parser.add_argument('--input_name', '-i', default=None, help="If set this will overide the input description string")
 	parser.add_argument('--version', '-v', default=None, help="This will set the network version string to the given string")
-	parser.add_argument('--train', '-t', default=False, action="store_true", help="Also export files required to train onnx networks")
 	parser.add_argument('--output_prepend', default=None, help="Optional string to prepend to output labels")
 	args = parser.parse_args()
 
@@ -176,10 +145,4 @@ if __name__ == "__main__":
 
 	basename = os.path.split(os.path.splitext(args.network)[0])[-1]
 	print("Exporting eval model")
-	exportModel(model, meta, basename, False, args.output_prepend)
-	if args.train:
-		print("Exporting tmp train model")
-		exportModel(model, meta, basename + "_train", True, args.output_prepend)
-		print("Exporting train model")
-		exportTrainingArtifactsModels(f"{basename}_train.onnx", meta, basename + "_train")
-		os.remove(f"{basename}_train.onnx")
+	exportModel(model, meta, basename, args.output_prepend)

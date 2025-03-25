@@ -35,12 +35,9 @@
 #include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/loaders/dirloader.h"
-#include "data/loaders/regressiondirloader.h"
-#include "data/loaders/regressionloader.h"
 #include "options.h"
 #include "globals.h"
 #include "save.h"
-#include "colortabel.h"
 #include "tensoroperators.h"
 
 template <typename T>
@@ -63,21 +60,36 @@ int exportLatentSpace(std::shared_ptr<ann::AutoEncoder> net, T& dataset, const s
 
 	latentFile<<std::scientific;
 	latentFile<<"LATF, 1.0.0\n";
-	latentFile<<net->getLatentSize()<<", "<<1<<", "<<dataset.outputSize()<<'\n';
-
-	for(size_t i = 0; i < dataset.outputSize(); ++i)
-		latentFile<<dataset.outputName(i)<<'\n';
+	latentFile<<net->getLatentSize()<<", "<<dataset.outputSize()<<", "<<dataset.size().value()<<'\n';
 
 	for(int64_t i = 0; i < net->getLatentSize(); ++i)
 		latentFile<<"dim"<<i<<", ";
-	latentFile<<"class\n";
+	for(size_t i = 0; i < dataset.outputSize()-1; ++i)
+		latentFile<<dataset.outputName(i)<<", ";
+	latentFile<<dataset.outputName(dataset.outputSize()-1)<<'\n';
 
 	auto latentAcesssor = ret.latents.accessor<float, 2>();
 	for(int64_t i = 0; i < ret.latents.size(0); ++i)
 	{
 		for(int64_t j = 0; j < net->getLatentSize(); ++j)
 			latentFile<<latentAcesssor[i][j]<<", ";
-		latentFile<<ret.datasetTargets[i][0].item().toInt()<<'\n';
+		torch::Tensor targetsExpanded;
+		if(ret.datasetTargets[i].size(0) != static_cast<int64_t>(dataset.outputSize()))
+			targetsExpanded = unargmax(ret.datasetTargets[i], dataset.outputSize());
+		else
+			targetsExpanded = ret.datasetTargets[i];
+		targetsExpanded = targetsExpanded.reshape({targetsExpanded.numel()});
+		for(size_t j = 0; j < dataset.outputSize()-1; ++j)
+		{
+			if(targetsExpanded.dtype() == torch::kFloat32 || targetsExpanded.dtype() == torch::kFloat64)
+				latentFile<<targetsExpanded[j].item().toDouble()<<", ";
+			else
+				latentFile<<targetsExpanded[j].item().toLong()<<", ";
+		}
+		if(targetsExpanded.dtype() == torch::kFloat32 || targetsExpanded.dtype() == torch::kFloat64)
+			latentFile<<targetsExpanded[dataset.outputSize()-1].item().toDouble()<<'\n';
+		else
+			latentFile<<targetsExpanded[dataset.outputSize()-1].item().toLong()<<'\n';
 	}
 
 	return 0;
