@@ -23,16 +23,20 @@
 #include <kisstype/type.h>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
+#include <fstream>
+
+#include <string>
+#include <torch/types.h>
+#include <limits>
+
+#ifdef ENABLE_PLOTTING
 #include <sciplot/Canvas.hpp>
 #include <sciplot/Figure.hpp>
 #include <sciplot/Plot2D.hpp>
 #include <sciplot/Vec.hpp>
-#include <sstream>
-#include <fstream>
 #include <sciplot/sciplot.hpp>
-#include <string>
-#include <torch/types.h>
-#include <limits>
+#endif
 
 #include "commonoptions.h"
 #include "data/loaders/regressionloader.h"
@@ -73,6 +77,8 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 	ss<<tensorToString(dataset->classCounts())<<'\n';
 	return ss.str();
 }
+
+#ifdef ENABLE_PLOTTING
 
 template <typename DataSetType>
 bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& outDir)
@@ -167,6 +173,18 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 	}
 	return true;
 }
+
+#else
+
+template <typename DataSetType>
+bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& outDir)
+{
+	(void)dataset;
+	(void)outDir;
+	return true;
+}
+
+#endif
 
 int main(int argc, char** argv)
 {
