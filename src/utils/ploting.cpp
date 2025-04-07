@@ -20,12 +20,13 @@
 //
 
 #include "ploting.h"
+
+#ifdef ENABLE_PLOTTING
+
 #include <sciplot/Canvas.hpp>
 #include <sciplot/Figure.hpp>
 #include <sciplot/Plot2D.hpp>
 #include <sciplot/Plot3D.hpp>
-
-#ifdef ENABLE_PLOTTING
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
                 std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square, bool log, bool points)
@@ -163,7 +164,7 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 }
 
 bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log = false)
+                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log)
 {
 	(void)path;
 	(void)yLabel;
@@ -177,7 +178,7 @@ bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 }
 
 bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log = false)
+                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log)
 {
 	return save3dPlot(path, xLabel, yLabel, zLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), std::valarray<double>(zData.data(), zData.size()), log);
 }
