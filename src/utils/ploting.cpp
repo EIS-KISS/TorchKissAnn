@@ -143,19 +143,17 @@ bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 #else
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square, bool log, bool points)
 {
-	(void)path;
-	(void)yLabel;
-	(void)xLabel;
-	(void)xData;
-	(void)yData;
-	(void)square;
-	(void)log;
-	(void)points;
 	return true;
 }
 
+
+bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
+	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+{
+	return save2dPlot(path, xLabel, yLabel, {{xData, yData}}, square, log, points);
+}
 
 bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
 	std::vector<double> xData, std::vector<double> yData, bool square, bool log, bool points)
@@ -166,14 +164,6 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
                 std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log)
 {
-	(void)path;
-	(void)yLabel;
-	(void)xLabel;
-	(void)zLabel;
-	(void)xData;
-	(void)yData;
-	(void)zData;
-	(void)log;
 	return true;
 }
 
