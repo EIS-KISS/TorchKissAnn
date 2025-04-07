@@ -181,6 +181,7 @@ void ann::Net::getConfiguration(Json::Value& node)
 	node["softmax"] = softmax;
 	node["purpose"] = purpose;
 	node["inputLabel"] = inputLabel;
+	node["reduced"] = false;
 
 	if(!outputLabels.empty())
 	{
