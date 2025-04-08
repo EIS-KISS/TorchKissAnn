@@ -54,7 +54,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> RegressionLoaderTar::getImpl(
 	else
 	{
 		std::vector<fvalue> extraInputs;
-		for(const std::string& name : labelNames)
+		for(const std::string& name : extraInputNames)
 			extraInputs.push_back(spectra.getLabel(name));
 		input = eisToTorchExtra(spectra.data, extraInputs);
 	}

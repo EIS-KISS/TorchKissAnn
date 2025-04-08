@@ -52,13 +52,13 @@
 #include "indicators.hpp"
 
 template <typename DataSetType>
-std::string generateReport(EisDataset<DataSetType>* dataset)
+std::string generateReport(EisDataset<DataSetType>* dataset, size_t nExamples)
 {
 	std::stringstream ss;
 
-	ss<<"Name,\tSize,\tClass Count,\tMulitclass\n";
+	ss<<"Name,\tSize,\tClass Count,\tMulitclass,\tInput Size,\tExtra input count\n";
 	ss<<typeid(DataSetType).name()<<",\t"<<dataset->size().value()
-	  <<",\t"<<dataset->outputSize()<<",\t"<<dataset->isMulticlass()<<'\n';
+	  <<",\t"<<dataset->outputSize()<<",\t"<<dataset->isMulticlass()<<",\t"<<dataset->inputSize()<<",\t"<<dataset->extraInputs().size()<<'\n';
 
 	for(size_t i = 0; i < dataset->outputSize(); ++i)
 	{
@@ -75,6 +75,18 @@ std::string generateReport(EisDataset<DataSetType>* dataset)
 	}
 	ss<<'\n';
 	ss<<tensorToString(dataset->classCounts())<<'\n';
+
+	if(nExamples > 0)
+	{
+		ss<<"Examples:\n";
+		for(size_t i = 0; i < nExamples && i < dataset->size().value(); ++i)
+		{
+			ss<<"Input:\n";
+			ss<<dataset->get(i).data<<'\n';
+			ss<<"Output:\n";
+			ss<<dataset->get(i).target<<"\n\n";
+		}
+	}
 	return ss.str();
 }
 
@@ -212,7 +224,7 @@ int main(int argc, char** argv)
 		case DATASET_DIR:
 		{
 			EisDirDataset dataset(config.fileName);
-			report = generateReport<EisDirDataset>(&dataset);
+			report = generateReport<EisDirDataset>(&dataset, config.printExamples);
 			if(!config.imageOutput.empty())
 				saveImages<EisDirDataset>(&dataset, config.imageOutput);
 			break;
@@ -220,7 +232,7 @@ int main(int argc, char** argv)
 		case DATASET_TAR:
 		{
 			EisTarDataset dataset(config.fileName);
-			report = generateReport<EisTarDataset>(&dataset);
+			report = generateReport<EisTarDataset>(&dataset, config.printExamples);
 			if(!config.imageOutput.empty())
 				saveImages<EisTarDataset>(&dataset, config.imageOutput);
 			break;
@@ -228,7 +240,7 @@ int main(int argc, char** argv)
 		case DATASET_TAR_REGRESSION:
 		{
 			RegressionLoaderTar dataset(config.fileName);
-			report = generateReport<RegressionLoaderTar>(&dataset);
+			report = generateReport<RegressionLoaderTar>(&dataset, config.printExamples);
 			if(!config.imageOutput.empty())
 				saveImages<RegressionLoaderTar>(&dataset, config.imageOutput);
 			break;
@@ -236,7 +248,7 @@ int main(int argc, char** argv)
 		case DATASET_DIR_REGRESSION:
 		{
 			RegressionLoaderDir dataset(config.fileName);
-			report = generateReport<RegressionLoaderDir>(&dataset);
+			report = generateReport<RegressionLoaderDir>(&dataset, config.printExamples);
 			if(!config.imageOutput.empty())
 				saveImages<RegressionLoaderDir>(&dataset, config.imageOutput);
 			break;
