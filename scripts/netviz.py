@@ -576,18 +576,20 @@ def expand_containers(blocks: list) -> list:
 	return out
 
 
-def simplify(blocks: list, pre: bool = False) -> list:
+def simplify(blocks: list, pre: bool = False, collapse: bool = True) -> list:
 	"""Turn a faithful op list into the few boxes that carry the design.
 
 	Each level is processed exactly once: containers are spliced away before
 	the recursion, so their children are simplified and collapsed together with
 	their new siblings. `pre` says the group is pre-activation, which is true
 	inside a block with a shortcut, where norm and activation precede their
-	layer.
+	layer. Runs are not collapsed inside a group with a shortcut, because a
+	group reduced to a single box would leave the shortcut arrow nothing to
+	skip over.
 	"""
 	clean = []
 	for block in expand_containers(blocks):
-		block.children = simplify(block.children, block.residual)
+		block.children = simplify(block.children, block.residual, not block.residual)
 		# A wrapper that only holds a single real layer adds nothing, e.g. Conv1dSamePad.
 		while block.children and len(block.children) == 1 and block.params == block.children[0].params:
 			inner = block.children[0]
@@ -599,7 +601,7 @@ def simplify(blocks: list, pre: bool = False) -> list:
 	clean = fold_decor(clean, pre)
 	for block in clean:
 		tidy_residual(block)
-	return collapse_repeats(clean)
+	return collapse_repeats(clean) if collapse else clean
 
 
 def fold_decor(blocks: list, force_pre: bool = False) -> list:
@@ -734,7 +736,7 @@ class Renderer:
 			"labelloc": "t",
 			"labeljust": "c",
 			"fontname": "Helvetica-Bold",
-			"fontsize": "17",
+			"fontsize": "12",
 			"fontcolor": "black",
 			"compound": "true",
 		})
@@ -754,7 +756,7 @@ class Renderer:
 			label += f"\n{human_count(block.params)} params"
 		target.node(identifier, label=label, shape="box", style="rounded,filled",
 			fillcolor="white", color="black", penwidth="1.1", fontname="Helvetica",
-			fontsize="11", margin="0.16,0.09")
+			fontsize="10", margin="0.16,0.09")
 		return identifier
 
 	def plus(self, target) -> str:
@@ -777,13 +779,13 @@ class Renderer:
 			"penwidth": "1.0",
 			"bgcolor": "gray93",
 			"labeljust": "l",
-			"margin": "16",
-			"fontname": "Helvetica-Bold",
-			"fontsize": "12",
+			"margin": "30",
+			"fontname": "Helvetica-bold",
+			"fontsize": "10",
 		})
-		title = block.title + (f"  {block.detail}" if block.detail else "")
+		title = block.title + (f" {block.detail}" if block.detail else "")
 		if block.repeat > 1:
-			title += f"   \u00d7{block.repeat}"
+			title += f" \u00d7{block.repeat}"
 		if block.params:
 			title += f"\n{human_count(block.params)} params"
 		cluster.attr(label=title)
@@ -802,7 +804,16 @@ class Renderer:
 			merged = self.plus(cluster)
 			self.link(cluster, exit_node, merged)
 			via = f"shortcut ({block.skip_via})" if block.skip_via else "shortcut"
-			self.link(cluster, entry, merged, dashed=True, label=via)
+			if entry == exit_node:
+				# With a single child the shortcut would retrace the main path
+				# edge and skip nothing, so branch it off a junction above it.
+				branch = self.new_id("branch")
+				cluster.node(branch, label="", shape="point", color="black", width="0.02")
+				self.link(cluster, branch, entry)
+				self.link(cluster, branch, merged, dashed=True, label=via)
+				entry = branch
+			else:
+				self.link(cluster, entry, merged, dashed=True, label=via)
 			exit_node = merged
 
 		parent.subgraph(cluster)
@@ -870,18 +881,18 @@ def build_source(kind: str, input_size: int, output_size: int):
 def dump_tree(blocks: list, indent: int = 0):
 	"""Print the block tree, useful to check what the walker recognised."""
 	for block in blocks:
-		head = "    " * indent + block.title
+		head = " " * indent + block.title
 		if block.detail:
 			head += f"  {block.detail}"
 		if block.pre_decor or block.decor:
-			head += "  [" + " ".join(list(block.pre_decor) + list(block.decor)) + "]"
+			head += " [" + " ".join(list(block.pre_decor) + list(block.decor)) + "]"
 		if block.repeat > 1:
-			head += f"  x{block.repeat}"
+			head += f"{block.repeat}x"
 		if block.residual:
 			head += "  +shortcut"
-		head += f"  -> {human_shape(block.out_shape)}"
+		head += f" -> {human_shape(block.out_shape)}"
 		if block.params:
-			head += f"  ({human_count(block.params)})"
+			head += f"({human_count(block.params)})"
 		print(head)
 		dump_tree(block.children, indent + 1)
 
