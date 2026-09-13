@@ -23,6 +23,11 @@ from nets.resnet1d import ResNet1D
 from nets.simplenet import SimpleNet
 from nets.convnet import ConvNet
 from nets.upsamplenet import UpsampleNet
+from nets.inception1d import InceptionTime1D
+from nets.tcn1d import TCN1D
+from nets.grunet import BiGRUNet
+from nets.transformer1d import Transformer1D
+from nets.seresnet1d import SEResNet1D
 import json
 import argparse
 
@@ -108,12 +113,76 @@ def build_upsamplenet(input_size: int, output_size: int):
 	save(script, input_size, output_size, "upsamplenet")
 
 
+def build_inception(input_size: int, output_size: int, channels: int):
+	module = InceptionTime1D(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"InceptionTime1D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "inception")
+
+
+def build_tcn(input_size: int, output_size: int, channels: int):
+	module = TCN1D(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"TCN1D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "tcn")
+
+
+def build_gru(input_size: int, output_size: int, channels: int):
+	module = BiGRUNet(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"BiGRUNet output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "gru")
+
+
+def build_transformer(input_size: int, output_size: int, channels: int):
+	module = Transformer1D(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"Transformer1D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "transformer")
+
+
+def build_seresnet(input_size: int, output_size: int, channels: int):
+	module = SEResNet1D(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"SEResNet1D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "seresnet")
+
+
 if __name__ == "__main__":
-	valid_network_types = "simple, conv, resnet, upsamplenet"
+	valid_network_types = "simple, conv, resnet, upsamplenet, inception, tcn, gru, transformer, seresnet"
 	parser = argparse.ArgumentParser("TorchScript network generation script")
 	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
 	parser.add_argument('--output_size', '-o', type=int, required=True, help="Number of output classes")
 	parser.add_argument('--input_size', '-i', type=int, default=100, help="Number of input classes")
+	parser.add_argument('--channels', '-c', type=int, default=1,
+		help="Input channels for the nets that support it (inception, tcn, gru, transformer, seresnet): "
+			"1 keeps the whole spectra vector as a single channel like the older nets, "
+			"2 splits it into an aligned real and imaginary channel (requires an input size of 2N with no extra inputs)")
 	args = parser.parse_args()
 
 	if args.type == "simple":
@@ -124,6 +193,16 @@ if __name__ == "__main__":
 		build_resnet(args.output_size)
 	elif args.type == "upsamplenet":
 		build_upsamplenet(args.input_size, args.output_size)
+	elif args.type == "inception":
+		build_inception(args.input_size, args.output_size, args.channels)
+	elif args.type == "tcn":
+		build_tcn(args.input_size, args.output_size, args.channels)
+	elif args.type == "gru":
+		build_gru(args.input_size, args.output_size, args.channels)
+	elif args.type == "transformer":
+		build_transformer(args.input_size, args.output_size, args.channels)
+	elif args.type == "seresnet":
+		build_seresnet(args.input_size, args.output_size, args.channels)
 	else:
 		print(f"{args.type} is not a valid network type valid types are: {valid_network_types}")
 		exit(1)

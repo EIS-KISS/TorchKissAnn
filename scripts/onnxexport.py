@@ -38,7 +38,66 @@ def checkCompositContainer(container, key: str) -> bool:
 	return False
 
 
+def vectorFromMeta(entry, size: int, default: float) -> torch.Tensor:
+	if entry is None or len(entry) != size:
+		return torch.full((size,), default, dtype=torch.float32)
+	return torch.tensor([float(v) for v in entry], dtype=torch.float32)
+
+
+class NormalizedModel(torch.nn.Module):
+	"""
+	Wrap a network that was trained on a normalized input and predicts normalized values, so the
+	exported graph takes raw impedances and returns physical parameters.
+
+	libkissinference only knows how to apply an affine transform to the output, so the log domains
+	have to live inside the graph. The exported metadata therefore has to carry identity output
+	scalars and biases, otherwise the conversion would be applied twice.
+	"""
+
+	def __init__(self, model, meta):
+		super().__init__()
+		self.model = model
+		inputSize = int(meta['inputSize'])
+		outputSize = int(meta['outputSize'])
+		logCount = int(meta.get('inputLogCount', 0))
+		self.logFloor = float(meta.get('inputLogFloor', 1e-9))
+		logMask = torch.zeros(inputSize, dtype=torch.float32)
+		logMask[:logCount] = 1.0
+		self.register_buffer("logMask", logMask)
+		self.register_buffer("inputScalars", vectorFromMeta(meta.get('inputScalars'), inputSize, 1.0))
+		self.register_buffer("inputBiases", vectorFromMeta(meta.get('inputBiases'), inputSize, 0.0))
+		self.register_buffer("outputScalars", vectorFromMeta(meta.get('outputScalars'), outputSize, 1.0))
+		self.register_buffer("outputBiases", vectorFromMeta(meta.get('outputBiases'), outputSize, 0.0))
+		self.register_buffer("outputLogMask", vectorFromMeta(
+			[1.0 if v else 0.0 for v in meta['outputLog']] if meta.get('outputLog') else None, outputSize, 0.0))
+
+	def forward(self, x):
+		x = self.normalizeInput(x)
+		return self.denormalizeOutput(self.model.forward(x))
+
+	def normalizeInput(self, x):
+		compressed = torch.sign(x)*torch.log10(1.0+torch.abs(x)/self.logFloor)
+		x = torch.where(self.logMask > 0, compressed, x)
+		return x*self.inputScalars + self.inputBiases
+
+	def denormalizeOutput(self, y):
+		y = y*self.outputScalars + self.outputBiases
+		# clamped like the C++ side, so an overshooting network yields a huge number instead of inf
+		return torch.where(self.outputLogMask > 0, torch.pow(10.0, torch.clamp(y, -30.0, 30.0)), y)
+
+
+def isNormalized(meta) -> bool:
+	return meta.get('inputScalars') is not None or bool(meta.get('outputLog'))
+
+
 def exportModel(model, meta, outname: str, output_prepend: str | None = None) -> str:
+	if isNormalized(meta):
+		print("Baking the dataset normalization into the graph, output scalars become identity")
+		model = NormalizedModel(model, meta)
+		meta = dict(meta)
+		meta['outputScalars'] = [1.0]*int(meta['outputSize'])
+		meta['outputBiases'] = [0.0]*int(meta['outputSize'])
+
 	example_input = torch.randn((1, int(meta['inputSize'])), dtype=torch.float32)
 	model.eval()
 	example_output = model.forward(example_input)

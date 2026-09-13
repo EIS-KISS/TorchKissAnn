@@ -33,16 +33,23 @@ Examples:
 """
 
 import argparse
+import importlib
 import json
 import os
 import sys
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import torch
 import graphviz
 
 warnings.filterwarnings("ignore")
+
+# A scripted network refers back to the python it came from by qualified name,
+# for example __torch__.nets.common.spectra_to_channels, so nets/ has to be
+# importable no matter which directory netviz.py is started from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Layer classes that only ever decorate a real layer and can be folded into it.
 NORMS = {"BatchNorm1d", "BatchNorm2d", "InstanceNorm1d", "GroupNorm", "LayerNorm"}
@@ -52,6 +59,17 @@ DECOR = NORMS | ACTIVATIONS | DROPOUTS
 
 # Layers that carry the meaning of a block, everything around them is folded in.
 CORE = {"Conv1d", "Conv2d", "ConvTranspose1d", "Linear", "Bilinear"}
+
+# Layers that are drawn whole rather than opened up. Their registered sub modules
+# are parts of one computation, not a decomposition: an attention holds only its
+# output projection as a child, so expanding it would draw a Linear where the
+# attention is, and the diagram would no longer show attention at all.
+ATOMIC = {"MultiheadAttention"}
+
+# Class names that read better in a box than what torch calls them.
+TITLES = {
+	"NonDynamicallyQuantizableLinear": "Linear",
+}
 
 # aten ops that are noise in a block diagram, they are part of the layer they feed.
 HIDDEN_OPS = {
@@ -63,7 +81,10 @@ HIDDEN_OPS = {
 }
 
 # aten ops that may be crossed when asking "does this value come from the input?".
-BYPASS_OPS = HIDDEN_OPS | {"prim::If", "prim::GetAttr", "prim::TupleConstruct"} | {
+# prim::CallMethod is in here because a shortcut often runs through a projection
+# layer, add(out, projection(x)), which compiles to a call on that layer.
+BYPASS_OPS = HIDDEN_OPS | {"prim::If", "prim::GetAttr", "prim::TupleConstruct",
+	"prim::CallMethod"} | {
 	"aten::max_pool1d", "aten::avg_pool1d", "aten::mean", "aten::sum"}
 
 SKIP_OPS = {"aten::add", "aten::add_"}
@@ -87,6 +108,7 @@ SCALAR_OPS = {
 	"aten::__not__": lambda a: not a,
 	"aten::Int": lambda a: int(a),
 	"aten::__getitem__": lambda seq, index: seq[index],
+	"aten::len": lambda seq: len(seq),
 	# aten::size has two overloads and the bare call resolves to the wrong one,
 	# so shape bookkeeping is evaluated here instead of through the dispatcher.
 	"aten::size": lambda tensor, *dim: list(tensor.shape) if not dim else int(tensor.shape[dim[0]]),
@@ -120,6 +142,10 @@ FUNCTION_KINDS = {
 	"flatten": "aten::flatten",
 	"sigmoid": "aten::sigmoid",
 	"cross_entropy": "aten::cross_entropy",
+	"_max_pool1d": "aten::max_pool1d",
+	# The input reshaping helper of the nets in scripts/nets, drawn as the
+	# reshape it is so the diagram shows where the channels come from.
+	"spectra_to_channels": "aten::reshape",
 }
 
 # aten ops worth a box of their own when they are not part of a layer.
@@ -136,7 +162,24 @@ NOTABLE_OPS = {
 	"aten::view": "Reshape",
 	"aten::softmax": "Softmax",
 	"aten::sigmoid": "Sigmoid",
+	# Functional activations, as torch.nn.TransformerEncoderLayer and the
+	# pre-activation blocks call them as plain ops instead of as modules. The
+	# titles are the ones in ACTIVATIONS so they fold into the layer they follow.
+	"aten::relu": "ReLU",
+	"aten::relu_": "ReLU",
+	"aten::relu6": "ReLU6",
+	"aten::hardtanh": "ReLU6",
+	"aten::leaky_relu": "LeakyReLU",
+	"aten::elu": "ELU",
+	"aten::gelu": "GELU",
+	"aten::silu": "SiLU",
+	"aten::mish": "Mish",
+	"aten::tanh": "Tanh",
 }
+
+# A scripted loop is a real loop, so it is run as one. This is only a guard
+# against a network whose trip count comes from the batch size.
+MAX_LOOP_TRIPS = 64
 
 
 class Unknown:
@@ -158,17 +201,117 @@ class Unknown:
 
 UNKNOWN = Unknown()
 
+# Marks an argument the caller of a module left out, distinct from a value the
+# walker could not compute.
+OMITTED = object()
+
+
+def input_default(value):
+	"""What a scripted forward sees for an argument the caller left out.
+
+	The default lives in the schema rather than in the graph, so it has to come
+	from the declared type: an optional mask is None, a flag is False. Getting
+	this right matters, torch internals such as TransformerEncoder branch on it
+	before they hand the tensor to their layers.
+	"""
+	declared = str(value.type())
+	if declared.startswith("Optional"):
+		return None
+	if declared == "bool":
+		return False
+	if declared.startswith(("int", "float")):
+		return 0
+	return UNKNOWN
+
 
 def clean_name(module) -> str:
 	"""Human readable class name of a module, also for loaded TorchScript modules."""
 	name = getattr(module, "original_name", None)
 	if name:
-		return name.split(".")[-1]
-	name = type(module).__name__
-	if name == "RecursiveScriptModule":
-		qualified = str(getattr(module, "qualified_name", "") or "")
-		return qualified.split(".")[-1].replace("___torch_mangle_0", "") or "Module"
-	return name
+		name = name.split(".")[-1]
+	else:
+		name = type(module).__name__
+		if name == "RecursiveScriptModule":
+			qualified = str(getattr(module, "qualified_name", "") or "")
+			name = qualified.split(".")[-1].replace("___torch_mangle_0", "") or "Module"
+	return TITLES.get(name, name)
+
+
+def forward_methods(module) -> list:
+	"""Names under which this module's forward can be looked up.
+
+	A module scripted from a C++ builtin (nn.GRU and friends) stores its forward
+	under a mangled name such as forward__0 and has no python attribute for it,
+	so the compiled module has to be asked for its method names.
+	"""
+	names = ["forward"]
+	if hasattr(module, "_c"):
+		try:
+			names += [n for n in module._c._method_names()
+				if n.startswith("forward") and n not in names]
+		except Exception:
+			pass
+	return names
+
+
+def forward_graph(module):
+	"""The graph of a module's forward, mangled names included."""
+	for name in forward_methods(module):
+		try:
+			if name == "forward":
+				return module.forward.graph
+			return module._c._get_method(name).graph
+		except Exception:
+			continue
+	raise AttributeError(f"{clean_name(module)} has no forward graph")
+
+
+def method_graph(module, method: str):
+	"""The graph of one named method of a scripted module."""
+	if method == "forward":
+		return forward_graph(module)
+	return module._c._get_method(method).graph
+
+
+def invoke_module(module, args):
+	"""Call a module the way the graph does, mangled names included."""
+	failure = None
+	try:
+		return module(*args)
+	except AttributeError as error:
+		failure = error
+	if hasattr(module, "_c"):
+		for name in forward_methods(module):
+			if name == "forward":
+				continue
+			try:
+				return module._c._get_method(name)(*args)
+			except Exception as error:
+				failure = error
+	raise failure
+
+
+def first_tensor(value):
+	"""The tensor out of what a module returned, an RNN returns a pair."""
+	if torch.is_tensor(value):
+		return value
+	if isinstance(value, (list, tuple)):
+		for item in value:
+			if torch.is_tensor(item):
+				return item
+	return None
+
+
+def flatten_tensors(value) -> list:
+	"""Every tensor in an argument, a list argument such as the one of cat included."""
+	if torch.is_tensor(value):
+		return [value]
+	if isinstance(value, (list, tuple)):
+		items = []
+		for item in value:
+			items.extend(flatten_tensors(item))
+		return items
+	return []
 
 
 def human_count(value: int) -> str:
@@ -219,6 +362,33 @@ def describe(module) -> str:
 			return str(int(module.num_features))
 		if hasattr(module, "num_channels"):
 			return str(int(module.num_channels))
+		if hasattr(module, "hidden_size"):
+			parts = [f"h{int(module.hidden_size)}"]
+			if int(getattr(module, "num_layers", 1)) > 1:
+				parts.append(f"x{int(module.num_layers)}")
+			if getattr(module, "bidirectional", False):
+				parts.append("bi")
+			return " ".join(parts)
+		if hasattr(module, "normalized_shape"):
+			shape = getattr(module, "normalized_shape")
+			return pair(shape) if isinstance(shape, (tuple, list)) else str(shape)
+		if cls.startswith(("MultiheadAttention", "TransformerEncoder", "TransformerDecoder")):
+			parts = []
+			# MultiheadAttention calls its width embed_dim/num_heads while the
+			# transformer containers use d_model/nhead, so accept both spellings.
+			width = getattr(module, "embed_dim", None)
+			if width is None:
+				width = getattr(module, "d_model", None)
+			if width is not None:
+				parts.append(str(int(width)))
+			heads = getattr(module, "num_heads", None)
+			if heads is None:
+				heads = getattr(module, "nhead", None)
+			if heads is not None:
+				parts.append(f"{int(heads)} heads")
+			if hasattr(module, "num_layers"):
+				parts.append(f"x{int(module.num_layers)}")
+			return " ".join(parts)
 		if cls.startswith(("MaxPool", "AvgPool")) and hasattr(module, "kernel_size"):
 			parts = [f"k{pair(module.kernel_size)}"]
 			if hasattr(module, "stride") and pair(module.stride) != "1":
@@ -259,30 +429,86 @@ class Capturer:
 	TorchScript modules do not run python forward hooks and this build of torch
 	does not fill in shapes during graph analysis, so the graph is interpreted
 	node by node and every layer is executed to measure its shapes.
+
+	The layers run with grad enabled, not under no_grad: the scripted
+	MultiheadAttention aborts under no_grad, and with a one sample batch the
+	autograd bookkeeping is nothing.
 	"""
 
 	def __init__(self, module):
 		self.module = module
 		self.warnings = []
 
-	def walk(self, module, inputs):
+	def walk(self, module, inputs, method="forward"):
 		"""Execute module(inputs) and return (child blocks, output value)."""
-		graph = module.forward.graph
+		graph = method_graph(module, method)
 		env = {}
 		names = {}
 		values = list(graph.inputs())
 		env[values[0]] = module
 		rest = values[1:]
 		for index, value in enumerate(rest):
-			env[value] = inputs[index] if isinstance(inputs, (list, tuple)) else inputs
+			if isinstance(inputs, (list, tuple)):
+				given = inputs[index] if index < len(inputs) else OMITTED
+			else:
+				given = inputs if index == 0 else OMITTED
+			env[value] = given if given is not OMITTED else input_default(value)
 		blocks = self.exec_nodes(graph.nodes(), env, names, module, rest[0] if rest else None)
 		out = UNKNOWN
 		return_node = graph.return_node()
 		if return_node is not None:
 			returns = list(return_node.inputs())
 			if returns:
-				out = env.get(returns[0], UNKNOWN)
+				out = self.fetch(returns[0], env)
 		return blocks, out
+
+	def fetch(self, value, env):
+		"""The value of a graph value, computing it from its inputs if needed.
+
+		A TorchScript block may refer to a value defined outside of it, including
+		one produced by a branch that was not taken, so a value can be missing
+		where it is used. Only side effect free nodes are resolved that way.
+		"""
+		if value in env:
+			return env[value]
+		return self.evaluate(value, env, 0)
+
+	def evaluate(self, value, env, depth):
+		"""Best effort evaluation of a value the walk never reached."""
+		if depth > 8:
+			return UNKNOWN
+		producer = value.node()
+		if producer is None:
+			return UNKNOWN
+		kind = producer.kind()
+		if kind == "prim::Param":
+			return UNKNOWN
+		if kind == "prim::Constant":
+			try:
+				result = producer.toIValue()
+			except Exception:
+				result = UNKNOWN
+			env[value] = result
+			return result
+		args = [self.fetch(item, env) for item in list(producer.inputs())]
+		result = UNKNOWN
+		if UNKNOWN not in args:
+			try:
+				if kind == "prim::GetAttr":
+					result = getattr(args[0], producer.s("name"))
+				elif kind in ("prim::ListConstruct", "prim::TupleConstruct"):
+					result = args
+				elif kind in SCALAR_OPS:
+					result = SCALAR_OPS[kind](*args)
+				elif kind == "prim::CallFunction":
+					function, _ = self.resolve_function(args[0])
+					if function is not None:
+						with torch.enable_grad():
+							result = function(*args[1:])
+			except Exception:
+				result = UNKNOWN
+		env[value] = result
+		return result
 
 	def exec_nodes(self, nodes, env, names, module, root) -> list:
 		blocks = []
@@ -311,13 +537,47 @@ class Capturer:
 				continue
 
 			if kind in ("prim::ListConstruct", "prim::TupleConstruct"):
-				items = [env.get(v, UNKNOWN) for v in list(node.inputs())]
+				items = [self.fetch(v, env) for v in list(node.inputs())]
 				if outputs and UNKNOWN not in items:
 					env[outputs[0]] = items
 				continue
 
+			if kind in ("prim::TupleUnpack", "prim::ListUnpack"):
+				# Split a composite such as the (output, h_n) pair an RNN returns.
+				source = self.fetch(list(node.inputs())[0], env) if node.inputs() else UNKNOWN
+				items = list(source) if isinstance(source, (list, tuple)) else None
+				if items is not None and len(items) == len(outputs):
+					for value, item in zip(outputs, items):
+						env[value] = item
+				else:
+					for value in outputs:
+						env[value] = UNKNOWN
+				continue
+
+			if kind == "prim::TupleIndex":
+				inputs = list(node.inputs())
+				source = self.fetch(inputs[0], env)
+				index = self.fetch(inputs[1], env) if len(inputs) > 1 else UNKNOWN
+				item = UNKNOWN
+				if isinstance(source, (list, tuple)) and isinstance(index, int):
+					if index < len(source):
+						item = source[index]
+				if outputs:
+					env[outputs[0]] = item
+				continue
+
+			if kind == "prim::Uninitialized":
+				# A slot for an optional value that is never filled in.
+				for value in outputs:
+					env[value] = None
+				continue
+
+			if kind == "prim::Loop":
+				blocks.extend(self.run_loop(node, env, names, module, root))
+				continue
+
 			if kind == "prim::If":
-				condition = env.get(list(node.inputs())[0], UNKNOWN)
+				condition = self.fetch(list(node.inputs())[0], env)
 				two_blocks = list(node.blocks())
 				if not isinstance(condition, bool) or len(two_blocks) != 2:
 					continue
@@ -330,25 +590,38 @@ class Capturer:
 				else:
 					taken, sources = two_blocks[1], outer[len(then_inputs):len(then_inputs) + len(else_inputs)]
 				for inner, source in zip(list(taken.inputs()), sources):
-					env[inner] = env.get(source, UNKNOWN)
+					env[inner] = self.fetch(source, env)
 				blocks.extend(self.exec_nodes(taken.nodes(), env, names, module, root))
 				returned = taken.returnNode() if hasattr(taken, "returnNode") else None
 				inner_out = list(returned.inputs()) if returned is not None else []
 				for index, value in enumerate(outputs):
 					if index < len(inner_out):
-						env[value] = env.get(inner_out[index], UNKNOWN)
+						env[value] = self.fetch(inner_out[index], env)
 				continue
 
 			if kind == "prim::CallMethod":
-				block = self.call_method(node, env, names, module)
-				if block is not None:
-					blocks.append(block)
+				ran = self.call_method(node, env, names, module)
+				if isinstance(ran, list):
+					blocks.extend(ran)
+				elif ran is not None:
+					blocks.append(ran)
 				continue
 
 			if kind == "prim::CallFunction":
 				block = self.call_function(node, env)
 				if block is not None:
 					blocks.append(block)
+				continue
+
+			if kind == "aten::append":
+				# A list the forward pass builds up item by item, keep it python.
+				inputs = list(node.inputs())
+				target = self.fetch(inputs[0], env) if inputs else UNKNOWN
+				item = self.fetch(inputs[1], env) if len(inputs) > 1 else UNKNOWN
+				if isinstance(target, list) and item is not UNKNOWN:
+					target.append(item)
+				for value in outputs:
+					env[value] = target
 				continue
 
 			if kind.startswith("aten::") or kind.startswith("quantized::"):
@@ -362,19 +635,65 @@ class Capturer:
 				continue
 		return blocks
 
+	def run_loop(self, node, env, names, module, root) -> list:
+		"""Run a scripted loop, iterating a ModuleList compiles to this.
+
+		The body is executed once per trip so every layer inside shows up in the
+		diagram; the carried values are threaded through as the script does.
+		"""
+		inputs = list(node.inputs())
+		outputs = list(node.outputs())
+		blocks = []
+		trips = self.fetch(inputs[0], env) if inputs else UNKNOWN
+		if not isinstance(trips, int) or isinstance(trips, bool):
+			trips = 1
+		carried = [self.fetch(value, env) for value in inputs[2:]]
+		for iteration in range(min(trips, MAX_LOOP_TRIPS)):
+			for body in node.blocks():
+				captures = [True, iteration] + carried
+				for inner, source in zip(list(body.inputs()), captures):
+					env[inner] = source
+				blocks.extend(self.exec_nodes(body.nodes(), env, names, module, root))
+				returned = body.returnNode() if hasattr(body, "returnNode") else None
+				returns = list(returned.inputs()) if returned is not None else []
+				if len(returns) == len(carried) + 1:
+					carried = [self.fetch(value, env) for value in returns[1:]]
+		for value, source in zip(outputs, carried):
+			env[value] = source
+		return blocks
+
 	def resolve_function(self, value):
 		"""Map a prim::CallFunction callee to something python can call."""
 		producer = value.node()
 		if producer is None:
 			return None, ""
-		if producer.kind() == "prim::GetAttr":
+		name = ""
+		module = ""
+		try:
 			name = producer.s("name")
-		else:
+		except Exception:
+			name = ""
+		if producer.kind() != "prim::GetAttr":
 			# A constant function object, its type carries the qualified name,
-			# for example __torch__.torch.nn.functional.pad
-			name = str(value.type()).split(".")[-1]
+			# for example __torch__.torch.nn.functional.pad or, for a helper
+			# function from scripts/nets, __torch__.nets.common.spectra_to_channels
+			qualified = str(value.type())
+			if qualified.startswith("__torch__."):
+				qualified = qualified[len("__torch__."):]
+			if "." in qualified:
+				module = qualified.rsplit(".", 1)[0]
+				name = name or qualified.rsplit(".", 1)[-1]
 		if not name:
 			return None, ""
+		if module:
+			# Import the module the network was scripted from, this is also what
+			# makes a custom layer function such as spectra_to_channels runnable.
+			try:
+				candidate = getattr(importlib.import_module(module), name, None)
+				if callable(candidate):
+					return candidate, FUNCTION_KINDS.get(name, f"aten::{name}")
+			except Exception:
+				pass
 		for holder in (torch.nn.functional, torch):
 			candidate = getattr(holder, name, None)
 			if callable(candidate):
@@ -386,14 +705,25 @@ class Capturer:
 		inputs = list(node.inputs())
 		outputs = list(node.outputs())
 		function, effective_kind = self.resolve_function(inputs[0])
-		args = [env.get(v, UNKNOWN) for v in inputs[1:]]
+		args = [self.fetch(v, env) for v in inputs[1:]]
+		while args and args[-1] is UNKNOWN:
+			# The caller passed something the walker could not work out, and the
+			# module may still run if that argument is one it can do without.
+			args.pop()
 		result = UNKNOWN
 		if function is not None and UNKNOWN not in args:
 			try:
-				with torch.no_grad():
+				with torch.enable_grad():
 					result = function(*args)
 			except Exception:
 				result = UNKNOWN
+			if result is UNKNOWN and effective_kind.startswith("aten::"):
+				# The python helper takes arguments the dispatcher op does not,
+				# so let the op itself try, with fewer of them if need be.
+				try:
+					result = self.invoke_aten(effective_kind, args)
+				except Exception:
+					result = UNKNOWN
 		self.store(outputs, result, env)
 		return self.record_op(effective_kind, args, result)
 
@@ -423,43 +753,93 @@ class Capturer:
 			method = node.s("name")
 		except Exception:
 			method = "forward"
-		if method != "forward":
-			# Things like len(self.blocks) in the forward pass, not a layer.
-			return None
 		sub = env.get(inputs[0])
 		if not isinstance(sub, torch.nn.Module):
 			return None
 		args = []
 		for value in inputs[1:]:
-			if value in env:
-				args.append(env[value])
+			item = self.fetch(value, env)
+			if item is UNKNOWN and str(value.type()).startswith("Optional"):
+				# An optional argument the walk could not resolve, such as a mask
+				# produced inside a branch that did not run: treat it as not given.
+				item = None
+			args.append(item)
+		while args and args[-1] is UNKNOWN:
+			# The caller passed something the walker could not work out, and the
+			# module may still run if that argument is one it can do without.
+			args.pop()
+		if not method.startswith("forward"):
+			# An internal helper method such as _sa_block. It is part of the data
+			# path, so run it to keep the values flowing, and show what runs
+			# inside it, but it is not a box itself: its receiver is the module.
+			result = UNKNOWN
+			try:
+				with torch.enable_grad():
+					result = sub._c._get_method(method)(*args)
+			except Exception:
+				result = UNKNOWN
+			self.store(outputs, result, env)
+			try:
+				inner, _ = self.walk(sub, args, method)
+			except Exception:
+				inner = []
+			return inner
+		if clean_name(sub) == "Identity":
+			# A placeholder for a layer this variant does not have, no box needed.
+			self.store(outputs, args[0] if args else UNKNOWN, env)
+			return None
+		block, result = self.run_child(sub, args, names.get(inputs[0]))
+		self.store(outputs, result, env)
+		return block
+
+	def run_child(self, sub, args, name=None) -> tuple:
+		"""Execute one child module and turn it into a block with its internals."""
 		shapes_in = tuple(tuple(a.shape) for a in args if torch.is_tensor(a))
 		try:
-			with torch.no_grad():
-				result = sub(*args)
+			with torch.enable_grad():
+				result = invoke_module(sub, args)
 		except Exception as error:
-			self.warnings.append(f"could not run {names.get(inputs[0], clean_name(sub))}: {error}")
-			return None
-		self.store(outputs, result, env)
-		out_shape = tuple(result.shape) if torch.is_tensor(result) else None
-
+			self.warnings.append(f"could not run {name or clean_name(sub)}: {error}")
+			return None, UNKNOWN
+		produced = first_tensor(result)
 		block = Block(
 			title=clean_name(sub),
 			detail=describe(sub),
 			in_shape=shapes_in[0] if shapes_in else None,
-			out_shape=out_shape,
-			params=sum(p.numel() for p in sub.parameters(recurse=False)),
+			out_shape=tuple(produced.shape) if produced is not None else None,
+			params=sum(p.numel() for p in sub.parameters(recurse=True)),
 			residual=False)
 
-		# Recurse so that a custom layer shows what it is built from.
-		if len(list(sub.named_children())) > 0:
+		# Recurse so that a custom layer shows what it is built from, except for
+		# layers that are meant to be read as a single box.
+		if len(list(sub.named_children())) > 0 and clean_name(sub) not in ATOMIC:
 			children, _ = self.walk(sub, args if len(args) > 1 else (args[0] if args else None))
+			if not children:
+				children = self.walk_children(sub, args)
 			block.children = children
-			block.params = sum(p.numel() for p in sub.parameters(recurse=True))
 			residual, via = detect_skip(sub)
 			block.residual = residual
 			block.skip_via = via
-		return block
+		return block, result
+
+	def walk_children(self, sub, args) -> list:
+		"""Run the children of a module in registration order.
+
+		Fallback for modules whose forward is not a call graph worth walking:
+		torch internals such as TransformerEncoder spend it on mask and device
+		bookkeeping and only hand the tensor to their layers at the very end.
+		"""
+		blocks = []
+		value = args[0] if args else UNKNOWN
+		for name, child in sub.named_children():
+			block, result = self.run_child(child, [value], name)
+			if block is None:
+				return []
+			blocks.append(block)
+			produced = first_tensor(result)
+			if produced is not None:
+				value = produced
+		return blocks
 
 	def invoke_aten(self, kind, args):
 		"""Call an aten op with the arguments the graph node carries.
@@ -472,7 +852,7 @@ class Capturer:
 		failure = None
 		for count in range(len(args), 0, -1):
 			try:
-				with torch.no_grad():
+				with torch.enable_grad():
 					return operation(*args[:count])
 			except Exception as error:
 				failure = error
@@ -481,16 +861,16 @@ class Capturer:
 	def run_aten(self, node, env, kind):
 		inputs = list(node.inputs())
 		outputs = list(node.outputs())
-		args = [env.get(v, UNKNOWN) for v in inputs]
+		args = [self.fetch(v, env) for v in inputs]
+		tensors = [item for arg in args for item in flatten_tensors(arg)]
 		result = UNKNOWN
 		if UNKNOWN not in args:
 			try:
-				if kind in SCALAR_OPS and (kind in BOOKKEEPING_OPS
-						or not any(torch.is_tensor(a) for a in args)):
+				if kind in SCALAR_OPS and (kind in BOOKKEEPING_OPS or not tensors):
 					result = SCALAR_OPS[kind](*args)
-				elif any(torch.is_tensor(a) for a in args):
+				elif tensors:
 					result = self.invoke_aten(kind, args)
-				else:
+				elif kind in SCALAR_OPS:
 					result = SCALAR_OPS[kind](*args)
 			except Exception:
 				result = UNKNOWN
@@ -500,7 +880,7 @@ class Capturer:
 	def run_scalar(self, node, env, kind):
 		"""Evaluate shape arithmetic such as prim::max, it never gets a box."""
 		outputs = list(node.outputs())
-		args = [env.get(v, UNKNOWN) for v in list(node.inputs())]
+		args = [self.fetch(v, env) for v in list(node.inputs())]
 		result = UNKNOWN
 		if UNKNOWN not in args:
 			try:
@@ -512,10 +892,15 @@ class Capturer:
 
 	def record_op(self, kind, args, result):
 		"""Decide whether an executed op deserves a box of its own."""
-		tensors = [a for a in args if torch.is_tensor(a)]
+		tensors = [item for arg in args for item in flatten_tensors(arg)]
 		if kind in SKIP_OPS and tensors:
-			out_shape = tuple(tensors[-1].shape) if tensors else None
-			return Block(title="Add", in_shape=tuple(t.shape for t in tensors), out_shape=out_shape)
+			# The result, not the last input: adding a broadcast positional
+			# embedding would otherwise report the shape of the embedding.
+			tensor_out = result if torch.is_tensor(result) else None
+			if tensor_out is None:
+				tensor_out = tensors[-1]
+			return Block(title="Add", in_shape=tuple(t.shape for t in tensors),
+				out_shape=tuple(tensor_out.shape))
 		if kind in HIDDEN_OPS or not tensors:
 			return None
 		name = NOTABLE_OPS.get(kind)
@@ -530,36 +915,121 @@ class Capturer:
 def detect_skip(module):
 	"""Does this module add its own input back onto its output, and through what?"""
 	try:
-		graph = module.forward.graph
+		graph = forward_graph(module)
 	except Exception:
 		return False, ""
 	via = []
-	found = False
-	for node in graph.nodes():
-		if node.kind() not in SKIP_OPS:
-			continue
-		for value in list(node.inputs()):
-			if not isinstance(value.type(), torch.TensorType):
-				continue
-			chain = []
-			current = value
-			for _ in range(12):
-				producer = current.node()
-				if producer is None:
-					break
-				if producer.kind() == "prim::Param":
-					found = True
-					via.extend(chain)
-					break
-				if producer.kind() not in BYPASS_OPS:
-					break
-				if producer.kind() in ("aten::max_pool1d", "aten::avg_pool1d"):
-					chain.append("pool")
-				inner = list(producer.inputs())
-				if not inner:
-					break
-				current = inner[0]
+	found = skip_in_nodes(graph.nodes(), module, via)
 	return found, " + ".join(dict.fromkeys(via))
+
+
+def skip_in_nodes(nodes, module, via) -> bool:
+	"""Does an add in these nodes, or in a branch of them, close a shortcut?
+
+	A branch whose condition was already decided at script time and that did not
+	run is not part of the network, which is what keeps an optional residual
+	connection from being reported in the variant that switched it off.
+	"""
+	found = False
+	for node in nodes:
+		if node.kind() in SKIP_OPS:
+			for value in list(node.inputs()):
+				if not isinstance(value.type(), torch.TensorType):
+					continue
+				chain = skip_source(value, module)
+				if chain is not None:
+					via.extend(chain)
+					found = True
+		blocks = branch_blocks(node, module)
+		for block in blocks:
+			if skip_in_nodes(list(block.nodes()), module, via):
+				found = True
+	return found
+
+
+def static_value(value, module):
+	"""What a graph value holds when it was fixed at script time, else None."""
+	producer = value.node()
+	if producer is None:
+		return None
+	kind = producer.kind()
+	if kind == "prim::Param":
+		return module
+	if kind == "prim::Constant":
+		try:
+			return producer.toIValue()
+		except Exception:
+			return None
+	if kind == "prim::GetAttr":
+		parent = static_value(list(producer.inputs())[0], module)
+		if not isinstance(parent, torch.nn.Module):
+			return None
+		try:
+			return getattr(parent, producer.s("name"))
+		except Exception:
+			return None
+	return None
+
+
+def skip_source(value, module, depth: int = 0):
+	"""Trace a value back over the ops a shortcut may run through.
+
+	Returns what it passed through once it lands on one of the module's own
+	inputs, which is what a residual connection is, and None when it does not.
+	"""
+	chain = []
+	current = value
+	for _ in range(12):
+		producer = current.node()
+		if producer is None:
+			return None
+		kind = producer.kind()
+		if kind == "prim::Param":
+			return chain
+		if kind == "prim::If":
+			# The value comes out of a branch, so follow what the branches
+			# return; a branch decided at script time is not part of the network.
+			if depth > 4:
+				return None
+			blocks = branch_blocks(producer, module)
+			try:
+				index = list(producer.outputs()).index(current)
+			except ValueError:
+				index = 0
+			for block in blocks:
+				returned = block.returnNode()
+				if returned is None:
+					continue
+				returns = list(returned.inputs())
+				if index >= len(returns):
+					continue
+				inner = skip_source(returns[index], module, depth + 1)
+				if inner is not None:
+					return chain + inner
+			return None
+		if kind not in BYPASS_OPS:
+			return None
+		if kind in ("aten::max_pool1d", "aten::avg_pool1d"):
+			chain.append("pool")
+		# The first tensor input: a branch node lists its condition first and a
+		# module call lists the module itself first.
+		inner = [item for item in producer.inputs()
+			if isinstance(item.type(), torch.TensorType)]
+		if not inner:
+			return None
+		current = inner[0]
+	return None
+
+
+def branch_blocks(node, module) -> list:
+	"""The blocks of a branch node that can still run for this network."""
+	blocks = list(node.blocks())
+	if node.kind() != "prim::If" or len(blocks) != 2:
+		return blocks
+	condition = static_value(list(node.inputs())[0], module)
+	if isinstance(condition, bool):
+		return [blocks[0] if condition else blocks[1]]
+	return blocks
 
 
 CONTAINERS = {"Sequential", "ModuleList", "ModuleDict"}
@@ -710,6 +1180,10 @@ def flatten_single(blocks: list) -> list:
 		while block.children and len(block.children) == 1 and not block.residual:
 			inner = block.children[0]
 			if inner.residual or inner.decor:
+				break
+			if block.params != inner.params:
+				# The child is only a part of the box rather than everything in
+				# it, so unwrapping would rename the layer to one of its parts.
 				break
 			inner.in_shape = block.in_shape or inner.in_shape
 			block = inner
@@ -872,6 +1346,28 @@ class Renderer:
 		self.digraph.edge(previous, end, color="black", penwidth="1.1", arrowsize="0.7")
 
 
+@contextmanager
+def fused_mha_off():
+	"""Turn off the fused transformer fast paths while the network is walked.
+
+	With them enabled torch replaces a whole encoder layer by a single aten
+	call, which leaves nothing to draw. Shapes are the same either way.
+	"""
+	try:
+		previous = torch.backends.mha.get_fastpath_enabled()
+		torch.backends.mha.set_fastpath_enabled(False)
+	except Exception:
+		previous = None
+	try:
+		yield
+	finally:
+		if previous is not None:
+			try:
+				torch.backends.mha.set_fastpath_enabled(previous)
+			except Exception:
+				pass
+
+
 def load_torchscript(path: str):
 	extra = {"meta.json": None}
 	module = torch.jit.load(path, _extra_files=extra)
@@ -885,9 +1381,8 @@ def load_torchscript(path: str):
 	return module, meta
 
 
-def build_source(kind: str, input_size: int, output_size: int):
+def build_source(kind: str, input_size: int, output_size: int, channels: int = 1):
 	"""Instantiate one of the networks in scripts/nets, as buildnet.py does."""
-	sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 	if kind == "simple":
 		from nets.simplenet import SimpleNet
 		module = SimpleNet(input_size, output_size, 4, 3)
@@ -901,6 +1396,21 @@ def build_source(kind: str, input_size: int, output_size: int):
 	elif kind == "upsamplenet":
 		from nets.upsamplenet import UpsampleNet
 		module = UpsampleNet(input_size, output_size, 4, 3)
+	elif kind == "inception":
+		from nets.inception1d import InceptionTime1D
+		module = InceptionTime1D(input_size, output_size, channels)
+	elif kind == "tcn":
+		from nets.tcn1d import TCN1D
+		module = TCN1D(input_size, output_size, channels)
+	elif kind == "gru":
+		from nets.grunet import BiGRUNet
+		module = BiGRUNet(input_size, output_size, channels)
+	elif kind == "transformer":
+		from nets.transformer1d import Transformer1D
+		module = Transformer1D(input_size, output_size, channels)
+	elif kind == "seresnet":
+		from nets.seresnet1d import SEResNet1D
+		module = SEResNet1D(input_size, output_size, channels)
 	else:
 		raise SystemExit(f"unknown network type {kind}")
 	module.eval()
@@ -931,10 +1441,15 @@ def main():
 		"TorchKissAnn network structure visualiser, draws a network as a monochrome block diagram")
 	source = parser.add_mutually_exclusive_group(required=True)
 	source.add_argument("--network", "-n", help="TorchScript network file, e.g. resnetANY-100.pt")
-	source.add_argument("--type", "-t", choices=["simple", "conv", "resnet", "upsamplenet"],
+	source.add_argument("--type", "-t",
+		choices=["simple", "conv", "resnet", "upsamplenet",
+			"inception", "tcn", "gru", "transformer", "seresnet"],
 		help="Build a network from scripts/nets instead of reading a file")
 	parser.add_argument("--input_size", "-i", type=int, default=100, help="Input length for --type")
 	parser.add_argument("--output_size", "-s", type=int, default=10, help="Output classes for --type")
+	parser.add_argument("--channels", "-c", type=int, default=1,
+		help="Input channels for --type of the nets that support it: 1 is the whole vector as one"
+			" channel, 2 splits it into an aligned real and imaginary channel pair")
 	parser.add_argument("--out", "-o", default=None, help="Output file name without extension")
 	parser.add_argument("--format", "-f", nargs="+", default=["pdf"],
 		choices=["pdf", "svg", "png"], help="Output formats, pdf is best for print")
@@ -950,7 +1465,7 @@ def main():
 		input_size = meta.get("inputSize") or args.input_size
 		output_size = meta.get("outputSize") or args.output_size
 	else:
-		module = build_source(args.type, args.input_size, args.output_size)
+		module = build_source(args.type, args.input_size, args.output_size, args.channels)
 		meta = {"name": args.type}
 		name = args.type
 		input_size = args.input_size
@@ -958,11 +1473,12 @@ def main():
 
 	input_size = int(input_size)
 	sample = torch.randn((args.batch, input_size))
-	with torch.no_grad():
+	with torch.enable_grad():
 		final = module(sample)
 
-	capturer = Capturer(module)
-	blocks, _ = capturer.walk(module, sample)
+	with fused_mha_off():
+		capturer = Capturer(module)
+		blocks, _ = capturer.walk(module, sample)
 	blocks = flatten_single(simplify(blocks))
 
 	for warning in capturer.warnings:
