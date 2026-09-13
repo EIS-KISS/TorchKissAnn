@@ -93,7 +93,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		if(parameters.size() > 3)
 			parameters.erase(parameters.begin());
 
-		if(torch::isnan(torch::sum(prediction)).item().to<bool>())
+		if(!torch::isfinite(prediction).all().item().to<bool>())
 		{
 			for(torch::OrderedDict<std::string, torch::Tensor> dict : parameters)
 			{
@@ -103,24 +103,24 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 					Log(Log::ERROR)<<parameter.key()<<'\n'<<parameter.value();
 				}
 			}
-			Log(Log::ERROR)<<prediction<<"\nPrediction contains NAN!\nData:\n"<<data;
+			Log(Log::ERROR)<<prediction<<"\nPrediction contains NaN or Inf!\nData:\n"<<data;
 			return -1;
 		}
 
 		torch::Tensor predictionOrig = prediction.clone();
 		torch::Tensor base = torch::ones(prediction.sizes(), tensorOptCpu<float>().device(*offload_device))*10;
-		if(torch::isnan(torch::sum(prediction)).item().to<bool>())
+		if(!torch::isfinite(prediction).all().item().to<bool>())
 		{
-			Log(Log::ERROR)<<prediction<<"\nPrediction after scaleing contains NAN!\nData:\n"<<data;
+			Log(Log::ERROR)<<prediction<<"\nPrediction after scaleing contains NaN or Inf!\nData:\n"<<data;
 			return -1;
 		}
 		loss = lossFn(prediction, targets);
 		/*torch::Tensor negatives = ((torch::sign(prediction)-1)*-1)/2;
 		loss = loss + (negatives.sum()/negatives.numel());*/
 
-		if(torch::isnan(torch::sum(loss)).item().to<bool>())
+		if(!torch::isfinite(loss).all().item().to<bool>())
 		{
-			Log(Log::ERROR)<<loss<<"\nloss contains NAN!";
+			Log(Log::ERROR)<<loss<<"\nloss contains NaN or Inf!";
 			Log(Log::DEBUG)<<"targets:\n"<<targets<<'\n';
 			Log(Log::DEBUG)<<"prediction:\n"<<predictionOrig<<'\n';
 			Log(Log::DEBUG)<<"prediction clamped:\n"<<predictionOrig.clamp(-12, 7)<<'\n';
@@ -237,11 +237,12 @@ std::string purposeString(RegressionDataset<DatasetType>* dataset)
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<DatasetType>* trainDataset, RegressionDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate, regression_loss_type_t loss = REG_LOSS_MSE, double* finalLoss = nullptr)
+		   size_t epochs, double learingRate, regression_loss_type_t loss = REG_LOSS_MSE, double* finalLoss = nullptr,
+		   double weightDecay = 0.001, double* finalTestLoss = nullptr)
 {
 	static constexpr double LOSS_START_DECADE = -2;
-	static constexpr double LOSS_FINISH_DECADE = 6;
-	static constexpr int64_t LOSS_POINT_COUNT = 3;
+	static constexpr double LOSS_FINISH_DECADE = 5;
+	static constexpr int64_t LOSS_POINT_COUNT = 32;
 
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	assert(net->getInputSize() == trainDataset->get(0).data.size(0));
@@ -275,11 +276,18 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	std::unique_ptr<EisDistanceLoss> lossEis;
 	if(loss == REG_LOSS_EIS)
 	{
-		Log(Log::INFO)<<"Loss will simulate from 10^"<<LOSS_START_DECADE
-			<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
-			<<"and will be based on "<<trainDataset->targetName();
-		torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
-		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega, torch::Tensor(),
+		// simulate at the frequencies the dataset was measured at, they are the ones the network
+		// sees and a synthetic grid over many decades is dominated by the points at which the
+		// impedance is largest
+		torch::Tensor omega = trainDataset->frequencies().value_or(torch::Tensor());
+		if(omega.numel() < 2)
+		{
+			Log(Log::WARN)<<"Dataset does not provide frequencies, simulating the loss on a fallback grid";
+			omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
+		}
+		Log(Log::INFO)<<"Loss will simulate "<<omega.numel()<<" points from "<<omega.min().item<float>()
+			<<" to "<<omega.max().item<float>()<<" rad/s and will be based on "<<trainDataset->targetName();
+		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega,
 					scalarAndBias.first, scalarAndBias.second));
 	}
 	else
@@ -311,7 +319,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	//options.batch_size(5);
 	auto testDataLoader =
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
-	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0.001));
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(weightDecay));
 
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{
@@ -329,9 +337,14 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 
 		if(testDataset)
 		{
-			TestReturn testret = test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
+			// evaluate with the same loss the network was trained with
+			TestReturn testret = lossEis ?
+				test(net, *testDataLoader, *lossEis, testDataset->size().value(), epoch, trainLog) :
+				test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
 			Log(Log::INFO)<<"Test r2: "<<testret.r2;
 			Log(Log::INFO)<<"Test mse: "<<testret.mse;
+			if(finalTestLoss)
+				*finalTestLoss = testret.loss;
 		}
 
 

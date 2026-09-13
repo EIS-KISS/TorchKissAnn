@@ -232,7 +232,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate, bool noWeights)
+		   size_t epochs, double learingRate, bool noWeights, double weightDecay = 0.01, double* finalTestLoss = nullptr)
 {
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	if(testDataset)
@@ -285,7 +285,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		sum += torch::sum(param).item<double>();
 	}
 	Log(Log::INFO)<<"Training "<<active_parameters<<" active parameters and "<<inactive_parameters<<" inactive parameters sum "<<sum;
-	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate));
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(weightDecay));
 
 	if(trainDataset->isMulticlass())
 		Log(Log::DEBUG)<<"Using BCELoss";
@@ -298,11 +298,14 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 			classWeights, trainDataset->isMulticlass(), trainLog);
 		if(testDataset)
 		{
-			test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
+			TestReturn ret = test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
 				classWeights, trainDataset->isMulticlass(), i, trainLog);
+			if(finalTestLoss)
+				*finalTestLoss = ret.loss;
 		}
 
-		trainLog->saveNetwork(net);
+		if(trainLog)
+			trainLog->saveNetwork(net);
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 
@@ -311,7 +314,8 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		sum += torch::sum(param).item<double>();
 	Log(Log::INFO)<<"End sum "<<sum;
 
-	trainLog->saveNetwork(net, true);
+	if(trainLog)
+		trainLog->saveNetwork(net, true);
 }
 
 }
