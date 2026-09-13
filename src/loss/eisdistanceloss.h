@@ -26,21 +26,34 @@
 
 #include "torchph.h"
 
+/**
+ * Loss that compares two sets of circuit parameters by the spectra they produce.
+ *
+ * The distance is the mean squared relative deviation between the simulated spectra, i.e. every
+ * frequency point is weighted by the impedance of the target at that point. This keeps points
+ * that are many decades apart comparable and makes the value independent of the batch size and of
+ * the absolute impedance of a sample.
+ */
 class EisDistanceLoss : public  torch::nn::Module
 {
+	/**
+	 * Floor of the weighting, relative to the mean impedance of a sample. It keeps the weighting
+	 * of points at which the target spectrum approaches zero finite.
+	 */
+	static constexpr double DEFAULT_WEIGHT_FLOOR = 1e-3;
+
 	std::shared_ptr<eis::Model> model;
 	torch::Tensor omegas;
 	std::shared_ptr<torch::CompilationUnit> modelScript;
-	torch::nn::MSELoss loss;
-	torch::Tensor targetScalar;
 	torch::Tensor parameterScalar;
 	torch::Tensor parameterBias;
+	double weightFloor;
 
 	public:
-		EisDistanceLoss(std::string modelString, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor(),
-				torch::Tensor parameterScalar = torch::Tensor(), torch::Tensor parameterBias = torch::Tensor());
-		EisDistanceLoss(const eis::Model& model, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor(),
-				torch::Tensor parameterScalar = torch::Tensor(), torch::Tensor parameterBias = torch::Tensor());
+		EisDistanceLoss(std::string modelString, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
+				torch::Tensor parameterBias = torch::Tensor(), double weightFloor = DEFAULT_WEIGHT_FLOOR);
+		EisDistanceLoss(const eis::Model& model, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
+				torch::Tensor parameterBias = torch::Tensor(), double weightFloor = DEFAULT_WEIGHT_FLOOR);
 
 		torch::Tensor forward(torch::Tensor output, torch::Tensor targets);
 		torch::Tensor distance(torch::Tensor output, torch::Tensor targetSpectra);
