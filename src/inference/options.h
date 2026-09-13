@@ -31,6 +31,9 @@ const inline char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application takes in EIS spectra and assigns equivalent circuts to them";
 static char args_doc[] = "";
 
+#define PREDICTION_MODE_LIST "ann, regression, show, reexport"
+#define FILE_TYPE_LIST "csv, gan, gen"
+
 static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
@@ -38,8 +41,8 @@ static struct argp_option options[] =
   {"network",		'n', "[FILE]",		0,	"Network file name" },
   {"input",			'i', "[FILE]",		0,	"Input file name" },
   {"dataset",	 	'd', "[STRING]",	0,	"The dataset type to test on :" DATASET_LIST},
-  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: csv, trash, gen" },
-  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: ann, knn, anntest, annconfusion, regression, show"},
+  {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: " FILE_TYPE_LIST },
+  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: " PREDICTION_MODE_LIST},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
   { 0 }
@@ -73,15 +76,32 @@ struct Config
 
 };
 
+static const char* modeToStr(const PredictionMode mode)
+{
+	switch(mode)
+	{
+		case MODE_ANN:
+			return "ann";
+		case MODE_REGRESSION:
+			return "regression";
+		case MODE_SHOW:
+			return "show";
+		case MODE_REEXPORT:
+			return "reexport";
+		default:
+			return "invalid";
+	}
+}
+
 static PredictionMode parseMode(const std::string& in)
 {
-	if(in.empty() || in == "ann")
+	if(in.empty() || in == modeToStr(MODE_ANN))
 		return MODE_ANN;
-	else if (in == "regression")
+	else if (in == modeToStr(MODE_REGRESSION))
 		return MODE_REGRESSION;
-	else if (in == "show")
+	else if (in == modeToStr(MODE_SHOW))
 		return MODE_SHOW;
-	else if (in == "reexport")
+	else if (in == modeToStr(MODE_REEXPORT))
 		return MODE_REEXPORT;
 
 	return MODE_INVALID;
@@ -97,17 +117,28 @@ static FilterMode parseFilterMode(const std::string& in)
 	return FILTER_INVALID;
 }
 
+static const char* fileTypeToStr(const FileType type)
+{
+	switch(type)
+	{
+		case FILE_TYPE_CSV:
+			return "csv";
+		case FILE_TYPE_GAN:
+			return "gan";
+		case FILE_TYPE_GENERATE:
+			return "gen";
+		default:
+			return "invalid";
+	}
+}
+
 static FileType parseFileType(const std::string& in)
 {
-	if(in.empty() || in == "csv")
+	if(in.empty() || in == fileTypeToStr(FILE_TYPE_CSV))
 		return FILE_TYPE_CSV;
-	else if(in == "trash")
-		return FILE_TYPE_TRASH;
-	else if(in == "relaxis")
-		return FILE_TYPE_RELAXIS;
-	else if(in == "gan")
+	else if (in == fileTypeToStr(FILE_TYPE_GAN))
 		return FILE_TYPE_GAN;
-	else if(in == "gen")
+	else if (in == fileTypeToStr(FILE_TYPE_GENERATE))
 		return FILE_TYPE_GENERATE;
 
 	return FILE_TYPE_INVALID;

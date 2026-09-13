@@ -89,6 +89,8 @@ public:
 	void logTensor(const std::string& name, const torch::Tensor& tensor);
 	std::filesystem::path getDir();
 	void saveNetwork(std::shared_ptr<ann::Net> net, bool finished = false);
+	// Mark that the run has produced networks by other means, keeps the run directory from being removed.
+	void markSaved();
 
 	static void setRunsDir(const std::filesystem::path& dir);
 	static std::filesystem::path getRunsDir();

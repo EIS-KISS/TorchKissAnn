@@ -37,7 +37,7 @@ namespace gan
 	void train(TrainLog* trainLog, EisDataset<DatasetType>* trainDataset, size_t epochs, double learingRate, double* finalLoss = nullptr)
 	{
 		torch::data::DataLoaderOptions options;
-		options = options.batch_size(100);
+		options = options.batch_size(batch_size);
 		options = options.workers(16);
 		options = options.max_jobs(32);
 		auto dataLoader = torch::data::make_data_loader(trainDataset->map(torch::data::transforms::Stack<>()), options);
@@ -47,6 +47,8 @@ namespace gan
 
 		GANGenerator gen(Z_SIZE, trainDataset->get(0).data.size(0));
 		GANDiscriminator dis(trainDataset->get(0).data.size(0));
+		gen->to(*offload_device);
+		dis->to(*offload_device);
 
 		torch::nn::BCEWithLogitsLoss lossFn(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean));
 		torch::Tensor equal = torch::full({1}, /*value=*/0.0, torch::TensorOptions().dtype(torch::kFloat));
@@ -58,7 +60,7 @@ namespace gan
 		torch::optim::Adam optimizerGen(gen->parameters(), torch::optim::AdamOptions(1e-3).betas({0.5, 0.99}));
 		torch::optim::Adam optimizerDis(dis->parameters(), torch::optim::AdamOptions(2.5e-4).betas({0.5, 0.99}));
 
-		for(size_t epoch = 0; epoch < 1; ++epoch)
+		for(size_t epoch = 0; epoch < epochs; ++epoch)
 		{
 			size_t index = 0;
 			gen->train();
@@ -68,10 +70,10 @@ namespace gan
 			{
 
 				torch::Tensor inputLabel = torch::full({batch.data.size(0)}, 1, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device);
-				torch::Tensor input = batch.data;
+				torch::Tensor input = batch.data.to(*offload_device);
 
 				torch::Tensor fakeLabel = torch::full({batch.data.size(0)}, 0, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device);
-				torch::Tensor generatedFake = gen->forward(torch::randn({batch.data.size(0), Z_SIZE}));
+				torch::Tensor generatedFake = gen->forward(torch::randn({batch.data.size(0), Z_SIZE}, torch::TensorOptions().dtype(torch::kFloat)).to(*offload_device));
 
 				torch::Tensor fakePrediction = dis->forwardSplit(generatedFake.detach()).first.view({-1});
 
@@ -106,8 +108,12 @@ namespace gan
 				}
 			}
 		}
-		//trainLog->saveNetwork();
-		/*torch::save(dis, fileName + ".dis.vos");
-		torch::save(gen, fileName + ".gen.vos");*/
+		if(trainLog)
+		{
+			std::string prefix = static_cast<std::string>(trainLog->getDir()/"gan");
+			torch::save(dis, prefix+".dis.vos");
+			torch::save(gen, prefix+".gen.vos");
+			trainLog->markSaved();
+		}
 	}
 }

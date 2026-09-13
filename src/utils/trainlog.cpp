@@ -189,6 +189,11 @@ void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
 	net->saveToCheckpointDir(dir);
 }
 
+void TrainLog::markSaved()
+{
+	savedCheckpoint = true;
+}
+
 void TrainLog::plot(std::filesystem::path logDir, std::vector<std::pair<size_t, double>> loss, bool test)
 {
 	std::valarray<double> steps(loss.size());

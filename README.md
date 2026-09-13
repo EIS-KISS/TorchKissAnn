@@ -38,7 +38,7 @@ Like _torchkissann_train_ _torchkissann_test_ takes datasets in the formats cera
 _TorchKissAnn_ only runs on linux. To build and use _TorchKissAnn_ you must have the following.
 
 * cmake
-* a c++17 compiler like GCC
+* a c++20 compiler like GCC
 * pkg-config
 * [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 * [sciplot](https://github.com/sciplot/sciplot) is optional and used to output pretty graphs

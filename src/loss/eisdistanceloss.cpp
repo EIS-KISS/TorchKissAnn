@@ -29,20 +29,26 @@
 #include "tensoroperators.h"
 #include "log.h"
 
-EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn, torch::Tensor targetScalarIn):
+EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn, torch::Tensor targetScalarIn,
+		torch::Tensor parameterScalarIn, torch::Tensor parameterBiasIn):
 omegas(omegasIn.reshape({omegasIn.numel(), -1})),
 loss(torch::nn::MSELossOptions().reduction(torch::kMean)),
-targetScalar(targetScalarIn)
+targetScalar(targetScalarIn),
+parameterScalar(parameterScalarIn),
+parameterBias(parameterBiasIn)
 {
 	model = std::shared_ptr<eis::Model>(new eis::Model(modelString));
 	modelScript = compileModel(*model);
 }
 
 
-EisDistanceLoss::EisDistanceLoss(const eis::Model& modelIn, torch::Tensor omegasIn, torch::Tensor targetScalarIn):
+EisDistanceLoss::EisDistanceLoss(const eis::Model& modelIn, torch::Tensor omegasIn, torch::Tensor targetScalarIn,
+		torch::Tensor parameterScalarIn, torch::Tensor parameterBiasIn):
 omegas(omegasIn.reshape({omegasIn.numel(), -1})),
 loss(torch::nn::MSELossOptions().reduction(torch::kMean)),
-targetScalar(targetScalarIn)
+targetScalar(targetScalarIn),
+parameterScalar(parameterScalarIn),
+parameterBias(parameterBiasIn)
 {
 	model = std::shared_ptr<eis::Model>(new eis::Model(modelIn));
 	modelScript = compileModel(*model);
@@ -62,7 +68,7 @@ torch::Tensor EisDistanceLoss::distance(torch::Tensor output, torch::Tensor targ
 	/*std::cout<<"targetSpectra:\n"<<torch::view_as_real(targetSpectra)<<'\n';
 	std::cout<<"predictedSpectraCmplx:\n"<<torch::view_as_real(predictedSpectraCmplx)<<'\n';*/
 
-	torch::Tensor out = /*torch::sum(torch::abs(torch::real(predictedSpectraCmplx) - torch::real(targetSpectra)))+*/
+	torch::Tensor out = torch::sum(torch::abs(torch::real(predictedSpectraCmplx) - torch::real(targetSpectra)))+
 		torch::sum(torch::abs(torch::imag(predictedSpectraCmplx) - torch::imag(targetSpectra)));
 /*	torch::Tensor targetSpectraExpanded = targetSpectra.expand({targetSpectra.size(0), targetSpectra.size(0)}).t();
 	torch::Tensor diff = torch::abs(targetSpectraExpanded - predictedSpectraCmplx);
@@ -77,6 +83,13 @@ torch::Tensor EisDistanceLoss::distance(torch::Tensor output, torch::Tensor targ
 torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targets)
 {
 	assert(targets.sizes() == output.sizes());
+
+	if(parameterScalar.numel() != 0)
+	{
+		// the model script is only defined for physical parameters, undo the dataset normalisation
+		output = output*parameterScalar.to(output.device()) + parameterBias.to(output.device());
+		targets = targets*parameterScalar.to(targets.device()) + parameterBias.to(targets.device());
+	}
 
 	if(targetScalar.numel() != 0)
 	{

@@ -33,10 +33,14 @@ class EisDistanceLoss : public  torch::nn::Module
 	std::shared_ptr<torch::CompilationUnit> modelScript;
 	torch::nn::MSELoss loss;
 	torch::Tensor targetScalar;
+	torch::Tensor parameterScalar;
+	torch::Tensor parameterBias;
 
 	public:
-		EisDistanceLoss(std::string modelString, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor());
-		EisDistanceLoss(const eis::Model& model, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor());
+		EisDistanceLoss(std::string modelString, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor(),
+				torch::Tensor parameterScalar = torch::Tensor(), torch::Tensor parameterBias = torch::Tensor());
+		EisDistanceLoss(const eis::Model& model, torch::Tensor omegas, torch::Tensor targetScalar = torch::Tensor(),
+				torch::Tensor parameterScalar = torch::Tensor(), torch::Tensor parameterBias = torch::Tensor());
 
 		torch::Tensor forward(torch::Tensor output, torch::Tensor targets);
 		torch::Tensor distance(torch::Tensor output, torch::Tensor targetSpectra);

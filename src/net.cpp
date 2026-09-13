@@ -216,7 +216,7 @@ void ann::Net::getConfiguration(Json::Value& node)
 
 	Json::Value biases(Json::ValueType::arrayValue);
 	biases.resize(outputSize);
-	assert(outputSize == outputScalars.size(0));
+	assert(outputSize == outputBiases.size(0));
 	for(int64_t i = 0; i < outputSize; ++i)
 		biases[static_cast<int>(i)] = outputBiases[i].item().toFloat();
 	node["outputBiases"] = biases;
@@ -228,8 +228,8 @@ void ann::Net::getConfiguration(Json::Value& node)
 		Json::Value frequencies(Json::ValueType::arrayValue);
 		frequencies.resize(inputSize);
 		for(int64_t i = 0; i < inputSize; ++i)
-			biases[static_cast<int>(i)] = inputFrequencies[i].item().toFloat();
-		node["inputFrequencies"] = biases;
+			frequencies[static_cast<int>(i)] = inputFrequencies[i].item().toFloat();
+		node["inputFrequencies"] = frequencies;
 	}
 }
 

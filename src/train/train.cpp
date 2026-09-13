@@ -38,6 +38,7 @@
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
 #include "commonoptions.h"
+#include "gan/gan.h"
 #include "data/loaders/regressiondirloader.h"
 #include "data/loaders/tarloader.h"
 #include "log.h"
@@ -56,6 +57,18 @@ void trainWithSplitDataset(const Config& config, DataSetType* dataset);
 
 template <typename DataSetType, typename TestDataSetType = DataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
+
+static ann::regression::regression_loss_type_t regressionLossFromConfig(const TrainLoss loss)
+{
+	switch(loss)
+	{
+		case LOSS_SPECTRA:
+			return ann::regression::REG_LOSS_EIS;
+		case LOSS_MSE:
+		default:
+			return ann::regression::REG_LOSS_MSE;
+	}
+}
 
 template <typename DataSetType>
 int train(const Config& config)
@@ -211,7 +224,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 		}
 		case MODE_GAN:
 		{
-			Log(Log::ERROR)<<"Currently not implemented use earlier version";
+			Log(Log::INFO)<<"Training gan generator and discriminator";
+			gan::train(trainLog.get(), trainDataset, config.epochs, config.learingRate);
 			break;
 		}
 		break;
@@ -227,7 +241,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			Log(Log::INFO)<<"Training regression network "<<trainDataset->inputSize()<<' '<<trainDataset->outputSize();
 			std::shared_ptr<ann::Net> net(new ann::SimpleNet(trainDataset->inputSize(),
 															 trainDataset->outputSize(), 4, config.extraLayers, false));
-			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
+			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate,
+				regressionLossFromConfig(config.loss));
 			break;
 		}
 		case MODE_REGRESSION_SCRIPT:
@@ -241,7 +256,8 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			}
 			Log(Log::INFO)<<"Training regression script network "<<trainDataset->inputSize()<<' '<<trainDataset->outputSize();
 			std::shared_ptr<ann::Net> net(new ann::ScriptNet(config.scriptPath, false, trainDataset->inputSize(), trainDataset->outputSize()));
-			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate);
+			ann::regression::train(trainLog.get(), net, trainDatasetReg, testDatasetReg, config.epochs, config.learingRate,
+				regressionLossFromConfig(config.loss));
 			break;
 		}
 		case MODE_INVALID:
@@ -282,6 +298,12 @@ bool check_options(const Config& config)
 	if((config.mode != MODE_ANN_SCRIPT && config.mode != MODE_REGRESSION_SCRIPT && config.mode != MODE_AUTO_SCRIPT) && !config.scriptPath.empty())
 	{
 		Log(Log::ERROR)<<"a path to a TorchScript can only be supplied in "<<trainModeToStr(MODE_ANN_SCRIPT)<<" mode";
+		return false;
+	}
+
+	if(config.loss != LOSS_MSE && config.mode != MODE_REGRESSION && config.mode != MODE_REGRESSION_SCRIPT)
+	{
+		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used in regression mode";
 		return false;
 	}
 

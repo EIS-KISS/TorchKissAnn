@@ -279,7 +279,8 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			<<" to 10^"<<LOSS_FINISH_DECADE<<" with "<<LOSS_POINT_COUNT<<" steps "
 			<<"and will be based on "<<trainDataset->targetName();
 		torch::Tensor omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
-		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega));
+		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega, torch::Tensor(),
+					scalarAndBias.first, scalarAndBias.second));
 	}
 	else
 	{

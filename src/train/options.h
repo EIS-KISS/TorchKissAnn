@@ -28,6 +28,7 @@
 #include "commonoptions.h"
 
 #define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder"
+#define LOSS_LIST "mse, spectra"
 
 inline const char *argp_program_version = "TorchKissAnnTrain";
 inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -46,6 +47,7 @@ static struct argp_option options[] =
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
+  {"loss",			's', "[STRING]",	0,	"loss function to use for regression: " LOSS_LIST},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
@@ -113,6 +115,35 @@ static TrainMode parseTrainMode(const std::string& in)
 	return MODE_INVALID;
 }
 
+typedef enum
+{
+	LOSS_INVALID = -1,
+	LOSS_MSE = 0,
+	LOSS_SPECTRA
+} TrainLoss;
+
+static std::string lossTypeToStr(const TrainLoss loss)
+{
+	switch(loss)
+	{
+		case LOSS_MSE:
+			return "mse";
+		case LOSS_SPECTRA:
+			return "spectra";
+		default:
+			return "Invalid";
+	}
+}
+
+static TrainLoss parseLossType(const std::string& in)
+{
+	if(in.empty() || in == lossTypeToStr(LOSS_MSE))
+		return LOSS_MSE;
+	else if(in == lossTypeToStr(LOSS_SPECTRA))
+		return LOSS_SPECTRA;
+	return LOSS_INVALID;
+}
+
 struct Config
 {
 	TrainMode mode = MODE_INVALID;
@@ -126,6 +157,7 @@ struct Config
 	size_t epochs = 30;
 	size_t extraLayers = 3;
 	size_t latentSize = 10;
+	TrainLoss loss = LOSS_MSE;
 	bool noGpu = false;
 	bool noWeights = false;
 };
@@ -180,6 +212,14 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'r':
 			config->learingRate = std::stod(std::string(arg));
+			break;
+		case 's':
+			config->loss = parseLossType(arg);
+			if(config->loss == LOSS_INVALID)
+			{
+				Log(Log::ERROR)<<"loss has to be one of: " LOSS_LIST;
+				argp_usage(state);
+			}
 			break;
 		case 'c':
 			config->noGpu = true;
