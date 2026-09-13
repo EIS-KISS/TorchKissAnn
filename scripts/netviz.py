@@ -750,8 +750,6 @@ class Renderer:
 		"""Draw a block without internals as a rounded white box."""
 		identifier = self.new_id("n")
 		label = block.label
-		if block.repeat > 1:
-			label = f"\u00d7{block.repeat}  {label}"
 		if block.params:
 			label += f"\n{human_count(block.params)} params"
 		target.node(identifier, label=label, shape="box", style="rounded,filled",
@@ -784,8 +782,6 @@ class Renderer:
 			"fontsize": "10",
 		})
 		title = block.title + (f" {block.detail}" if block.detail else "")
-		if block.repeat > 1:
-			title += f" \u00d7{block.repeat}"
 		if block.params:
 			title += f"\n{human_count(block.params)} params"
 		cluster.attr(label=title)
@@ -821,10 +817,43 @@ class Renderer:
 
 	def draw(self, target, block: Block) -> tuple:
 		"""Draw one block, return the (entry, exit) nodes to wire it into a chain."""
+		if block.repeat > 1:
+			return self.draw_repeated(target, block)
 		if not block.children:
 			identifier = self.box(target, block)
 			return identifier, identifier
 		return self.group(target, block)
+
+	def draw_repeated(self, target, block: Block) -> tuple:
+		"""Show a repeated block as several copies in a row.
+
+		Up to three copies are drawn whole, more than that and the first and
+		the last copy bracket a dots node carrying the total count.
+		"""
+		count = block.repeat
+		block.repeat = 1
+		entry = None
+		previous = None
+		for index in range(count if count <= 3 else 2):
+			if index == 1 and count > 3:
+				dots = self.dots(target, count)
+				self.link(target, previous, dots)
+				previous = dots
+			copy_entry, copy_exit = self.draw(target, block)
+			if entry is None:
+				entry = copy_entry
+			if previous is not None:
+				self.link(target, previous, copy_entry)
+			previous = copy_exit
+		block.repeat = count
+		return entry, previous
+
+	def dots(self, target, count: int) -> str:
+		"""The placeholder standing in for the copies between the outer two."""
+		identifier = self.new_id("dots")
+		target.node(identifier, label=f"\u22ee\n\u00d7{count}", shape="none",
+			fontname="Helvetica-Bold", fontsize="12", fontcolor="black")
+		return identifier
 
 	def chain(self, blocks: list, input_shape: str, output_shape: str):
 		start = self.new_id("in")
