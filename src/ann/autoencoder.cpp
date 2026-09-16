@@ -30,26 +30,55 @@
 
 
 ann::AutoEncoder::AutoEncoder(const Json::Value& node):
-Net(node)
+Net(node),
+variational(node["variational"].asBool())
 {
 }
 
-ann::AutoEncoder::AutoEncoder(std::shared_ptr<Net> encoder, std::shared_ptr<Net> decoder):
+ann::AutoEncoder::AutoEncoder(std::shared_ptr<Net> encoder, std::shared_ptr<Net> decoder, bool variational):
 Net(encoder->getInputSize(), decoder->getOutputSize(), decoder->hasSoftmaxOutput()),
 encoder(encoder),
-decoder(decoder)
+decoder(decoder),
+variational(variational)
 {
-	if(encoder->getOutputSize() != decoder->getInputSize())
+	if(this->variational)
+	{
+		if(encoder->getOutputSize() != 2 * decoder->getInputSize())
+			throw std::invalid_argument("variational encoder output must be twice the decoder input size");
+	}
+	else if(encoder->getOutputSize() != decoder->getInputSize())
 		throw std::invalid_argument("encoder output must be the same shape as decoder output");
 	torch::nn::Module::register_module("encoder", encoder);
 	torch::nn::Module::register_module("decoder", decoder);
 }
 
-torch::Tensor ann::AutoEncoder::forward(torch::Tensor x, torch::Tensor& latent)
+torch::Tensor ann::AutoEncoder::forward(torch::Tensor x, torch::Tensor& latent, torch::Tensor& mu, torch::Tensor& logvar, bool sample)
 {
-	latent = encoder->forward(x);
+	torch::Tensor encoded = encoder->forward(x);
+	if(variational)
+	{
+		int64_t latentSize = encoded.size(1) / 2;
+		mu = encoded.narrow(1, 0, latentSize);
+		logvar = encoded.narrow(1, latentSize, latentSize);
+		if(sample)
+			latent = mu + torch::exp(0.5 * logvar) * torch::rand_like(mu);
+		else
+			latent = mu;
+	}
+	else
+	{
+		mu = encoded;
+		logvar = torch::zeros_like(encoded);
+		latent = encoded;
+	}
 	torch::Tensor out = decoder->forward(latent);
 	return out;
+}
+
+torch::Tensor ann::AutoEncoder::forward(torch::Tensor x, torch::Tensor& latent)
+{
+	torch::Tensor mu, logvar;
+	return forward(x, latent, mu, logvar, false);
 }
 
 torch::Tensor ann::AutoEncoder::forward(torch::Tensor x)
@@ -117,13 +146,21 @@ bool ann::AutoEncoder::loadWeightsFromDir(const std::filesystem::path& path)
 
 int64_t ann::AutoEncoder::getLatentSize()
 {
+	if(variational)
+		return encoder->getOutputSize() / 2;
 	return encoder->getOutputSize();
+}
+
+bool ann::AutoEncoder::isVariational()
+{
+	return variational;
 }
 
 void ann::AutoEncoder::getConfiguration(Json::Value& node)
 {
 	Net::getConfiguration(node);
 	node["type"] = typeid(*this).name();
+	node["variational"] = variational;
 }
 
 void ann::AutoEncoder::eval()

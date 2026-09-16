@@ -40,16 +40,19 @@ protected:
 
 	std::shared_ptr<Net> encoder;
 	std::shared_ptr<Net> decoder;
+	bool variational = false;
 
 public:
 
 	AutoEncoder(const Json::Value& node);
-	AutoEncoder(std::shared_ptr<Net> encoder, std::shared_ptr<Net> decoder);
+	AutoEncoder(std::shared_ptr<Net> encoder, std::shared_ptr<Net> decoder, bool variational = false);
 
 	virtual torch::Tensor forward(torch::Tensor x);
 
 	torch::Tensor forward(torch::Tensor x, torch::Tensor& latent);
+	torch::Tensor forward(torch::Tensor x, torch::Tensor& latent, torch::Tensor& mu, torch::Tensor& logvar, bool sample);
 	int64_t getLatentSize();
+	bool isVariational();
 
 	virtual void getConfiguration(Json::Value& node);
 	virtual bool saveToCheckpointDir(const std::filesystem::path& path);

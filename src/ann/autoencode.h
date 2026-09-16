@@ -41,6 +41,62 @@ namespace autoencode
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<AutoEncoder> net, torch::Tensor* latent = nullptr);
 
+inline torch::Tensor klDivergence(const torch::Tensor& mu, const torch::Tensor& logvar)
+{
+	return torch::mean(-0.5 * torch::sum(1 + logvar - mu.pow(2) - logvar.exp(), 1));
+}
+
+template <typename DataLoader, typename LossFn>
+int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, double beta, size_t epoch,
+			size_t data_size, TrainLog* log = nullptr)
+{
+	size_t index = 0;
+	network->train();
+
+	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
+
+	indicators::BlockProgressBar bar(
+		indicators::option::BarWidth(50),
+		indicators::option::PrefixText("Runing Eval: "),
+		indicators::option::ShowElapsedTime(true),
+		indicators::option::ShowRemainingTime(true),
+		indicators::option::MaxProgress(data_size/(batch_size))
+	);
+
+	for(auto& batch : loader)
+	{
+		torch::Tensor data = batch.data.to(*offload_device);
+
+		torch::Tensor latent;
+		torch::Tensor mu;
+		torch::Tensor logvar;
+		torch::Tensor prediction = network->forward(data, latent, mu, logvar, true);
+		torch::Tensor recon = lossFn(prediction, data);
+		torch::Tensor kld = klDivergence(mu, logvar);
+		torch::Tensor loss = recon + beta * kld;
+
+		if(torch::isnan(torch::sum(loss)).item().to<bool>())
+		{
+			Log(Log::ERROR)<<loss<<"\nloss contains NAN!";
+			return -1;
+		}
+
+		optimizer.zero_grad();
+		loss.backward();
+		optimizer.step();
+
+		if(log && index % loginterval == 0)
+		{
+			auto end = std::min(data_size, (index + 1) * batch_size);
+			log->logTrainLoss(epoch, end, loss.template item<float>(), kld.template item<float>(), data_size);
+		}
+
+		index++;
+	}
+
+	return 0;
+}
+
 template <typename DataLoader, typename LossFn>
 int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
 			size_t data_size, TrainLog* log = nullptr)
@@ -168,7 +224,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate)
+void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0)
 {
 	assert(net->getInputSize() == dataset->get(0).data.size(0));
 	if(testDataset)
@@ -176,7 +232,10 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 	else
 		Log(Log::WARN)<<"No test dataset provided!";
 
-	net->setPurpose("Autoencoder");
+	if(net->isVariational())
+		net->setPurpose("Autoencoder,VAE");
+	else
+		net->setPurpose("Autoencoder");
 	net->setExtraInputs(dataset->extraInputs());
 	net->to(*offload_device);
 
@@ -201,9 +260,23 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 
 	torch::nn::MSELoss mseloss(torch::nn::MSELossOptions().reduction(torch::kMean));
 
+	// ramp the KL weight in linearly over the first epochs so the divergence term can not dominate the reconstruction gradient while encoder is still random
+	size_t klWarmup = std::min<size_t>(epochs, 10);
+
 	for (size_t i = 0; i < epochs; ++i)
 	{
-		if(trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), trainLog) != 0)
+		int epochRet;
+		if(net->isVariational())
+		{
+			double epochBeta = beta;
+			if(klWarmup > 0)
+				epochBeta = beta * std::min(1.0, double(i + 1) / double(klWarmup));
+			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), trainLog);
+		}
+		else
+			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), trainLog);
+
+		if(epochRet != 0)
 			break;
 
 		if(testDataset)

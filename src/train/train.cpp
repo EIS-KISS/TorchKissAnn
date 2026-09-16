@@ -222,6 +222,41 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate);
 			break;
 		}
+		case MODE_VAE_SCRIPT:
+		{
+			try
+			{
+				std::vector<std::string> tokens = tokenize(config.scriptPath, ',');
+				if(tokens.size() != 2)
+				{
+					Log(Log::ERROR)<<"For Autoencoders the network path given by -n must be two paths seperated by a: /path/a,/path/b";
+					return;
+				}
+				Log(Log::INFO)<<"Training variational autoencoder network with script net loaded from "<<config.scriptPath;
+				std::shared_ptr<ann::Net> encoder(new ann::ScriptNet(tokens[0], false, trainDataset->inputSize(), 2 * config.latentSize));
+				std::shared_ptr<ann::Net> decoder(new ann::ScriptNet(tokens[1], false, config.latentSize, trainDataset->inputSize()));
+				std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
+				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta);
+			}
+			catch(const std::invalid_argument& err)
+			{
+				Log(Log::ERROR)<<"The models given dont have a compatable output-input size: "<<err.what();
+			}
+			catch(const ann::ScriptNet::load_errror& err)
+			{
+				Log(Log::ERROR)<<"Could not load TorchScript model: "<<err.what();
+			}
+			break;
+		}
+		case MODE_VAE:
+		{
+			Log(Log::INFO)<<"Training variational autoencoder network with simple nets";
+			std::shared_ptr<ann::Net> encoder(new ann::SimpleNet(trainDataset->inputSize(), 2 * config.latentSize, 4, 3, false));
+			std::shared_ptr<ann::Net> decoder(new ann::SimpleNet(config.latentSize, trainDataset->inputSize(), 4, 3, false));
+			std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
+			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta);
+			break;
+		}
 		case MODE_GAN:
 		{
 			Log(Log::INFO)<<"Training gan generator and discriminator";
@@ -289,13 +324,13 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if((config.mode == MODE_ANN_SCRIPT || config.mode == MODE_REGRESSION_SCRIPT || config.mode == MODE_AUTO_SCRIPT) && config.scriptPath.empty())
+	if((config.mode == MODE_ANN_SCRIPT || config.mode == MODE_REGRESSION_SCRIPT || config.mode == MODE_AUTO_SCRIPT || config.mode == MODE_VAE_SCRIPT) && config.scriptPath.empty())
 	{
 		Log(Log::ERROR)<<"To train a TorchScript a path to a TorchScript must be supplied via -n";
 		return false;
 	}
 
-	if((config.mode != MODE_ANN_SCRIPT && config.mode != MODE_REGRESSION_SCRIPT && config.mode != MODE_AUTO_SCRIPT) && !config.scriptPath.empty())
+	if((config.mode != MODE_ANN_SCRIPT && config.mode != MODE_REGRESSION_SCRIPT && config.mode != MODE_AUTO_SCRIPT && config.mode != MODE_VAE_SCRIPT) && !config.scriptPath.empty())
 	{
 		Log(Log::ERROR)<<"a path to a TorchScript can only be supplied in "<<trainModeToStr(MODE_ANN_SCRIPT)<<" mode";
 		return false;

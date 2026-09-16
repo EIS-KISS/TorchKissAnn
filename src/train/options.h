@@ -27,7 +27,7 @@
 #include "utils/log.h"
 #include "commonoptions.h"
 
-#define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder"
+#define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder, vae, vae_simple"
 #define LOSS_LIST "mse, spectra"
 
 inline const char *argp_program_version = "TorchKissAnnTrain";
@@ -53,6 +53,7 @@ static struct argp_option options[] =
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
   {"latent-size",	'a', "[NUMBER]",	0, 	"Size of the latent vector for the autoencoder"},
+  {"kl-beta",		'k', "[NUMBER]",	0, 	"Weight of the KL divergence term in the vae loss, default: 1"},
   { 0 }
 };
 
@@ -66,7 +67,9 @@ typedef enum
 	MODE_AUTO,
 	MODE_GAN,
 	MODE_REGRESSION,
-	MODE_REGRESSION_SCRIPT
+	MODE_REGRESSION_SCRIPT,
+	MODE_VAE_SCRIPT,
+	MODE_VAE
 } TrainMode;
 
 static std::string trainModeToStr(const TrainMode mode)
@@ -89,6 +92,10 @@ static std::string trainModeToStr(const TrainMode mode)
 			return "regression";
 		case MODE_REGRESSION_SCRIPT:
 			return "regression_script";
+		case MODE_VAE_SCRIPT:
+			return "vae";
+		case MODE_VAE:
+			return "vae_simple";
 		default:
 			return "Invalid";
 	}
@@ -112,6 +119,10 @@ static TrainMode parseTrainMode(const std::string& in)
 		return MODE_REGRESSION;
 	else if(in == trainModeToStr(MODE_REGRESSION_SCRIPT))
 		return MODE_REGRESSION_SCRIPT;
+	else if(in == trainModeToStr(MODE_VAE_SCRIPT))
+		return MODE_VAE_SCRIPT;
+	else if(in == trainModeToStr(MODE_VAE))
+		return MODE_VAE;
 	return MODE_INVALID;
 }
 
@@ -157,6 +168,7 @@ struct Config
 	size_t epochs = 30;
 	size_t extraLayers = 3;
 	size_t latentSize = 10;
+	double klBeta = 1.0;
 	TrainLoss loss = LOSS_MSE;
 	bool noGpu = false;
 	bool noWeights = false;
@@ -232,6 +244,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'a':
 			config->latentSize = std::stoul(std::string(arg));
+			break;
+		case 'k':
+			config->klBeta = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;
