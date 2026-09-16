@@ -45,7 +45,7 @@ _TorchKissAnn_ only runs on linux. To build and use _TorchKissAnn_ you must have
 * [eisgenerator](https://github.com/EIS-KISS/eisgenerator)
 * [eistype](https://github.com/EIS-KISS/Eistype)
 
-Building _TorchKissAnn_ is a memory intensive task, it is recommended to have at least 16GB of system ram.
+Building _TorchKissAnn_ is a memory intensive task, it is recommended to have at least 32GB of system ram.
 
 ### Procedure
 
