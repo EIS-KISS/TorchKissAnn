@@ -35,11 +35,8 @@ torch::Tensor ann::regression::use(torch::Tensor input, std::shared_ptr<Net> net
 {
 	torch::NoGradGuard noGrad;
 	net->eval();
-	torch::Tensor output = net->forward(input);
-	torch::Tensor outputScalars = net->getOutputScalars();
-	torch::Tensor outputBias    = net->getOutputBiases();
-	output = (output*outputScalars+outputBias);
-	return output;
+	torch::Tensor output = net->forward(net->normalizeInput(input));
+	return net->denormalizeOutput(output);
 }
 
 std::pair<torch::Tensor, torch::Tensor>  ann::regression::getTargetScalesAndBiases(const std::string& modelString)

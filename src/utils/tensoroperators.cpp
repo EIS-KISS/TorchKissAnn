@@ -163,3 +163,51 @@ torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim)
 	}
 	return output;
 }
+
+torch::Tensor signedLog10(const torch::Tensor& values, double logFloor)
+{
+	return torch::sign(values)*torch::log10(1.0+torch::abs(values)/logFloor);
+}
+
+torch::Tensor signedLog10Leading(const torch::Tensor& values, int64_t count, double logFloor)
+{
+	if(count <= 0)
+		return values;
+	if(count >= values.size(-1))
+		return signedLog10(values, logFloor);
+	return torch::cat({signedLog10(values.narrow(-1, 0, count), logFloor),
+			values.narrow(-1, count, values.size(-1)-count)}, -1);
+}
+
+torch::Tensor affineToPhysical(const torch::Tensor& values, const torch::Tensor& scalars,
+		const torch::Tensor& biases, const torch::Tensor& logMask)
+{
+	if(scalars.numel() == 0)
+		return values;
+
+	torch::Tensor physical = values*scalars.to(values.device()) + biases.to(values.device());
+	if(logMask.numel() == 0)
+		return physical;
+
+	// clamp the exponent, so a network that overshoots its range produces a huge value instead of
+	// an infinity that turns into a NaN one operation later
+	torch::Tensor logPhysical = torch::pow(10.0, torch::clamp(physical, -30.0, 30.0));
+	return torch::where(logMask.to(values.device()) > 0, logPhysical, physical);
+}
+
+torch::Tensor physicalToAffine(const torch::Tensor& values, const torch::Tensor& scalars,
+		const torch::Tensor& biases, const torch::Tensor& logMask)
+{
+	if(scalars.numel() == 0)
+		return values;
+
+	torch::Tensor work = values;
+	if(logMask.numel() != 0)
+	{
+		// clamp so the logarithm stays defined for values outside the range the mask was derived
+		// from, an unclamped log of a negative target is a NaN in the loss
+		torch::Tensor logValues = torch::log10(torch::clamp(values, 1e-30, 1e30));
+		work = torch::where(logMask.to(values.device()) > 0, logValues, values);
+	}
+	return (work-biases.to(values.device()))/scalars.to(values.device());
+}

@@ -27,6 +27,7 @@
 #include <torch/csrc/autograd/generated/variable_factories.h>
 
 #include "ann/scriptnet.h"
+#include "tensoroperators.h"
 #include "tensoroptions.h"
 #include "ann/simplenet.h"
 #include "ann/convnet.h"
@@ -134,6 +135,51 @@ ann::Net::Net(const Json::Value& node)
 		}
 	}
 
+	if(node.isMember("outputLog"))
+	{
+		Json::Value log = node["outputLog"];
+		if(!log.isArray() || log.size() != outputSize)
+		{
+			Log(Log::WARN)<<"Could not get output log flags for network";
+			if(log.size() != outputSize)
+				Log(Log::WARN)<<"The array has the wrong size at "<<log.size();
+		}
+		else
+		{
+			outputLogMask = torch::zeros({outputSize}, tensorOptCpu<float>(false));
+			for(Json::ArrayIndex i = 0; i < log.size(); ++i)
+				outputLogMask[i] = log[i].asBool() ? 1.0f : 0.0f;
+		}
+	}
+
+	if(node.isMember("inputScalars") || node.isMember("inputBiases"))
+	{
+		Json::Value scalars = node["inputScalars"];
+		Json::Value biases = node["inputBiases"];
+		if(!scalars.isArray() || !biases.isArray() || scalars.size() != inputSize || biases.size() != inputSize)
+		{
+			Log(Log::WARN)<<"Could not get input normalization for network";
+		}
+		else
+		{
+			inputScalars = torch::zeros({inputSize}, tensorOptCpu<float>(false));
+			inputBiases = torch::zeros({inputSize}, tensorOptCpu<float>(false));
+			for(Json::ArrayIndex i = 0; i < scalars.size(); ++i)
+			{
+				inputScalars[i] = scalars[i].asFloat();
+				inputBiases[i] = biases[i].asFloat();
+			}
+		}
+	}
+
+	inputLogCount = node.get("inputLogCount", 0).asInt64();
+	inputLogFloor = node.get("inputLogFloor", DEFAULT_INPUT_LOG_FLOOR).asDouble();
+	if(inputLogCount < 0 || inputLogCount > inputSize)
+	{
+		Log(Log::WARN)<<"Network has an input log count of "<<inputLogCount<<" for an input size of "<<inputSize<<" ignoreing";
+		inputLogCount = 0;
+	}
+
 	if(node.isMember("inputFrequencies"))
 	{
 		Json::Value freqs = node["inputFrequencies"];
@@ -172,6 +218,77 @@ void ann::Net::setOutputBiases(const torch::Tensor& tensor)
 torch::Tensor ann::Net::getOutputBiases()
 {
 	return outputBiases;
+}
+
+void ann::Net::setOutputLogMask(const torch::Tensor& tensor)
+{
+	if(tensor.numel() == 0)
+	{
+		outputLogMask = torch::Tensor();
+		return;
+	}
+	assert(tensor.size(0) == getOutputSize());
+	outputLogMask = tensor.detach().clone();
+}
+
+torch::Tensor ann::Net::getOutputLogMask()
+{
+	return outputLogMask;
+}
+
+void ann::Net::setInputNormalization(const torch::Tensor& scalars, const torch::Tensor& biases,
+		int64_t logCount, double logFloor)
+{
+	if(scalars.numel() == 0)
+	{
+		inputScalars = torch::Tensor();
+		inputBiases = torch::Tensor();
+		inputLogCount = 0;
+		inputLogFloor = DEFAULT_INPUT_LOG_FLOOR;
+		return;
+	}
+	assert(scalars.size(0) == getInputSize());
+	assert(biases.size(0) == getInputSize());
+	assert(logCount >= 0 && logCount <= getInputSize());
+	inputScalars = scalars.detach().clone();
+	inputBiases = biases.detach().clone();
+	inputLogCount = logCount;
+	inputLogFloor = logFloor;
+}
+
+torch::Tensor ann::Net::getInputScalars()
+{
+	return inputScalars;
+}
+
+int64_t ann::Net::getInputLogCount() const
+{
+	return inputLogCount;
+}
+
+double ann::Net::getInputLogFloor() const
+{
+	return inputLogFloor;
+}
+
+torch::Tensor ann::Net::normalizeInput(torch::Tensor input) const
+{
+	// only the spectral features span many decades, anything appended behind them (temperature,
+	// ocv, ...) is already a small linear number
+	input = signedLog10Leading(input, inputLogCount, inputLogFloor);
+	if(inputScalars.numel() == 0)
+		return input;
+	return input*inputScalars.to(input.device()) + inputBiases.to(input.device());
+}
+
+torch::Tensor ann::Net::normalizeTarget(torch::Tensor target) const
+{
+	return physicalToAffine(target, outputScalars, outputBiases, outputLogMask);
+}
+
+torch::Tensor ann::Net::denormalizeOutput(torch::Tensor output) const
+{
+	return affineToPhysical(output, outputScalars, outputBiases, outputLogMask);
 }
 
 void ann::Net::getConfiguration(Json::Value& node)
@@ -220,6 +337,39 @@ void ann::Net::getConfiguration(Json::Value& node)
 	for(int64_t i = 0; i < outputSize; ++i)
 		biases[static_cast<int>(i)] = outputBiases[i].item().toFloat();
 	node["outputBiases"] = biases;
+
+	if(outputLogMask.numel() != 0)
+	{
+		assert(outputSize == outputLogMask.size(0));
+		Json::Value log(Json::ValueType::arrayValue);
+		log.resize(outputSize);
+		for(int64_t i = 0; i < outputSize; ++i)
+			log[static_cast<int>(i)] = outputLogMask[i].item().toFloat() != 0;
+		node["outputLog"] = log;
+	}
+
+	if(inputScalars.numel() != 0)
+	{
+		assert(inputSize == inputScalars.size(0));
+		assert(inputSize == inputBiases.size(0));
+		Json::Value inScalars(Json::ValueType::arrayValue);
+		Json::Value inBiases(Json::ValueType::arrayValue);
+		inScalars.resize(inputSize);
+		inBiases.resize(inputSize);
+		for(int64_t i = 0; i < inputSize; ++i)
+		{
+			inScalars[static_cast<int>(i)] = inputScalars[i].item().toFloat();
+			inBiases[static_cast<int>(i)] = inputBiases[i].item().toFloat();
+		}
+		node["inputScalars"] = inScalars;
+		node["inputBiases"] = inBiases;
+	}
+
+	if(inputLogCount != 0)
+	{
+		node["inputLogCount"] = inputLogCount;
+		node["inputLogFloor"] = inputLogFloor;
+	}
 
 	if(inputFrequencies.numel() != 0)
 	{

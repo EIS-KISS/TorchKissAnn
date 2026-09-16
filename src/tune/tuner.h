@@ -21,6 +21,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -86,12 +87,99 @@ struct TrialConfig
 	}
 };
 
+//! One point of a trial's learning curve, normalised over the two training loops: quality is
+//! the test accuracy for classification and the mean R2 for regression, perOutput is the
+//! per class accuracy or the R2 of every regression target.
+struct EpochRow
+{
+	size_t epoch;
+	double trainLoss;
+	double testLoss;
+	double quality;
+	std::vector<double> perOutput;
+};
+
+inline std::vector<double> toValueList(const torch::Tensor& tensor)
+{
+	std::vector<double> values;
+	if(!tensor.defined())
+		return values;
+	torch::Tensor flat = tensor.to(torch::kCPU).flatten();
+	values.reserve(flat.numel());
+	for(int64_t i = 0; i < flat.numel(); ++i)
+		values.push_back(flat[i].item<double>());
+	return values;
+}
+
 struct TrialResult
 {
 	TrialConfig config;
 	double loss = std::numeric_limits<double>::quiet_NaN();
 	bool ok = false;
 	std::string error;
+	uint64_t parameters = 0;
+	double seconds = 0;
+	std::vector<ann::classification::EpochStats> history;
+	std::vector<ann::regression::EpochStats> regressionHistory;
+
+	//! True when the regression loop produced the curve, which reports R2 instead of accuracy.
+	bool isRegression() const
+	{
+		return not regressionHistory.empty();
+	}
+
+	std::vector<EpochRow> rows() const
+	{
+		std::vector<EpochRow> rows;
+		if(isRegression())
+			for(const ann::regression::EpochStats& epoch : regressionHistory)
+				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
+					epoch.r2Mean, toValueList(epoch.r2)});
+		else
+			for(const ann::classification::EpochStats& epoch : history)
+				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
+					epoch.testAccuracy, toValueList(epoch.classAccuracy)});
+		return rows;
+	}
+
+	//! Index of the epoch with the lowest test loss, 0 if there is no curve.
+	size_t bestEpoch() const
+	{
+		std::vector<EpochRow> all = rows();
+		size_t best = 0;
+		double bestLoss = std::numeric_limits<double>::infinity();
+		for(size_t i = 0; i < all.size(); ++i)
+			if(std::isfinite(all[i].testLoss) && all[i].testLoss < bestLoss)
+			{
+				bestLoss = all[i].testLoss;
+				best = i;
+			}
+		return best;
+	}
+
+	double bestLoss() const
+	{
+		std::vector<EpochRow> all = rows();
+		if(all.empty())
+			return loss;
+		return all[bestEpoch()].testLoss;
+	}
+
+	double bestQuality() const
+	{
+		std::vector<EpochRow> all = rows();
+		if(all.empty())
+			return std::numeric_limits<double>::quiet_NaN();
+		return all[bestEpoch()].quality;
+	}
+
+	double finalQuality() const
+	{
+		std::vector<EpochRow> all = rows();
+		if(all.empty())
+			return std::numeric_limits<double>::quiet_NaN();
+		return all.back().quality;
+	}
 };
 
 inline ann::regression::regression_loss_type_t regressionLossFromConfig(const TrainLoss loss)
@@ -182,7 +270,9 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	{
 		rank++;
 		if(result.ok)
-			Log(Log::INFO)<<rank<<": loss="<<result.loss<<"  "<<result.config.describe();
+			Log(Log::INFO)<<rank<<": loss="<<result.loss<<" "<<(result.isRegression() ? "r2" : "acc")
+				<<"="<<result.bestQuality()<<" params="<<result.parameters
+				<<"  "<<result.config.describe();
 		else
 			Log(Log::INFO)<<rank<<": FAILED  "<<result.config.describe()<<"  ("<<result.error<<")";
 	}
@@ -199,25 +289,103 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"results.csv").string();
 		return;
 	}
-	csv<<"rank,loss,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,status,error\n";
+	csv<<"rank,trial,loss,bestEpoch,bestLoss,bestAccuracy,finalAccuracy,bestR2,finalR2,"
+		<<"parameters,seconds,metric,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,status,error\n";
 	rank = 0;
-	for(const TrialResult& result : results)
+	for(size_t i = 0; i < results.size(); ++i)
 	{
+		const TrialResult& result = results[i];
+		const bool regression = result.isRegression();
 		rank++;
-		csv<<rank<<',';
+		csv<<rank<<','<<i<<',';
 		if(result.ok)
-			csv<<result.loss;
-		csv<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
+			csv<<result.loss<<','<<result.bestEpoch()<<','<<result.bestLoss()<<','
+				<<(regression ? std::numeric_limits<double>::quiet_NaN() : result.bestQuality())<<','
+				<<(regression ? std::numeric_limits<double>::quiet_NaN() : result.finalQuality())<<','
+				<<(regression ? result.bestQuality() : std::numeric_limits<double>::quiet_NaN())<<','
+				<<(regression ? result.finalQuality() : std::numeric_limits<double>::quiet_NaN())<<','
+				<<result.parameters<<','<<result.seconds;
+		csv<<','<<(regression ? "r2" : "accuracy")
+			<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
 			<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
 			<<','<<result.config.learningRate<<','<<result.config.weightDecay
 			<<','<<(result.ok ? "ok" : "failed")<<",\""<<result.error<<"\"\n";
 	}
+	csv.close();
+
+	std::ofstream curves(config.outputDir/"curves.csv");
+	if(curves.is_open())
+	{
+		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,network,script,downsampleSteps,extraSteps,learningRate,weightDecay\n";
+		for(size_t i = 0; i < results.size(); ++i)
+		{
+			const TrialResult& result = results[i];
+			const bool regression = result.isRegression();
+			for(const EpochRow& epoch : result.rows())
+				curves<<i<<','<<epoch.epoch<<','<<epoch.trainLoss<<','<<epoch.testLoss<<','
+					<<(regression ? std::numeric_limits<double>::quiet_NaN() : epoch.quality)<<','
+					<<(regression ? epoch.quality : std::numeric_limits<double>::quiet_NaN())
+					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
+					<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+		}
+		curves.close();
+	}
+	else
+		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"curves.csv").string();
+
+	std::ofstream classAcc(config.outputDir/"classaccuracy.csv");
+	if(classAcc.is_open())
+	{
+		classAcc<<"trial,epoch,class,accuracy,network,script,learningRate,weightDecay\n";
+		for(size_t i = 0; i < results.size(); ++i)
+		{
+			const TrialResult& result = results[i];
+			if(result.isRegression() || result.history.empty())
+				continue;
+			const ann::classification::EpochStats& epoch = result.history[result.bestEpoch()];
+			if(!epoch.classAccuracy.defined())
+				continue;
+			torch::Tensor acc = epoch.classAccuracy.to(torch::kCPU);
+			acc = acc.flatten();
+			for(int64_t c = 0; c < acc.numel(); ++c)
+				classAcc<<i<<','<<epoch.epoch<<','<<c<<','<<acc[c].item<double>()
+					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+		}
+		classAcc.close();
+	}
+	else
+		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"classaccuracy.csv").string();
+
+	std::ofstream targetR2(config.outputDir/"targetr2.csv");
+	if(targetR2.is_open())
+	{
+		targetR2<<"trial,epoch,target,r2,network,script,learningRate,weightDecay\n";
+		for(size_t i = 0; i < results.size(); ++i)
+		{
+			const TrialResult& result = results[i];
+			if(!result.isRegression())
+				continue;
+			const std::vector<EpochRow> all = result.rows();
+			if(all.empty())
+				continue;
+			const EpochRow& epoch = all[result.bestEpoch()];
+			for(size_t t = 0; t < epoch.perOutput.size(); ++t)
+				targetR2<<i<<','<<epoch.epoch<<','<<t<<','<<epoch.perOutput[t]
+					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+		}
+		targetR2.close();
+	}
+	else
+		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"targetr2.csv").string();
 }
 
 template <typename TrainNetFn>
-static int runTrials(const Config& config, int64_t inputSize, int64_t outputSize, bool softmax, TrainNetFn&& trainNetFn)
+static int runTrials(const Config& config, NetKind defaultNetKind, int64_t inputSize, int64_t outputSize, bool softmax, TrainNetFn&& trainNetFn)
 {
-	std::vector<TrialConfig> trials = buildTrials(config, config.netType == NET_CONV ? NET_KIND_CONV : NET_KIND_SIMPLE);
+	std::vector<TrialConfig> trials = buildTrials(config, defaultNetKind);
 	if(trials.empty())
 	{
 		Log(Log::ERROR)<<"Nothing to tune, "<<(config.scriptDir.empty() ? "no configurations were specified" : "no TorchScript models were found in "+config.scriptDir.string());
@@ -241,8 +409,12 @@ static int runTrials(const Config& config, int64_t inputSize, int64_t outputSize
 		try
 		{
 			std::shared_ptr<ann::Net> net = makeNet(trial, softmax, inputSize, outputSize);
+			for(const torch::Tensor& param : net->parameters())
+				result.parameters += param.numel();
 			double testLoss = std::numeric_limits<double>::quiet_NaN();
-			int ret = trainNetFn(net, trial, &testLoss);
+			auto start = std::chrono::steady_clock::now();
+			int ret = trainNetFn(net, trial, &testLoss, &result);
+			result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 			if(ret != 0)
 				result.error = "training failed";
 			else if(!std::isfinite(testLoss))
@@ -296,22 +468,27 @@ static int runTrials(const Config& config, int64_t inputSize, int64_t outputSize
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 int searchRegression(const Config& config, RegressionDataset<DatasetType>* trainDataset, RegressionDataset<TestDatasetType>* testDataset)
 {
-	return runTrials(config, trainDataset->inputSize(), trainDataset->outputSize(), false,
-		[&](std::shared_ptr<ann::Net>& net, const TrialConfig& trial, double* testLoss) -> int
+	return runTrials(config, config.netType == NET_CONV ? NET_KIND_CONV : NET_KIND_SIMPLE,
+		trainDataset->inputSize(), trainDataset->outputSize(), false,
+		[&](std::shared_ptr<ann::Net>& net, const TrialConfig& trial, double* testLoss,
+			TrialResult* result) -> int
 		{
 			return ann::regression::train(nullptr, net, trainDataset, testDataset, config.epochs,
-				trial.learningRate, regressionLossFromConfig(config.loss), nullptr, trial.weightDecay, testLoss);
+				trial.learningRate, regressionLossFromConfig(config.loss), nullptr, trial.weightDecay, testLoss,
+				&result->regressionHistory);
 		});
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 int searchClassification(const Config& config, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset)
 {
-	return runTrials(config, trainDataset->inputSize(), trainDataset->outputSize(), true,
-		[&](std::shared_ptr<ann::Net>& net, const TrialConfig& trial, double* testLoss) -> int
+	return runTrials(config, config.mode == MODE_ANN_CONV ? NET_KIND_CONV : NET_KIND_SIMPLE,
+		trainDataset->inputSize(), trainDataset->outputSize(), true,
+		[&](std::shared_ptr<ann::Net>& net, const TrialConfig& trial, double* testLoss,
+			TrialResult* result) -> int
 		{
 			ann::classification::train(nullptr, net, trainDataset, testDataset, config.epochs,
-				trial.learningRate, config.noWeights, trial.weightDecay, testLoss);
+				trial.learningRate, config.noWeights, trial.weightDecay, testLoss, &result->history);
 			return 0;
 		});
 }

@@ -23,6 +23,8 @@
 #include <c10/core/DeviceType.h>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <vector>
 #include <torch/optim.h>
 #include <string>
 
@@ -51,12 +53,13 @@ void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets
 						 bool outputProb);
 
 template <typename DataLoader>
-void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
+float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
 		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, TrainLog* log = nullptr)
 {
 	size_t index = 0;
 	network->train();
 	float accF = 0;
+	float lossSum = 0;
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).pos_weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -89,6 +92,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 			acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum().to(torch::kCPU);
 		}
 		assert(!std::isnan(loss.template item<float>()));
+		lossSum += loss.template item<float>();
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -103,6 +107,7 @@ void trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::O
 				log->logTrainLoss(epoch, end, loss.template item<float>()*100, accF/end, data_size);
 		}
 	}
+	return index ? lossSum/static_cast<float>(index) : 0.0f;
 }
 
 template <typename DataLoader>
@@ -134,6 +139,15 @@ struct TestReturn
 	torch::Tensor histograms;
 	torch::Tensor acc;
 	double loss;
+};
+
+struct EpochStats
+{
+	size_t epoch;
+	double trainLoss;
+	double testLoss;
+	double testAccuracy;
+	torch::Tensor classAccuracy;
 };
 
 template <typename DataLoader>
@@ -170,7 +184,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		torch::Tensor data = batch.data.to(*offload_device);
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
-		at::autocast::set_autocast_enabled(at::kCUDA, true);
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
 
@@ -205,9 +218,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 
 		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();
-
-		at::autocast::clear_cache();
-		at::autocast::set_autocast_enabled(at::kCUDA, false);
 	}
 
 	bar.mark_as_completed();
@@ -232,7 +242,8 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset,
-		   size_t epochs, double learingRate, bool noWeights, double weightDecay = 0.01, double* finalTestLoss = nullptr)
+		   size_t epochs, double learingRate, bool noWeights, double weightDecay = 0.01, double* finalTestLoss = nullptr,
+		   std::vector<EpochStats>* history = nullptr)
 {
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	if(testDataset)
@@ -294,7 +305,7 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
-		trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
+		float trainLoss = trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
 			classWeights, trainDataset->isMulticlass(), trainLog);
 		if(testDataset)
 		{
@@ -302,7 +313,13 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 				classWeights, trainDataset->isMulticlass(), i, trainLog);
 			if(finalTestLoss)
 				*finalTestLoss = ret.loss;
+			if(history)
+				history->push_back(EpochStats{i, static_cast<double>(trainLoss), ret.loss,
+					ret.acc.sum().item<double>()/static_cast<double>(ret.acc.numel()), ret.acc});
 		}
+		else if(history)
+			history->push_back(EpochStats{i, static_cast<double>(trainLoss), std::numeric_limits<double>::quiet_NaN(),
+				std::numeric_limits<double>::quiet_NaN(), torch::Tensor()});
 
 		if(trainLog)
 			trainLog->saveNetwork(net);

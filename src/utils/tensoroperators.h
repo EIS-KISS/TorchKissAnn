@@ -67,3 +67,13 @@ torch::Tensor linearToComplex(torch::Tensor& tensor);
 std::string tensorToString(const torch::Tensor& tensor);
 
 torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim);
+
+torch::Tensor signedLog10(const torch::Tensor& values, double logFloor);
+
+torch::Tensor signedLog10Leading(const torch::Tensor& values, int64_t count, double logFloor);
+
+torch::Tensor affineToPhysical(const torch::Tensor& values, const torch::Tensor& scalars,
+		const torch::Tensor& biases, const torch::Tensor& logMask);
+
+torch::Tensor physicalToAffine(const torch::Tensor& values, const torch::Tensor& scalars,
+		const torch::Tensor& biases, const torch::Tensor& logMask);

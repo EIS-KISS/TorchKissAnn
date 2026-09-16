@@ -32,6 +32,12 @@ namespace ann
 
 class Net : public torch::nn::Module
 {
+public:
+	 // Smallest magnitude the signed log input compression still resolves. Impedance magnitudes
+	 // below this are mapped to zero, which keeps the noise floor of a measurement from being
+	 // amplified into the same range as the signal.
+	static constexpr double DEFAULT_INPUT_LOG_FLOOR = 1e-9;
+
 protected:
 	int64_t inputSize;
 	int64_t outputSize;
@@ -42,6 +48,11 @@ protected:
 	std::vector<std::pair<std::string, int64_t>> extraInputs;
 	torch::Tensor outputScalars;
 	torch::Tensor outputBiases;
+	torch::Tensor outputLogMask; //Entries with a set flag are interpreted as the exponent of a base ten power instead of as the value itself.
+	torch::Tensor inputScalars; // Affine transform applied to the raw dataset input before it reaches the network. Empty means the input is passed through unchanged.
+	torch::Tensor inputBiases;
+	int64_t inputLogCount = 0;
+	double inputLogFloor = DEFAULT_INPUT_LOG_FLOOR;
 	bool softmax;
 
 public:
@@ -60,9 +71,33 @@ public:
 	void setInputLabel(const std::string& inputLabel);
 	void setOutputScalars(const torch::Tensor& tensor);
 	void setOutputBiases(const torch::Tensor& tensor);
+	void setOutputLogMask(const torch::Tensor& tensor);
 	void setInputFrequencies(const torch::Tensor& tensor);
+	/**
+	 * Configure how a raw dataset input is turned into what the network sees. Empty scalars disable
+	 * the transform. logCount features at the front of the input vector are compressed with a
+	 * signed log first, which is what the spectral parts of an EIS input need.
+	 */
+	void setInputNormalization(const torch::Tensor& scalars, const torch::Tensor& biases,
+			int64_t logCount = 0, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
 	torch::Tensor getOutputScalars();
 	torch::Tensor getOutputBiases();
+	torch::Tensor getOutputLogMask();
+	torch::Tensor getInputScalars();
+	int64_t getInputLogCount() const;
+	double getInputLogFloor() const;
+	/**
+	 * Transform a raw dataset input into the space the network was trained in.
+	 */
+	torch::Tensor normalizeInput(torch::Tensor input) const;
+	/**
+	 * Transform physical targets into the space the network was trained in.
+	 */
+	torch::Tensor normalizeTarget(torch::Tensor target) const;
+	/**
+	 * Transform a raw network output into physical values.
+	 */
+	torch::Tensor denormalizeOutput(torch::Tensor output) const;
 	void setExtraInputs(const std::vector<std::pair<std::string, int64_t>>& in);
 	std::vector<std::pair<std::string, int64_t>> getExtraInputs();
 	virtual void getConfiguration(Json::Value& node);

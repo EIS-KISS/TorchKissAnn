@@ -39,6 +39,12 @@ std::shared_ptr<torch::CompilationUnit> compileModel(std::string modelstr)
 torch::Tensor runScriptModel(eis::Model& model, std::shared_ptr<torch::CompilationUnit> compiledScript,
 							torch::Tensor parameters, torch::Tensor omegas)
 {
+	// the generated script mixes the frequencies with the parameters in one expression, so both
+	// have to live on the same device; the dataset hands out the frequencies on the cpu while a
+	// trained network predicts on the gpu
+	if(omegas.device() != parameters.device())
+		omegas = omegas.to(parameters.device());
+
 	torch::Tensor result = compiledScript->run_method(model.getCompiledFunctionName(), parameters, omegas).toTensor();
 	assert(result.scalar_type() == torch::kComplexFloat || result.scalar_type() == torch::kComplexDouble);
 	assert(result.size(0) == omegas.numel());

@@ -33,6 +33,10 @@
  * frequency point is weighted by the impedance of the target at that point. This keeps points
  * that are many decades apart comparable and makes the value independent of the batch size and of
  * the absolute impedance of a sample.
+ *
+ * forward() applies log1p to that per point error before averaging: the raw value is heavy tailed
+ * and a single point where the target spectrum crosses zero would dominate the gradient. distance()
+ * keeps the raw mean so it stays usable as a metric.
  */
 class EisDistanceLoss : public  torch::nn::Module
 {
@@ -47,13 +51,27 @@ class EisDistanceLoss : public  torch::nn::Module
 	std::shared_ptr<torch::CompilationUnit> modelScript;
 	torch::Tensor parameterScalar;
 	torch::Tensor parameterBias;
+	torch::Tensor parameterLog;
 	double weightFloor;
+
+	/**
+	 * Bring the parameters of a prediction and the spectra of a target into the shape the
+	 * comparison needs: one row per frequency, one column per element of the batch.
+	 */
+	std::pair<torch::Tensor, torch::Tensor> prepareSpectra(torch::Tensor output, torch::Tensor targetSpectra) const;
+	/**
+	 * The squared relative deviation of every single frequency point of a predicted spectrum,
+	 * weighted by the impedance of the target at that point.
+	 */
+	torch::Tensor relativeErrorPerPoint(const torch::Tensor& predicted, const torch::Tensor& target) const;
 
 	public:
 		EisDistanceLoss(std::string modelString, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
-				torch::Tensor parameterBias = torch::Tensor(), double weightFloor = DEFAULT_WEIGHT_FLOOR);
+				torch::Tensor parameterBias = torch::Tensor(), torch::Tensor parameterLog = torch::Tensor(),
+				double weightFloor = DEFAULT_WEIGHT_FLOOR);
 		EisDistanceLoss(const eis::Model& model, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
-				torch::Tensor parameterBias = torch::Tensor(), double weightFloor = DEFAULT_WEIGHT_FLOOR);
+				torch::Tensor parameterBias = torch::Tensor(), torch::Tensor parameterLog = torch::Tensor(),
+				double weightFloor = DEFAULT_WEIGHT_FLOOR);
 
 		torch::Tensor forward(torch::Tensor output, torch::Tensor targets);
 		torch::Tensor distance(torch::Tensor output, torch::Tensor targetSpectra);

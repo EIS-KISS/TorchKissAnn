@@ -22,6 +22,8 @@
 #include <ATen/ops/logspace.h>
 #include <cstddef>
 #include <cstdint>
+#include <format>
+#include <limits>
 #include <torch/csrc/autograd/anomaly_mode.h>
 #include <torch/enum.h>
 #include <torch/nn/functional/loss.h>
@@ -65,7 +67,8 @@ std::pair<torch::Tensor, torch::Tensor> getTargetScalesAndBiases(const std::stri
 template <typename DataLoader, typename LossFn>
 int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 			LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, int64_t outputSize, TrainLog* log = nullptr, double* finalLoss = nullptr)
+			size_t data_size, int64_t outputSize, TrainLog* log = nullptr, double* finalLoss = nullptr,
+			float* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	network->train();
@@ -82,8 +85,8 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(*offload_device);
-		torch::Tensor targets = ((batch.target-network->getOutputBiases())/network->getOutputScalars()).to(*offload_device);
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
+		torch::Tensor targets = network->normalizeTarget(batch.target.to(*offload_device));
 
 		torch::Tensor prediction = network->forward(data);
 
@@ -154,6 +157,9 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	if(finalLoss)
 		*finalLoss = loss.item().toDouble();
 
+	if(meanTrainLoss)
+		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<float>::quiet_NaN();
+
 	return 0;
 }
 
@@ -165,6 +171,15 @@ struct TestReturn
 	torch::Tensor mse;
 	torch::Tensor r2;
 	double loss;
+};
+
+struct EpochStats
+{
+	size_t epoch;
+	double trainLoss;
+	double testLoss;
+	double r2Mean;
+	torch::Tensor r2;
 };
 
 template <typename DataLoader, typename LossFn>
@@ -191,8 +206,8 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	for(const auto& batch : loader)
 	{
 		bar.tick();
-		torch::Tensor data = batch.data.to(*offload_device);
-		torch::Tensor targets = ((batch.target-network->getOutputBiases())/network->getOutputScalars()).to(*offload_device);
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
+		torch::Tensor targets = network->normalizeTarget(batch.target.to(*offload_device));
 
 		torch::Tensor output = network->forward(data);
 
@@ -218,8 +233,9 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 
 	TestReturn ret;
 	ret.loss = (lossAccumulator / index);
-	ret.predictions = allpredictions.cpu()*network->getOutputScalars() + network->getOutputBiases();
-	ret.targets = alltargets.cpu()*network->getOutputScalars() + network->getOutputBiases();
+	// the r2 and mse above are computed in the normalized space the network works in, the predictions and targets handed out here are physical values again
+	ret.predictions = network->denormalizeOutput(allpredictions).cpu();
+	ret.targets = network->denormalizeOutput(alltargets).cpu();
 	ret.mse = alltargetmse.cpu();
 	ret.r2 = r2scores.cpu();
 
@@ -238,7 +254,7 @@ std::string purposeString(RegressionDataset<DatasetType>* dataset)
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<DatasetType>* trainDataset, RegressionDataset<TestDatasetType>* testDataset,
 		   size_t epochs, double learingRate, regression_loss_type_t loss = REG_LOSS_MSE, double* finalLoss = nullptr,
-		   double weightDecay = 0.001, double* finalTestLoss = nullptr)
+		   double weightDecay = 0.001, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr)
 {
 	static constexpr double LOSS_START_DECADE = -2;
 	static constexpr double LOSS_FINISH_DECADE = 5;
@@ -258,11 +274,17 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		Log(Log::WARN)<<"No test dataset provided!";
 	}
 
-	std::pair<torch::Tensor, torch::Tensor> scalarAndBias = trainDataset->getTargetScalesAndBias();
-	Log(Log::INFO)<<"Using output scalars:\n"<<scalarAndBias.first;
-	Log(Log::INFO)<<"Using output biases:\n"<<scalarAndBias.second;
-	net->setOutputScalars(scalarAndBias.first);
-	net->setOutputBiases(scalarAndBias.second);
+	RegressionNormalization norm = trainDataset->getNormalization();
+	Log(Log::INFO)<<"Using output scalars:\n"<<norm.targetScalars;
+	Log(Log::INFO)<<"Using output biases:\n"<<norm.targetBiases;
+	Log(Log::INFO)<<"Learning the outputs flagged here in the log domain:\n"<<norm.targetLogMask;
+	Log(Log::INFO)<<"Using input scalars:\n"<<norm.inputScalars;
+	Log(Log::INFO)<<"Using input biases:\n"<<norm.inputBiases;
+	Log(Log::INFO)<<"Compressing the leading "<<norm.inputLogCount<<" input features with a signed log around "<<std::format("{:g}", norm.inputLogFloor);
+	net->setOutputScalars(norm.targetScalars);
+	net->setOutputBiases(norm.targetBiases);
+	net->setOutputLogMask(norm.targetLogMask);
+	net->setInputNormalization(norm.inputScalars, norm.inputBiases, norm.inputLogCount, norm.inputLogFloor);
 
 	net->setPurpose(purposeString(trainDataset));
 	net->setExtraInputs(trainDataset->extraInputs());
@@ -276,9 +298,6 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	std::unique_ptr<EisDistanceLoss> lossEis;
 	if(loss == REG_LOSS_EIS)
 	{
-		// simulate at the frequencies the dataset was measured at, they are the ones the network
-		// sees and a synthetic grid over many decades is dominated by the points at which the
-		// impedance is largest
 		torch::Tensor omega = trainDataset->frequencies().value_or(torch::Tensor());
 		if(omega.numel() < 2)
 		{
@@ -288,7 +307,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		Log(Log::INFO)<<"Loss will simulate "<<omega.numel()<<" points from "<<omega.min().item<float>()
 			<<" to "<<omega.max().item<float>()<<" rad/s and will be based on "<<trainDataset->targetName();
 		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega,
-					scalarAndBias.first, scalarAndBias.second));
+					norm.targetScalars, norm.targetBiases, norm.targetLogMask));
 	}
 	else
 	{
@@ -324,14 +343,15 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{
 		int ret;
+		float meanTrainLoss = std::numeric_limits<float>::quiet_NaN();
 		if(lossEis)
 			 ret = trainImpl(net, *trainDataLoader,
 				*lossEis, optimizer, epoch, trainDataset->size().value(),
-				trainDataset->outputSize(), trainLog, finalLoss);
+				trainDataset->outputSize(), trainLog, finalLoss, &meanTrainLoss);
 		else
 			ret = trainImpl(net, *trainDataLoader,
 							*lossMse, optimizer, epoch, trainDataset->size().value(),
-							trainDataset->outputSize(), trainLog, finalLoss);
+							trainDataset->outputSize(), trainLog, finalLoss, &meanTrainLoss);
 		if(ret != 0)
 			return -1;
 
@@ -345,7 +365,14 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			Log(Log::INFO)<<"Test mse: "<<testret.mse;
 			if(finalTestLoss)
 				*finalTestLoss = testret.loss;
+			if(history)
+				history->push_back(EpochStats{epoch, static_cast<double>(meanTrainLoss), testret.loss,
+					testret.r2.mean().item<double>(), testret.r2});
 		}
+		else if(history)
+			history->push_back(EpochStats{epoch, static_cast<double>(meanTrainLoss),
+				std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(),
+				torch::Tensor()});
 
 
 		if(trainLog)
