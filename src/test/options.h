@@ -45,6 +45,7 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where testing logs will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
+  {"no-confustion",	-1, 0,				0,	"dont compute or output the confustion matrix"},
   {"network",		'n', "[PATH]",		0,	"path to the network to test"},
   {"ignore-missmatch",	'i', 0,			0,	"Ignore missmatches in label names"},
   { 0 }
@@ -61,6 +62,7 @@ struct Config
 	bool ignoreMissmatch = false;
 	bool inputImportance = false;
 	bool outputMoreImages = false;
+	bool confustionMatrix = true;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -108,6 +110,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'g':
 			config->outputMoreImages = true;
+			break;
+		case -1:
+			config->confustionMatrix = false;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

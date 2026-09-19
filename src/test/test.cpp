@@ -119,14 +119,22 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
 	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
-	Log(Log::INFO)<<"Test loss: "<<testRet.loss<<"\nAcc:\n"<<tensorToString(testRet.acc);
-	/*Log(Log::INFO)<<"Class Historgrams:\n";
-	for(int i = 0; i < testRet.histograms.size(0); ++i)
+
+	Log(Log::INFO)<<"Test loss:"<<testRet.loss;
+	Log(Log::INFO)<<"Acc:";
+
+	for(size_t i = 0; i < dataset.outputSize(); ++i)
+		Log(Log::INFO, false)<<dataset.outputName(i)<<", ";
+	Log(Log::INFO)<<'\n'<<tensorToString(testRet.acc);
+
+	if(config.confustionMatrix)
 	{
-		Log(Log::INFO)<<"Class "<<i<<":\n";
-		for(int j = 0; j < testRet.histograms.size(1); ++i)
-			Log(Log::INFO)<<tensorToString(testRet.histograms.select(i, j))<<'\n';
-	}*/
+		torch::Tensor confustionMatrix = ann::classification::confusion(net, *dataLoader);
+		Log(Log::INFO)<<"Confusion matrix:";
+		for(size_t i = 0; i < dataset.outputSize(); ++i)
+			Log(Log::INFO, false)<<dataset.outputName(i)<<", ";
+		Log(Log::INFO)<<'\n'<<tensorToString(confustionMatrix)<<'\n';
+	}
 
 	if(config.inputImportance)
 	{
