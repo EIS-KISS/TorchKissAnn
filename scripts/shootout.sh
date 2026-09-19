@@ -42,6 +42,7 @@ OUT="${1:-$(pwd)/shootout}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TUNE="$REPO/build/src/tune/torchkissann_tune"
 DATASETINFO="$REPO/build/src/datasetinfo/torchkissann_datasetinfo"
+BENCH="$REPO/build/src/bench/torchkissann_bench"
 MODELLIST="${MODELLIST:-$HOME/Programming/kiss/KissDatasetGenerator/modellists/curated.txt}"
 
 EPOCHS="${EPOCHS:-20}"
@@ -55,6 +56,10 @@ NATIVE_LRS="${NATIVE_LRS:-0.005,0.001}"
 NATIVE_WD="${NATIVE_WD:-0.001}"
 DOWNSAMPLE_STEPS="${DOWNSAMPLE_STEPS:-2,3,4,6}"
 EXTRA_STEPS="${EXTRA_STEPS:-0,3,6}"
+# Benchmark settings: batch matches the tuner default, the rest control the timing loop.
+BENCH_BATCH="${BENCH_BATCH:-256}"
+BENCH_WARMUP="${BENCH_WARMUP:-10}"
+BENCH_ITERS="${BENCH_ITERS:-30}"
 # Device 0 is normally the card that serves the desktop and everything else, use the
 # free MI100 when the machine has one (its uuid is exported as MI100A).
 export ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-${MI100A:-}}"
@@ -182,6 +187,35 @@ find "$OUT/jobs" -name '*.sh' | sort |
 echo "elapsed: $((($(date +%s) - start) / 60)) minutes"
 echo "failed jobs: $(wc -l < "$OUT/failed.txt")"
 sed 's/^/  /' "$OUT/failed.txt"
+
+echo "== benchmark =="
+# Measure the per iteration compute cost of every architecture on random data, so the summary
+# can plot accuracy against runtime instead of against the parameter count, which barely
+# predicts it. One row per architecture in bench.csv, joined to the results by the architecture
+# identity: the TorchScript file, or the network and its taper.
+if [ -x "$BENCH" ]; then
+	BENCHCSV="$OUT/bench.csv"
+	: > "$BENCHCSV"
+	for file in "$OUT"/nets_all/*.pt; do
+		[ -e "$file" ] || continue
+		"$BENCH" -n script -s "$file" -i "$FREQS" -b "$BENCH_BATCH" -w "$BENCH_WARMUP" -x "$BENCH_ITERS" \
+			-S "$TRAINSIZE" -o "$BENCHCSV" > "$OUT/logs/bench_$(basename "$file" .pt).log" 2>&1 \
+			|| echo "warning: benchmark failed for $(basename "$file")"
+	done
+	for net in simple conv; do
+		for ds in ${DOWNSAMPLE_STEPS//,/ }; do
+			for extra in ${EXTRA_STEPS//,/ }; do
+				"$BENCH" -n "$net" -i "$FREQS" -O 19 -D "$ds" -E "$extra" -b "$BENCH_BATCH" \
+					-w "$BENCH_WARMUP" -x "$BENCH_ITERS" -S "$TRAINSIZE" -o "$BENCHCSV" \
+					> "$OUT/logs/bench_${net}_ds${ds}_ex${extra}.log" 2>&1 \
+					|| echo "warning: benchmark failed for $net ds$ds ex$extra"
+			done
+		done
+	done
+	echo "  $(($(wc -l < "$BENCHCSV") - 1)) architectures benchmarked -> bench.csv"
+else
+	echo "  $BENCH is missing, skipping the benchmark"
+fi
 
 echo "== aggregating =="
 python3 "$REPO/scripts/shootoutplot.py" "$OUT" || echo "warning: aggregation failed"

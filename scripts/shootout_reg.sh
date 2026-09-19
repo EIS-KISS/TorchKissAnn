@@ -62,6 +62,7 @@ OUT="${1:-$(pwd)/shootout_reg}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TUNE="$REPO/build/src/tune/torchkissann_tune"
 DATASETINFO="$REPO/build/src/datasetinfo/torchkissann_datasetinfo"
+BENCH="$REPO/build/src/bench/torchkissann_bench"
 
 # The circuits to train on, all from KissDatasetGenerator/modellists/curated.txt. An entry may
 # carry a short tag ("rpp=rp-p"), without one the tag is the circuit with every non
@@ -84,6 +85,10 @@ NATIVE_WD="${NATIVE_WD:-0.001}"
 # The taper of the native networks, up to 16 stages and 16 constant width extra layers.
 DOWNSAMPLE_STEPS="${DOWNSAMPLE_STEPS:-2,4,8,16}"
 EXTRA_STEPS="${EXTRA_STEPS:-0,4,8,16}"
+# Benchmark settings: batch matches the tuner default, the rest control the timing loop.
+BENCH_BATCH="${BENCH_BATCH:-256}"
+BENCH_WARMUP="${BENCH_WARMUP:-10}"
+BENCH_ITERS="${BENCH_ITERS:-30}"
 
 # The cards to use, by rocm uuid. GPU_WEIGHTS is the relative throughput of each card in
 # percent, only used to decide how much work each queue gets. The default is measured, not
@@ -339,6 +344,41 @@ wait "${pids[@]}"
 echo "elapsed: $((($(date +%s) - start) / 60)) minutes"
 echo "failed jobs: $(wc -l < "$OUT/failed.txt")"
 sed 's/^/  /' "$OUT/failed.txt"
+
+echo "== benchmark =="
+# Measure the per iteration compute cost of every architecture on random data, so the summary
+# can plot R2 against runtime instead of against the parameter count, which barely predicts it.
+# The cost depends on the target count, so every architecture is benchmarked once per distinct
+# target count; bench.csv is joined to the results by the TorchScript file, or by the network,
+# its taper and the output size.
+if [ -x "$BENCH" ]; then
+	BENCHCSV="$OUT/bench.csv"
+	: > "$BENCHCSV"
+	declare -A BENCH_SEEN
+	for targets in "${TARGETS[@]}"; do
+		[ -z "${BENCH_SEEN[$targets]:-}" ] || continue
+		BENCH_SEEN[$targets]=1
+		for file in "$OUT"/nets_all_t"$targets"/*.pt; do
+			[ -e "$file" ] || continue
+			"$BENCH" -n script -s "$file" -i "$FREQS" -b "$BENCH_BATCH" -w "$BENCH_WARMUP" -x "$BENCH_ITERS" \
+				-o "$BENCHCSV" > "$OUT/logs/bench_t${targets}_$(basename "$file" .pt).log" 2>&1 \
+				|| echo "warning: benchmark failed for $(basename "$file")"
+		done
+		for net in simple conv; do
+			for ds in ${DOWNSAMPLE_STEPS//,/ }; do
+				for extra in ${EXTRA_STEPS//,/ }; do
+					"$BENCH" -n "$net" -i "$FREQS" -O "$targets" -D "$ds" -E "$extra" \
+						-b "$BENCH_BATCH" -w "$BENCH_WARMUP" -x "$BENCH_ITERS" -o "$BENCHCSV" \
+						> "$OUT/logs/bench_t${targets}_${net}_ds${ds}_ex${extra}.log" 2>&1 \
+						|| echo "warning: benchmark failed for $net ds$ds ex$extra t$targets"
+				done
+			done
+		done
+	done
+	echo "  $(($(wc -l < "$BENCHCSV") - 1)) architectures benchmarked -> bench.csv"
+else
+	echo "  $BENCH is missing, skipping the benchmark"
+fi
 
 echo "== aggregating =="
 python3 "$REPO/scripts/shootoutregplot.py" "$OUT" --epochs "$EPOCHS" || echo "warning: aggregation failed"

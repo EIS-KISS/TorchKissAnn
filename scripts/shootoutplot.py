@@ -220,6 +220,68 @@ def plotAccuracyVsParams(trials: pd.DataFrame, summary: Path, longTrials: pd.Dat
 	plt.close(fig)
 
 
+def loadRuntime(outdir: Path) -> pd.DataFrame:
+	"""Read the per architecture compute cost written by the torchkissann_bench step."""
+	path = outdir / "bench.csv"
+	if not path.exists():
+		return pd.DataFrame()
+	frame = pd.read_csv(path)
+	if frame.empty:
+		return frame
+	frame["script"] = frame["script"].fillna("")
+	return frame
+
+
+def runtimeKey(row) -> tuple:
+	"""The architecture identity that joins a bench row to a trial row.
+
+	TorchScript models are identified by their file, native ones by network and taper; the
+	parameter count is deliberately not part of the key, since the whole point is that it does
+	not predict the runtime.
+	"""
+	script = row.get("script", "")
+	if not isinstance(script, str) or not script:
+		script = ""
+	if script:
+		return ("s", script)
+
+	def asInt(value):
+		try:
+			return int(value)
+		except (TypeError, ValueError):
+			return -1
+
+	return ("n", row.get("network", ""), asInt(row.get("downsampleSteps")), asInt(row.get("extraSteps")))
+
+
+def addRuntime(best: pd.DataFrame, runtimeMs: dict) -> pd.DataFrame:
+	"""Attach the median ms per iteration of each model's architecture, NaN where not benched."""
+	best = best.copy()
+	best["runtimeMs"] = [runtimeMs.get(runtimeKey(row), float("nan")) for _, row in best.iterrows()]
+	return best
+
+
+def plotAccuracyVsRuntime(best: pd.DataFrame, summary: Path):
+	"""Model quality against compute cost, the point being that parameters do not predict runtime."""
+	measured = best[best["runtimeMs"].notna()]
+	if measured.empty:
+		return
+	fig, ax = plt.subplots(figsize=(9.5, 6.5))
+	for _, row in measured.iterrows():
+		ax.scatter(row["runtimeMs"], row["bestAccuracy"], s=60, marker="o", color="0.0")
+		ax.annotate(row["model"], (row["runtimeMs"], row["bestAccuracy"]),
+					textcoords="offset points", xytext=(6, 3), fontsize=8)
+	ax.set_xscale("log")
+	ax.set_xlabel("median ms per training iteration (forward + backward + step)")
+	ax.set_ylabel("best test accuracy")
+	ax.set_title("Accuracy against compute cost, best hyperparameters per model\n"
+				 "(MI100, batch 256, random data)")
+	ax.grid(True, which="both", alpha=0.3)
+	fig.tight_layout()
+	fig.savefig(summary / "accuracy_vs_runtime.pdf", dpi=140)
+	plt.close(fig)
+
+
 def plotLearningRate(trials: pd.DataFrame, summary: Path):
 	ok = trials[trials["status"] == "ok"]
 	for decay, group in ok.groupby("weightDecay"):
@@ -588,7 +650,8 @@ def markdownTable(frame: pd.DataFrame) -> str:
 
 
 def writeReport(outdir: Path, trials: pd.DataFrame, accuracy: pd.DataFrame, summary: Path,
-				epochs: int, long: dict = None, longConvergenceTable: pd.DataFrame = None):
+				epochs: int, long: dict = None, longConvergenceTable: pd.DataFrame = None,
+				bestRuntime: pd.DataFrame = None):
 	ok = trials[trials["status"] == "ok"]
 	names, _ = readReport(outdir / "dataset_report_test.txt")
 	lines = ["# Classification shootout", "",
@@ -605,6 +668,18 @@ def writeReport(outdir: Path, trials: pd.DataFrame, accuracy: pd.DataFrame, summ
 				  markdownTable(ok.sort_values("bestAccuracy", ascending=False)[columns].head(30)), ""]
 		lines += ["## Best configuration per architecture", "",
 				  markdownTable(bestPerModel(trials).sort_values("bestAccuracy", ascending=False)[columns]), ""]
+
+		if bestRuntime is not None and bestRuntime["runtimeMs"].notna().any():
+			bench = bestRuntime[bestRuntime["runtimeMs"].notna()].sort_values("runtimeMs")
+			lines += ["## Compute cost", "",
+					  "Median wall clock of one forward + backward + optimiser step on the MI100 at",
+					  "batch 256 over random data (`torchkissann_bench`), the best configuration of",
+					  "every architecture. Total training time is this times the iterations per epoch,",
+					  "so it is directly comparable across the models. Note how little it tracks the",
+					  "parameter count: the recurrent and transformer models are launch bound and slow",
+					  "per step despite few parameters.", "",
+					  markdownTable(bench[["model", "source", "parameters", "runtimeMs", "bestAccuracy"]].round(4)), "",
+					  "![accuracy against compute cost](accuracy_vs_runtime.pdf)", ""]
 
 		native = ok[ok["source"] == "native"]
 		if not native.empty:
@@ -675,6 +750,15 @@ def main():
 			   "bestAccuracy", "finalAccuracy", "seconds", "status", "error"]
 	trials[columns].sort_values("bestAccuracy", ascending=False).to_csv(summary / "trials.csv", index=False)
 	bestPerModel(trials)[columns].to_csv(summary / "models.csv", index=False)
+
+	# the compute cost of every architecture from the torchkissann_bench step, joined by identity
+	runtimeFrame = loadRuntime(args.outdir)
+	runtimeMs = {runtimeKey(row): row["medianMs"] for _, row in runtimeFrame.iterrows()} \
+		if not runtimeFrame.empty else {}
+	bestRuntime = addRuntime(bestPerModel(trials), runtimeMs)
+	if runtimeMs:
+		bestRuntime[["model", "source", "parameters", "runtimeMs", "bestAccuracy"]] \
+			.sort_values("runtimeMs").to_csv(summary / "runtime.csv", index=False)
 	if not curves.empty:
 		curves.to_csv(summary / "curves.csv", index=False)
 	if not accuracy.empty:
@@ -694,6 +778,7 @@ def main():
 		longConvergenceTable.to_csv(summary / "long_convergence.csv", index=False)
 
 	plotAccuracyVsParams(trials, summary, long["trials"])
+	plotAccuracyVsRuntime(bestRuntime, summary)
 	plotLearningRate(trials, summary)
 	plotWeightDecay(trials, summary)
 	plotChannels(trials, summary)
@@ -706,7 +791,7 @@ def main():
 	plotLongRankingShift(longConvergenceTable, args.epochs, summary)
 	plotLongClassAccuracy(long, summary)
 	writeReport(args.outdir, trials, accuracy, summary, args.epochs,
-				long, longConvergenceTable)
+				long, longConvergenceTable, bestRuntime)
 
 	ok = trials[trials["status"] == "ok"]
 	print(f"{len(trials)} trials, {len(ok)} succeeded")

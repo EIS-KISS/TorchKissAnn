@@ -241,6 +241,9 @@ def crossCircuit(trials: pd.DataFrame, circuits: list) -> pd.DataFrame:
 	combined["meanR2"] = perCircuit.mean(axis=1, skipna=True)
 	combined["worstR2"] = perCircuit.min(axis=1)
 	combined["circuits"] = perCircuit.notna().sum(axis=1)
+	if "runtimeMs" in best.columns:
+		runtime = best.pivot_table(index="config", columns="dataset", values="runtimeMs")
+		combined["meanRuntime"] = runtime.mean(axis=1, skipna=True)
 	combined = combined.reset_index()
 	return combined.sort_values(["meanR2", "worstR2"], ascending=False).reset_index(drop=True)
 
@@ -390,6 +393,75 @@ def plotR2VsParams(configs: pd.DataFrame, summary: Path, longConfigs: pd.DataFra
 	ax.grid(True, which="both", alpha=0.3)
 	fig.tight_layout()
 	fig.savefig(summary / "r2_vs_parameters.pdf", dpi=140)
+	plt.close(fig)
+
+
+def loadRuntime(outdir: Path) -> pd.DataFrame:
+	"""Read the per architecture compute cost written by the torchkissann_bench step."""
+	path = outdir / "bench.csv"
+	if not path.exists():
+		return pd.DataFrame()
+	frame = pd.read_csv(path)
+	if frame.empty:
+		return frame
+	frame["script"] = frame["script"].fillna("")
+	return frame
+
+
+def runtimeKey(row, outputSize) -> tuple:
+	"""The architecture identity that joins a bench row to a trial row.
+
+	TorchScript models are identified by their file, whose name already carries the target
+	count, so the file alone is unique. Native networks need the output size in the key, since
+	the same taper costs different amounts of compute per circuit. The parameter count is
+	deliberately not part of the key, since the whole point is that it does not predict runtime.
+	"""
+	script = row.get("script", "")
+	if not isinstance(script, str) or pd.isna(script):
+		script = ""
+	if script:
+		return ("s", script)
+
+	def asInt(value):
+		try:
+			return int(value)
+		except (TypeError, ValueError):
+			return -1
+
+	return ("n", row.get("network", ""), asInt(row.get("downsampleSteps")),
+			asInt(row.get("extraSteps")), asInt(outputSize))
+
+
+def addRuntime(trials: pd.DataFrame, runtimeMs: dict, targetsByDataset: dict) -> pd.DataFrame:
+	"""Attach the median ms per iteration of each trial's architecture, NaN where not benched."""
+	trials = trials.copy()
+
+	def key(row):
+		return runtimeKey(row, targetsByDataset.get(row.get("dataset", ""), None))
+
+	trials["runtimeMs"] = [runtimeMs.get(key(row), float("nan")) for _, row in trials.iterrows()]
+	return trials
+
+
+def plotR2VsRuntime(configs: pd.DataFrame, summary: Path):
+	"""Parameter recovery against compute cost, the point being that parameters do not predict it."""
+	best = bestPerModelConfigs(configs)
+	measured = best[best["meanRuntime"].notna()] if "meanRuntime" in best else best.iloc[0:0]
+	if measured.empty:
+		return
+	fig, ax = plt.subplots(figsize=(9.5, 6.5))
+	for _, row in measured.iterrows():
+		ax.scatter(row["meanRuntime"], row["meanR2"], s=60, marker="o", color="0.0")
+		ax.annotate(row["model"], (row["meanRuntime"], row["meanR2"]),
+					textcoords="offset points", xytext=(6, 3), fontsize=8)
+	ax.set_xscale("log")
+	ax.set_xlabel("median ms per training iteration (forward + backward + step), mean over circuits")
+	ax.set_ylabel("mean R2 over all circuits")
+	ax.set_title("Parameter recovery against compute cost, best hyperparameters per model\n"
+				 "(MI100, batch 256, random data)")
+	ax.grid(True, which="both", alpha=0.3)
+	fig.tight_layout()
+	fig.savefig(summary / "r2_vs_runtime.pdf", dpi=140)
 	plt.close(fig)
 
 
@@ -871,6 +943,19 @@ def writeReport(outdir: Path, trials: pd.DataFrame, configs: pd.DataFrame,
 					  f"of mean R2: {best.iloc[0]['model']} at {best.iloc[0]['meanR2']:.4f} down to "
 					  f"{best.iloc[-1]['model']} at {best.iloc[-1]['meanR2']:.4f}.", ""]
 
+		if "meanRuntime" in best and best["meanRuntime"].notna().any():
+			bench = best[best["meanRuntime"].notna()].sort_values("meanRuntime")
+			lines += ["## Compute cost", "",
+					  "Median wall clock of one forward + backward + optimiser step on the MI100 at",
+					  "batch 256 over random data (`torchkissann_bench`), averaged over the circuits,",
+					  "for the best configuration of every architecture. Total training time is this",
+					  "times the iterations per epoch, so it is directly comparable across models.",
+					  "Note how little it tracks the parameter count: the recurrent and transformer",
+					  "models are launch bound and slow per step despite few parameters.", "",
+					  markdownTable(bench[["model", "source", "parameters", "meanRuntime",
+											"meanR2"]].round(4)), "",
+					  "![R2 against compute cost](r2_vs_runtime.pdf)", ""]
+
 		native = configs[configs["source"] == "native"]
 		if not native.empty:
 			grid = native.pivot_table(index=["network", "learningRate", "downsampleSteps"],
@@ -981,6 +1066,13 @@ def main():
 	tags = [str(tag) for tag in circuits["tag"]]
 	names = {tag: readTargetNames(args.outdir, tag) for tag in tags}
 	trials = loadTrials(args.outdir, tags)
+	# the compute cost of every architecture, joined onto each trial by its circuit's target count
+	targetsByDataset = {str(row["tag"]): row["targets"] for _, row in circuits.iterrows()}
+	runtimeFrame = loadRuntime(args.outdir)
+	runtimeMs = {runtimeKey(row, row.get("outputSize")): row["medianMs"]
+				 for _, row in runtimeFrame.iterrows()} if not runtimeFrame.empty else {}
+	if runtimeMs:
+		trials = addRuntime(trials, runtimeMs, targetsByDataset)
 	curves = describe(readJobTable(args.outdir, "curves.csv", tags=tags))
 	targetR2 = readJobTable(args.outdir, "targetr2.csv", tags=tags)
 	for frame in (curves, targetR2):
@@ -1015,6 +1107,10 @@ def main():
 		configs.to_csv(summary / "configs.csv", index=False)
 		best = bestPerModelConfigs(configs)
 		best.to_csv(summary / "models.csv", index=False)
+		if "meanRuntime" in best:
+			best[best["meanRuntime"].notna()][["model", "source", "parameters",
+											   "meanRuntime", "meanR2"]].sort_values("meanRuntime") \
+				.to_csv(summary / "runtime.csv", index=False)
 	if not curves.empty:
 		curves.to_csv(summary / "curves.csv", index=False)
 	if not targetR2.empty:
@@ -1049,6 +1145,7 @@ def main():
 
 	plotMeanR2(configs, tags, summary)
 	plotR2VsParams(configs, summary, longConfigs)
+	plotR2VsRuntime(configs, summary)
 	plotLearningRate(configs, summary)
 	plotWeightDecay(configs, summary)
 	plotChannels(configs, summary)
