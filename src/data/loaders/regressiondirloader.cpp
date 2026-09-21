@@ -48,16 +48,17 @@ torch::data::Example<torch::Tensor, torch::Tensor> RegressionLoaderDir::getImpl(
 	std::vector<std::string> extraInputNames = pair.first;
 
 	torch::Tensor input;
+	std::vector<eis::DataPoint> data = resampleCanonical(spectra.data);
 	if(extraInputNames.empty())
 	{
-		 input = eisToTorch(spectra.data);
+		 input = eisToTorch(data);
 	}
 	else
 	{
 		std::vector<fvalue> extraInputs;
 		for(const std::string& name : labelNames)
 			extraInputs.push_back(spectra.getLabel(name));
-		input = eisToTorchExtra(spectra.data, extraInputs);
+		input = eisToTorchExtra(data, extraInputs);
 	}
 
 	torch::TensorOptions options;

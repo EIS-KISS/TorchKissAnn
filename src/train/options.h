@@ -35,6 +35,16 @@ inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that trains models for TorchKissAnn";
 static char args_doc[] = "";
 
+enum
+{
+	OPT_CANONICAL_FMIN = 0x100,
+	OPT_CANONICAL_FMAX,
+	OPT_CANONICAL_POINTS,
+	OPT_CANONICAL_LINEAR,
+	OPT_CANONICAL_AUGMENT_SHIFT,
+	OPT_CANONICAL_AUGMENT_WINDOW
+};
+
 static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
@@ -54,6 +64,12 @@ static struct argp_option options[] =
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
   {"latent-size",	'a', "[NUMBER]",	0, 	"Size of the latent vector for the autoencoder"},
   {"kl-beta",		'k', "[NUMBER]",	0, 	"Weight of the KL divergence term in the vae loss, default: 1"},
+  {"canonical-fmin",		OPT_CANONICAL_FMIN, "[NUMBER]", 0, "Lower edge of the canonical grid (rad/s, same unit as the data's omega column); enables canonical resampling together with --canonical-fmax"},
+  {"canonical-fmax",		OPT_CANONICAL_FMAX, "[NUMBER]", 0, "Upper frequency bound (Hz) of the canonical grid"},
+  {"canonical-points",		OPT_CANONICAL_POINTS, "[NUMBER]", 0, "Number of points on the canonical grid (default: taken from the first spectra)"},
+  {"canonical-linear",		OPT_CANONICAL_LINEAR, 0, 0, "Use a linearly spaced canonical grid instead of logarithmic"},
+  {"canonical-augment-shift",	OPT_CANONICAL_AUGMENT_SHIFT, "[NUMBER]", 0, "Classification only: randomly shift each training spectra along the log frequency axis by up to this many decades (default when canonical is on: 1, set 0 to disable)"},
+  {"canonical-augment-window",	OPT_CANONICAL_AUGMENT_WINDOW, "[NUMBER]", 0, "Crop each training spectra to a random contiguous sub-range keeping at least this fraction of the points, then resample (valid for regression too; default 1 = disabled, e.g. 0.5 crops down to half)"},
   { 0 }
 };
 
@@ -172,6 +188,17 @@ struct Config
 	TrainLoss loss = LOSS_MSE;
 	bool noGpu = false;
 	bool noWeights = false;
+	// Canonical frequency grid: resample every spectra onto a fixed grid so the same
+	// feature lands at the same input index regardless of the measured frequency range.
+	// Enabled when both canonicalFMin and canonicalFMax are given (see check_options).
+	bool canonical = false;
+	double canonicalFMin = 0;
+	double canonicalFMax = 0;
+	size_t canonicalPoints = 0;
+	bool canonicalLog = true;
+	double canonicalAugmentMaxShift = 1.0;   // decades; 0 disables shift augmentation
+	double canonicalAugmentWindowMin = 1.0;  // minimum fraction of points kept when windowing; 1 disables
+	bool canonicalAugmentShiftRequested = false; // set when --canonical-augment-shift was passed explicitly
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -247,6 +274,25 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'k':
 			config->klBeta = std::stod(std::string(arg));
+			break;
+		case OPT_CANONICAL_FMIN:
+			config->canonicalFMin = std::stod(std::string(arg));
+			break;
+		case OPT_CANONICAL_FMAX:
+			config->canonicalFMax = std::stod(std::string(arg));
+			break;
+		case OPT_CANONICAL_POINTS:
+			config->canonicalPoints = std::stoul(std::string(arg));
+			break;
+		case OPT_CANONICAL_LINEAR:
+			config->canonicalLog = false;
+			break;
+		case OPT_CANONICAL_AUGMENT_SHIFT:
+			config->canonicalAugmentMaxShift = std::stod(std::string(arg));
+			config->canonicalAugmentShiftRequested = true;
+			break;
+		case OPT_CANONICAL_AUGMENT_WINDOW:
+			config->canonicalAugmentWindowMin = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

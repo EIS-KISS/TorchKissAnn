@@ -196,6 +196,12 @@ ann::Net::Net(const Json::Value& node)
 				inputFrequencies[i] = freqs[i].asFloat();
 		}
 	}
+
+	canonicalGrid = node.get("canonicalGrid", false).asBool();
+	canonicalFMin = node.get("canonicalFMin", 0.0).asDouble();
+	canonicalFMax = node.get("canonicalFMax", 0.0).asDouble();
+	canonicalPoints = node.get("canonicalPoints", (Json::Int64)0).asInt64();
+	canonicalLog = node.get("canonicalLog", true).asBool();
 }
 
 void ann::Net::setOutputScalars(const torch::Tensor& tensor)
@@ -381,6 +387,49 @@ void ann::Net::getConfiguration(Json::Value& node)
 			frequencies[static_cast<int>(i)] = inputFrequencies[i].item().toFloat();
 		node["inputFrequencies"] = frequencies;
 	}
+
+	if(canonicalGrid)
+	{
+		node["canonicalGrid"] = true;
+		node["canonicalFMin"] = canonicalFMin;
+		node["canonicalFMax"] = canonicalFMax;
+		node["canonicalPoints"] = (Json::Int64)canonicalPoints;
+		node["canonicalLog"] = canonicalLog;
+	}
+}
+
+void ann::Net::setCanonicalGrid(double fMin, double fMax, int64_t points, bool log)
+{
+	canonicalGrid = true;
+	canonicalFMin = fMin;
+	canonicalFMax = fMax;
+	canonicalPoints = points;
+	canonicalLog = log;
+}
+
+bool ann::Net::hasCanonicalGrid() const
+{
+	return canonicalGrid;
+}
+
+double ann::Net::getCanonicalFMin() const
+{
+	return canonicalFMin;
+}
+
+double ann::Net::getCanonicalFMax() const
+{
+	return canonicalFMax;
+}
+
+int64_t ann::Net::getCanonicalPoints() const
+{
+	return canonicalPoints;
+}
+
+bool ann::Net::getCanonicalLog() const
+{
+	return canonicalLog;
 }
 
 void ann::Net::setInputFrequencies(const torch::Tensor& tensor)

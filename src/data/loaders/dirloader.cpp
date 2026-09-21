@@ -108,7 +108,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t
 	torch::Tensor output = torch::zeros({1}, options);
 	output[0] = static_cast<float>(classIndexes[index]);
 
-	torch::Tensor input = eisToTorch(data.data);
+	torch::Tensor input = eisToTorch(resampleCanonical(data.data));
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
 }
 

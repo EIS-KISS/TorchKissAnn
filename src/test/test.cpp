@@ -48,6 +48,28 @@
 #include "save.h"
 #include "colortabel.h"
 #include "data/eistotorch.h"
+#include "data/loaders/eisspectradataset.h"
+
+// Rebuild the canonical grid recorded in the network onto a test dataset so the test spectra are
+// resampled onto the same grid the network was trained on. No-op when the network has no grid.
+template <typename T>
+static void applyCanonicalFromNet(const std::shared_ptr<ann::Net>& net, T& dataset)
+{
+	if(!net->hasCanonicalGrid())
+		return;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+	if(spectra == nullptr)
+		return;
+	CanonicalGrid grid;
+	grid.enabled = true;
+	grid.fMin = net->getCanonicalFMin();
+	grid.fMax = net->getCanonicalFMax();
+	grid.points = (size_t)net->getCanonicalPoints();
+	grid.log = net->getCanonicalLog();
+	grid.augmentShift = false; // never shift at test time
+	spectra->setCanonicalGrid(grid);
+	spectra->setCanonicalTraining(false);
+}
 
 template <typename T>
 int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, const Config& config)
@@ -102,6 +124,8 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
 		return 2;
 	}
+
+	applyCanonicalFromNet(net, dataset);
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
@@ -214,6 +238,8 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		Log(Log::ERROR)<<"Failed to create dataset for "<<config.fileName;
 		return 2;
 	}
+
+	applyCanonicalFromNet(net, dataset);
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<

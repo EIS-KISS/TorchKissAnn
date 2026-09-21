@@ -21,9 +21,39 @@
 #pragma once
 #include <kisstype/spectra.h>
 
+#include "data/canonicalgrid.h"
+
 class EisSpectraDataset
 {
 	inline static const std::string extraInputStr = "exip_";
+
+	CanonicalGrid canonical;
+
+public:
+	/**
+	 * Copy the active canonical grid into out and return true, or return false when canonical mode
+	 * is off. Used by the training loops to record the grid in the network metadata.
+	 */
+	bool canonicalGridInfo(CanonicalGrid& out) const
+	{
+		if(!canonical.enabled)
+			return false;
+		out = canonical;
+		return true;
+	}
+
+	/**
+	 * Enable canonical grid resampling. Resolves the point count from the first spectra when the
+	 * grid requests zero points and precomputes the grid frequencies. Must be called from the main
+	 * thread before any worker starts calling getImpl().
+	 */
+	void setCanonicalGrid(const CanonicalGrid& grid);
+
+	/**
+	 * Turn frequency shift augmentation on or off. Only the training dataset enables this; the test
+	 * dataset and any normalization pass leave it off so they see the unshifted grid.
+	 */
+	void setCanonicalTraining(bool training);
 
 protected:
 	static std::pair<std::vector<std::string>, std::vector<std::string>> getExtraInputsAndLabelNames(const eis::Spectra& spectra);
@@ -31,4 +61,18 @@ protected:
 	virtual eis::Spectra loadSpectraHeaderAtIndex(size_t index) = 0;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
 	torch::Tensor frequencies();
+
+	const CanonicalGrid& canonicalGrid() const;
+	bool canonicalEnabled() const;
+
+	/**
+	 * Resample the given points onto the canonical grid. Returns the input unchanged when canonical
+	 * mode is off. When shift augmentation is active (canonical mode, training, shift enabled) the
+	 * grid is shifted by a random number of decades first, which moves the whole spectra along the
+	 * frequency axis while keeping its class.
+	 */
+	std::vector<eis::DataPoint> resampleCanonical(const std::vector<eis::DataPoint>& data);
+
+private:
+	bool canonicalTraining = false;
 };

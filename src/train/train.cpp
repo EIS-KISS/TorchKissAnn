@@ -45,6 +45,8 @@
 #include "data/regressiondataset.h"
 #include "data/loaders/regressionloader.h"
 #include "data/loaders/dirloader.h"
+#include "data/loaders/eisspectradataset.h"
+#include "data/canonicalgrid.h"
 #include "options.h"
 #include "trainlog.h"
 #include "tokenize.h"
@@ -68,6 +70,37 @@ static ann::regression::regression_loss_type_t regressionLossFromConfig(const Tr
 		default:
 			return ann::regression::REG_LOSS_MSE;
 	}
+}
+
+// Configure canonical grid resampling on a dataset if the mode supports it. The training dataset
+// gets shift augmentation (classification only), the test dataset never does. Must run before any
+// call to inputSize() so the network is sized for the grid, not the raw spectra.
+template <typename DataSetType>
+static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* dataset, bool training)
+{
+	if(dataset == nullptr)
+		return;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(dataset);
+	if(spectra == nullptr)
+		return;
+
+	CanonicalGrid grid;
+	grid.enabled = true;
+	grid.fMin = config.canonicalFMin;
+	grid.fMax = config.canonicalFMax;
+	grid.points = config.canonicalPoints;
+	grid.log = config.canonicalLog;
+	// Shifting scales every time constant by the same factor, which preserves the circuit class but
+	// invalidates regression parameter labels, so it is restricted to classification training.
+	bool regression = (config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT);
+	grid.augmentShift = (config.canonicalAugmentMaxShift > 0) && training && !regression;
+	grid.augmentMaxShift = config.canonicalAugmentMaxShift;
+	// Windowing only crops the measurement, features keep their absolute position, so it is safe for
+	// regression as well as classification.
+	grid.augmentWindow = (config.canonicalAugmentWindowMin < 1.0) && training;
+	grid.augmentWindowMin = config.canonicalAugmentWindowMin;
+	spectra->setCanonicalGrid(grid);
+	spectra->setCanonicalTraining(training);
 }
 
 template <typename DataSetType>
@@ -97,6 +130,38 @@ int train(const Config& config)
 				<<"The traing dataset has "<<dataset.outputSize()
 				<<" and the test dataset has "<<testDataset->outputSize();
 			return 1;
+		}
+	}
+
+	if(config.canonical)
+	{
+		applyCanonicalGrid(config, &dataset, true);
+		if(testDataset)
+		{
+			// Reuse the point count the training dataset resolved from its first spectra so train and
+			// test are resampled onto the exact same grid even when --canonical-points was not given.
+			EisSpectraDataset* trainSpectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+			CanonicalGrid resolved;
+			if(trainSpectra && trainSpectra->canonicalGridInfo(resolved))
+			{
+				Config testConfig = config;
+				testConfig.canonicalPoints = resolved.points;
+				applyCanonicalGrid(testConfig, testDataset, false);
+			}
+		}
+		EisSpectraDataset* trainSpectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+		CanonicalGrid resolved;
+		if(trainSpectra && trainSpectra->canonicalGridInfo(resolved))
+		{
+			std::string aug;
+			if(resolved.augmentShift)
+				aug += "shift +/- " + std::to_string(resolved.augmentMaxShift) + " decades";
+			if(resolved.augmentWindow)
+				aug += (aug.empty() ? "" : ", ") + ("window keep >= " + std::to_string(resolved.augmentWindowMin*100) + "%");
+			if(aug.empty())
+				aug = "none";
+			Log(Log::INFO)<<"Canonical grid active: "<<resolved.fMin<<" .. "<<resolved.fMax<<" rad/s, "
+				<<resolved.points<<" points ("<<(resolved.log ? "log" : "linear")<<"), augmentation: "<<aug;
 		}
 	}
 
@@ -342,6 +407,45 @@ bool check_options(const Config& config)
 		return false;
 	}
 
+	bool canonicalRequested = (config.canonicalFMin > 0) || (config.canonicalFMax > 0);
+	if(canonicalRequested)
+	{
+		bool supportedMode = (config.mode == MODE_ANN || config.mode == MODE_ANN_CONV || config.mode == MODE_ANN_SCRIPT ||
+			config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT);
+		if(!supportedMode)
+		{
+			Log(Log::ERROR)<<"the canonical grid is only supported in ann, conv, script, regression and regression_script modes";
+			return false;
+		}
+		if(!(config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin))
+		{
+			Log(Log::ERROR)<<"the canonical grid needs both --canonical-fmin and --canonical-fmax with 0 < fmin < fmax";
+			return false;
+		}
+	}
+	if(config.canonicalPoints != 0 && config.canonicalPoints < 2)
+	{
+		Log(Log::ERROR)<<"--canonical-points must be at least 2";
+		return false;
+	}
+	if(config.canonicalAugmentMaxShift < 0)
+	{
+		Log(Log::ERROR)<<"--canonical-augment-shift must be >= 0";
+		return false;
+	}
+	if(config.canonicalAugmentWindowMin <= 0 || config.canonicalAugmentWindowMin > 1)
+	{
+		Log(Log::ERROR)<<"--canonical-augment-window must be in (0, 1] (fraction of points to keep)";
+		return false;
+	}
+	if(canonicalRequested && config.canonicalAugmentShiftRequested && config.canonicalAugmentMaxShift > 0 &&
+		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
+	{
+		Log(Log::WARN)<<"frequency shift augmentation is ignored in regression mode: shifting a spectra "
+			<<"changes the absolute position of the features and invalidates the parameter labels. "
+			<<"Window augmentation (--canonical-augment-window) is safe to use here.";
+	}
+
 	return true;
 }
 
@@ -352,6 +456,9 @@ int main(int argc, char** argv)
 
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	// Canonical mode is on exactly when both grid edges were supplied (validated in check_options).
+	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
 
 	choose_device(config.noGpu);
 	batch_size = config.batchSize;

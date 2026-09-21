@@ -177,6 +177,16 @@ def exportModel(model, meta, outname: str, output_prepend: str | None = None) ->
 		onnxmeta.key = "version"
 		onnxmeta.value = args.version
 
+	# Canonical frequency grid: the exported graph expects the already resampled 2N vector, so
+	# libkissinference must resample a raw spectra onto this grid (linear interpolation, constant
+	# edge extrapolation) before feeding it. Only present when the network was trained canonically.
+	if meta.get('canonicalGrid'):
+		for key in ('canonicalGrid', 'canonicalFMin', 'canonicalFMax', 'canonicalPoints', 'canonicalLog'):
+			if key in meta and not checkCompositContainer(onnx_model.metadata_props, key):
+				onnxmeta = onnx_model.metadata_props.add()
+				onnxmeta.key = key
+				onnxmeta.value = str(meta[key])
+
 	onnx.save(onnx_model, f"{outname}.onnx")
 
 	ort_model = ort.InferenceSession(f"{outname}.onnx")

@@ -53,6 +53,11 @@ protected:
 	torch::Tensor inputBiases;
 	int64_t inputLogCount = 0;
 	double inputLogFloor = DEFAULT_INPUT_LOG_FLOOR;
+	bool canonicalGrid = false; // The network expects inputs resampled onto a fixed log frequency grid.
+	double canonicalFMin = 0;
+	double canonicalFMax = 0;
+	int64_t canonicalPoints = 0;
+	bool canonicalLog = true;
 	bool softmax;
 
 public:
@@ -73,6 +78,18 @@ public:
 	void setOutputBiases(const torch::Tensor& tensor);
 	void setOutputLogMask(const torch::Tensor& tensor);
 	void setInputFrequencies(const torch::Tensor& tensor);
+	/**
+	 * Record that the network was trained on inputs resampled onto a fixed canonical frequency grid.
+	 * libkissinference needs fMin, fMax, points and log to reproduce the resampling (linear
+	 * interpolation with constant extrapolation, matching eis::fitToFrequencies) before feeding the
+	 * fixed size graph.
+	 */
+	void setCanonicalGrid(double fMin, double fMax, int64_t points, bool log);
+	bool hasCanonicalGrid() const;
+	double getCanonicalFMin() const;
+	double getCanonicalFMax() const;
+	int64_t getCanonicalPoints() const;
+	bool getCanonicalLog() const;
 	/**
 	 * Configure how a raw dataset input is turned into what the network sees. Empty scalars disable
 	 * the transform. logCount features at the front of the input vector are compressed with a

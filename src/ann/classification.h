@@ -31,6 +31,7 @@
 #include "net.h"
 #include "globals.h"
 #include "../data/eisdataset.h"
+#include "../data/loaders/eisspectradataset.h"
 #include "log.h"
 #include "tensoroptions.h"
 #include "trainlog.h"
@@ -254,6 +255,16 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 
 	net->setPurpose("Classifier");
 	net->setExtraInputs(trainDataset->extraInputs());
+
+	// Record the canonical frequency grid (if any) so the checkpoint and the ONNX export carry
+	// everything libkissinference needs to resample a raw spectra before feeding the fixed graph.
+	{
+		CanonicalGrid cg;
+		if(auto* es = dynamic_cast<EisSpectraDataset*>(trainDataset))
+			if(es->canonicalGridInfo(cg))
+				net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
+	}
+
 	net->to(*offload_device);
 
 	std::vector<std::string> outputLables(net->getOutputSize());

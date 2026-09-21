@@ -200,6 +200,15 @@ static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	if(data.empty())
 		return 3;
 
+	// The network was trained on a fixed canonical frequency grid: resample the raw spectra onto it
+	// first, using the same linear interpolation with constant edge extrapolation as the loader.
+	if(net->hasCanonicalGrid())
+	{
+		eis::Range range(net->getCanonicalFMin(), net->getCanonicalFMax(), net->getCanonicalPoints(), net->getCanonicalLog());
+		std::sort(data.begin(), data.end());
+		data = eis::fitToFrequencies(range.getRangeVector(), data, false);
+	}
+
 	torch::Tensor input = eisToTorch(data);
 
 	if(!filter(input, config.filterFileName, config.filterMode))
@@ -262,7 +271,15 @@ static int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 
 	Log(Log::DEBUG)<<"data size: "<<data.first.size();
 
-	if(static_cast<int64_t>(data.first.size()*2 + data.second.size()) != net->getInputSize())
+	if(net->hasCanonicalGrid())
+	{
+		// Resample onto the grid the network was trained on (linear interpolation, constant edge
+		// extrapolation), matching the loader. Extra inputs are appended after the spectral part.
+		eis::Range range(net->getCanonicalFMin(), net->getCanonicalFMax(), net->getCanonicalPoints(), net->getCanonicalLog());
+		std::sort(data.first.begin(), data.first.end());
+		data.first = eis::fitToFrequencies(range.getRangeVector(), data.first, false);
+	}
+	else if(static_cast<int64_t>(data.first.size()*2 + data.second.size()) != net->getInputSize())
 	{
 		Log(Log::INFO)<<"Network trained for an input size of "<<net->getInputSize()
 		<<" supplied data has a size of "<<data.first.size()*2<<" and will be rescaled";

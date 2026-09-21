@@ -39,6 +39,9 @@ TarDataset::TarDataset(const TarDataset& in)
 
 TarDataset& TarDataset::operator=(const TarDataset& in)
 {
+	// Copy the EisSpectraDataset base first: it holds the canonical grid configuration that the
+	// data loader relies on in worker threads, and a plain member-wise copy below would drop it.
+	EisSpectraDataset::operator=(in);
 	files = in.files;
 	path = in.path;
 	if(open)

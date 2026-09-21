@@ -42,6 +42,7 @@
 #include "trainlog.h"
 #include "loss/eisdistanceloss.h"
 #include "data/regressiondataset.h"
+#include "data/loaders/eisspectradataset.h"
 #include "tensoroptions.h"
 #include "tensoroperators.h"
 #include "r2score.h"
@@ -289,6 +290,15 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 	net->setPurpose(purposeString(trainDataset));
 	net->setExtraInputs(trainDataset->extraInputs());
 	net->setInputFrequencies(trainDataset->frequencies().value());
+
+	// Record the canonical frequency grid (if any) so the checkpoint and the ONNX export carry
+	// everything libkissinference needs to resample a raw spectra before feeding the fixed graph.
+	{
+		CanonicalGrid cg;
+		if(auto* es = dynamic_cast<EisSpectraDataset*>(trainDataset))
+			if(es->canonicalGridInfo(cg))
+				net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
+	}
 
 	net->to(*offload_device);
 

@@ -98,7 +98,7 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisTarDataset::getImpl(size_t
 {
 	eis::Spectra data = loadSpectraAtIndex(index);
 
-	torch::Tensor input = eisToTorch(data.data);
+	torch::Tensor input = eisToTorch(resampleCanonical(data.data));
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, EisTarDataset::getTargetImpl(index));
 }
 
