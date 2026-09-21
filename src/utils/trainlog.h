@@ -88,7 +88,10 @@ public:
 	void logTestLoss(size_t epoch, size_t step, double loss, double acc, size_t total = 0, bool print = true);
 	void logTensor(const std::string& name, const torch::Tensor& tensor);
 	std::filesystem::path getDir();
-	void saveNetwork(std::shared_ptr<ann::Net> net, bool finished = false);
+	// Save the network and return the directory it was written to.
+	std::filesystem::path saveNetwork(std::shared_ptr<ann::Net> net, bool finished = false);
+	// Point the run's best_network symlink at the given checkpoint directory.
+	void linkBestNetwork(const std::filesystem::path& checkpointDir);
 	// Mark that the run has produced networks by other means, keeps the run directory from being removed.
 	void markSaved();
 

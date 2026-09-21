@@ -324,10 +324,12 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	else
 		Log(Log::DEBUG)<<"Using NLLLoss";
 
+	double bestTestLoss = std::numeric_limits<double>::infinity();
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		float trainLoss = trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
 			classWeights, trainDataset->isMulticlass(), trainLog);
+		bool newBest = false;
 		if(testDataset)
 		{
 			TestReturn ret = test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
@@ -337,13 +339,22 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 			if(history)
 				history->push_back(EpochStats{i, static_cast<double>(trainLoss), ret.loss,
 					ret.acc.sum().item<double>()/static_cast<double>(ret.acc.numel()), ret.acc});
+			if(ret.loss < bestTestLoss)
+			{
+				bestTestLoss = ret.loss;
+				newBest = true;
+			}
 		}
 		else if(history)
 			history->push_back(EpochStats{i, static_cast<double>(trainLoss), std::numeric_limits<double>::quiet_NaN(),
 				std::numeric_limits<double>::quiet_NaN(), torch::Tensor()});
 
 		if(trainLog)
-			trainLog->saveNetwork(net);
+		{
+			std::filesystem::path checkpoint = trainLog->saveNetwork(net);
+			if(newBest)
+				trainLog->linkBestNetwork(checkpoint);
+		}
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 

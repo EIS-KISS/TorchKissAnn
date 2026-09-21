@@ -177,7 +177,7 @@ void TrainLog::logTensor(const std::string& name, const torch::Tensor& tensor)
 		throw log_error("Could not save tensor to " + static_cast<std::string>(path));
 }
 
-void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
+std::filesystem::path TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
 {
 	savedCheckpoint = true;
 	std::filesystem::path dir;
@@ -187,6 +187,18 @@ void TrainLog::saveNetwork(std::shared_ptr<ann::Net> net, bool finished)
 		dir = logDir/(std::string("finished_network"));
 
 	net->saveToCheckpointDir(dir);
+	return dir;
+}
+
+void TrainLog::linkBestNetwork(const std::filesystem::path& checkpointDir)
+{
+	std::error_code ec;
+	std::filesystem::path link = logDir/"best_network";
+	std::filesystem::remove(link, ec);
+	// A relative target keeps the run directory portable when it is moved or copied.
+	std::filesystem::create_symlink(std::filesystem::relative(checkpointDir, logDir), link, ec);
+	if(ec)
+		throw log_error("Could not create best_network symlink: " + ec.message());
 }
 
 void TrainLog::markSaved()

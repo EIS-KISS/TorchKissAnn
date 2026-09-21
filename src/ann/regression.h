@@ -350,6 +350,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		testDataset ? torch::data::make_data_loader(testDataset->map(torch::data::transforms::Stack<>()), options) : nullptr;
 	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(weightDecay));
 
+	double bestTestLoss = std::numeric_limits<double>::infinity();
 	for (size_t epoch = 0; epoch < epochs; ++epoch)
 	{
 		int ret;
@@ -365,6 +366,7 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 		if(ret != 0)
 			return -1;
 
+		bool newBest = false;
 		if(testDataset)
 		{
 			// evaluate with the same loss the network was trained with
@@ -378,6 +380,11 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			if(history)
 				history->push_back(EpochStats{epoch, static_cast<double>(meanTrainLoss), testret.loss,
 					testret.r2.mean().item<double>(), testret.r2});
+			if(testret.loss < bestTestLoss)
+			{
+				bestTestLoss = testret.loss;
+				newBest = true;
+			}
 		}
 		else if(history)
 			history->push_back(EpochStats{epoch, static_cast<double>(meanTrainLoss),
@@ -386,7 +393,11 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 
 
 		if(trainLog)
-			trainLog->saveNetwork(net);
+		{
+			std::filesystem::path checkpoint = trainLog->saveNetwork(net);
+			if(newBest)
+				trainLog->linkBestNetwork(checkpoint);
+		}
 		Log(Log::INFO)<<"Epoch "<<epoch<<'/'<<epochs;
 	}
 
