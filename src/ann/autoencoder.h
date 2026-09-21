@@ -59,7 +59,6 @@ public:
 	virtual bool loadWeightsFromDir(const std::filesystem::path& path);
 	virtual std::shared_ptr<torch::nn::Module> operator[](size_t index){assert(false);};
 
-	virtual void eval();
 	virtual void train(bool on = true);
 };
 

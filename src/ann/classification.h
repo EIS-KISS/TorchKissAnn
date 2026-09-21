@@ -71,7 +71,7 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 		torch::Tensor targets = batch.target.to(*offload_device);
 
 		torch::Tensor prediction = network->forward(data);
@@ -117,7 +117,7 @@ torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
 	torch::Tensor confusionMatrix = torch::zeros({network->getOutputSize(), network->getOutputSize()}, tensorOptCpu<long>(false));
 	for(const auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
 		torch::Tensor output = network->forward(data);
@@ -182,7 +182,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	for(const auto& batch : loader)
 	{
 		bar.tick();
-		torch::Tensor data = batch.data.to(*offload_device);
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
 
 		torch::Tensor output = network->forward(data);
@@ -264,6 +264,16 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 			if(es->canonicalGridInfo(cg))
 				net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
 	}
+
+	// The raw spectra span many decades of impedance, so the network is trained on a signed-log
+	// compressed, [-1,1] scaled input (the same transform regression uses). The transform is stored
+	// on the network so the test and inference paths apply the identical one; for a network without
+	// a stored transform normalizeInput is a no-op.
+	InputNormalization norm = trainDataset->getInputNormalization();
+	Log(Log::INFO)<<"Using input scalars:\n"<<norm.scalars;
+	Log(Log::INFO)<<"Using input biases:\n"<<norm.biases;
+	Log(Log::INFO)<<"Compressing the leading "<<norm.logCount<<" input features with a signed log around "<<norm.logFloor;
+	net->setInputNormalization(norm.scalars, norm.biases, norm.logCount, norm.logFloor);
 
 	net->to(*offload_device);
 

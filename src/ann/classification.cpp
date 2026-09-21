@@ -51,7 +51,8 @@ torch::Tensor ann::classification::multiClassHits(const torch::Tensor& predictio
 torch::Tensor ann::classification::use(torch::Tensor input, std::shared_ptr<Net> net)
 {
 	net->eval();
-	torch::Tensor output = torch::exp(net->forward(input.reshape({1, net->getInputSize()})));
+	torch::Tensor normalized = net->normalizeInput(input.reshape({1, net->getInputSize()}));
+	torch::Tensor output = torch::exp(net->forward(normalized));
 	return output;
 }
 

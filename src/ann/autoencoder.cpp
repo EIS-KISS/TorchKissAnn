@@ -163,11 +163,6 @@ void ann::AutoEncoder::getConfiguration(Json::Value& node)
 	node["variational"] = variational;
 }
 
-void ann::AutoEncoder::eval()
-{
-	train(true);
-}
-
 void ann::AutoEncoder::train(bool on)
 {
 	encoder->train(on);

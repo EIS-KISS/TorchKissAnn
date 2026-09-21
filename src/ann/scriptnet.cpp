@@ -155,11 +155,6 @@ void ann::ScriptNet::getConfiguration(Json::Value& node)
 	node["module"] = (loadPath/"module.pt").string();
 }
 
-void ann::ScriptNet::eval()
-{
-	train(true);
-}
-
 void ann::ScriptNet::train(bool on)
 {
 	jitModule.train(on);
