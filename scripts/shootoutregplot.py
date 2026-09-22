@@ -324,7 +324,7 @@ def milestones(curves: pd.DataFrame, points: list) -> pd.DataFrame:
 		.reset_index(drop=True)
 
 
-def plotMeanR2(configs: pd.DataFrame, circuits: list, summary: Path):
+def plotMeanR2(configs: pd.DataFrame, tags: list, circuitNames: dict, summary: Path):
 	"""The headline view: mean R2 over all circuits per architecture, plus the spread per circuit."""
 	best = bestPerModelConfigs(configs)
 	if best.empty:
@@ -334,7 +334,7 @@ def plotMeanR2(configs: pd.DataFrame, circuits: list, summary: Path):
 	fig, ax = plt.subplots(figsize=(7, 0.5 * len(ordered) + 2.5))
 	ax.barh(range(len(ordered)), ordered["meanR2"], color="0.15", edgecolor="black",
 			linewidth=0.7)
-	ax.set_yticks(range(len(ordered)), ordered["model"])
+	ax.set_yticks(range(len(ordered)), ordered["model"], fontsize=14)
 	ax.set_xlabel("mean R2 over all circuits")
 	ax.set_title("Best configuration per architecture, averaged over the circuits")
 	ax.grid(True, axis="x", alpha=0.3)
@@ -342,21 +342,22 @@ def plotMeanR2(configs: pd.DataFrame, circuits: list, summary: Path):
 	fig.savefig(summary / "mean_r2_by_model.pdf", dpi=140)
 	plt.close(fig)
 
-	used = [circuit for circuit in circuits if circuit in top.columns]
+	used = [tag for tag in tags if tag in top.columns]
+	usedCircuits = [circuitNames[tag] for tag in used]
 	if not used:
 		return
 	heat = top.set_index("model")[used]
 	fig, ax = plt.subplots(figsize=(2.2 * len(used) + 3.5, 0.5 * len(heat) + 2.5))
 	image = ax.imshow(heat.values, vmin=0, vmax=1, aspect="auto")
-	ax.set_xticks(range(len(used)), used, rotation=45, ha="right")
-	ax.set_yticks(range(len(heat)), heat.index)
+	ax.set_xticks(range(len(usedCircuits)), usedCircuits, rotation=45, ha="right", fontsize=16)
+	ax.set_yticks(range(len(heat)), heat.index, fontsize=16)
 	for i in range(heat.shape[0]):
 		for j in range(heat.shape[1]):
 			value = heat.values[i][j]
 			if not np.isnan(value):
-				ax.text(j, i, f"{value:.3f}", ha="center", va="center", fontsize=8,
+				ax.text(j, i, f"{value:.3f}", ha="center", va="center", fontsize=16,
 						color=textShade(value, 0, 1))
-	ax.set_title("The same configurations per circuit")
+	ax.set_title("The same configurations per circuit", fontsize=16)
 	fig.colorbar(image, ax=ax, fraction=0.046)
 	fig.tight_layout()
 	fig.savefig(summary / "mean_r2_by_circuit.pdf", dpi=140)
@@ -1064,6 +1065,10 @@ def main():
 
 	circuits = readDatasets(args.outdir)
 	tags = [str(tag) for tag in circuits["tag"]]
+	circuitNames = {}
+	for i in range(len(tags)):
+		circuitNames[tags[i]] = circuits["circuit"][i]
+
 	names = {tag: readTargetNames(args.outdir, tag) for tag in tags}
 	trials = loadTrials(args.outdir, tags)
 	# the compute cost of every architecture, joined onto each trial by its circuit's target count
@@ -1143,7 +1148,7 @@ def main():
 		longConvergenceTable.to_csv(summary / "long_convergence.csv", index=False)
 		longAveraged.to_csv(summary / "long_mean_convergence.csv", index=False)
 
-	plotMeanR2(configs, tags, summary)
+	plotMeanR2(configs, tags, circuitNames, summary)
 	plotR2VsParams(configs, summary, longConfigs)
 	plotR2VsRuntime(configs, summary)
 	plotLearningRate(configs, summary)
