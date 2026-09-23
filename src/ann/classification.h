@@ -140,6 +140,7 @@ struct TestReturn
 	torch::Tensor histograms;
 	torch::Tensor acc;
 	double loss;
+	double accOverall;
 };
 
 struct EpochStats
@@ -237,6 +238,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	ret.histograms = histograms.cpu();
 	ret.acc = classAcc.cpu();
 	ret.loss = (Loss / data_size)*100;
+	ret.accOverall = Acc/data_size;
 
 	return ret;
 }

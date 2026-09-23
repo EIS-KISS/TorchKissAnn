@@ -142,10 +142,12 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 	options = options.batch_size(batch_size).workers(16);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
-	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights(), dataset.isMulticlass());
+	// the weights are computed on the cpu, the loss has to see them on the device the network runs on
+	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights().to(*offload_device), dataset.isMulticlass());
 
-	Log(Log::INFO)<<"Test loss:"<<testRet.loss;
-	Log(Log::INFO)<<"Acc:";
+	Log(Log::INFO)<<"Test loss: "<<testRet.loss;
+	Log(Log::INFO)<<"Global Acc: "<<testRet.accOverall;
+	Log(Log::INFO)<<"Class Acc:";
 
 	for(size_t i = 0; i < dataset.outputSize(); ++i)
 		Log(Log::INFO, false)<<dataset.outputName(i)<<", ";
