@@ -109,7 +109,7 @@ def plotConfusion(names: list, matrix: np.ndarray, outpath: Path,
 					color=textShade(value, low, high))
 	ax.set_xlabel("Predicted", fontsize=20)
 	ax.set_ylabel("True", fontsize=20)
-	ax.set_title(title or ("Confusion matrix" + (", row normalized" if normalize else "")), fontsize=20)
+	ax.set_title(title if title is not None else ("Confusion matrix" + (", row normalized" if normalize else "")), fontsize=20)
 	fig.colorbar(image, ax=ax, fraction=0.046)
 	fig.tight_layout()
 	fig.savefig(outpath, dpi=140)
