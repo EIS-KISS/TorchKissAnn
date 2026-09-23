@@ -58,9 +58,19 @@ def save(model, input_size, output_size, name: str):
 	print(f"Saved model as ./{name}{input_str}-{output_size}.pt")
 
 
-def build_resnet(output_size: int):
+def build_resnet(output_size: int, base_filters: int = None):
+	"""
+	Build the resnet. base_filters None means the original 100.
+
+	The parameter count of this architecture grows with the square of the base filter count and
+	does not depend on the input length at all, because every convolution pads to its input and
+	the head pools over the frequency axis. Only the output size enters the count besides the
+	width: at 8 outputs, 24 filters are about 150k parameters, 34 about 300k and the default 100
+	about 2.6M.
+	"""
+	filters = 100 if base_filters is None else base_filters
 	module = ResNet1D(in_channels=1,
-		base_filters=100,
+		base_filters=filters,
 		kernel_size=16,
 		stride=2,
 		groups=1,
@@ -74,7 +84,10 @@ def build_resnet(output_size: int):
 	print(f"ResNet1D output size: {data.size()}")
 
 	script = torch.jit.script(module)
-	save(script, None, output_size, "resnet")
+	# the shootout scripts pick the resnet up by its plain name, so only a run that asked for a
+	# width carries it, which lets several widths live in one directory
+	name = "resnet" if base_filters is None else f"resnet_f{filters}"
+	save(script, None, output_size, name)
 
 
 def build_simplenet(input_size: int, output_size: int):
@@ -183,6 +196,11 @@ if __name__ == "__main__":
 		help="Input channels for the nets that support it (inception, tcn, gru, transformer, seresnet): "
 			"1 keeps the whole spectra vector as a single channel like the older nets, "
 			"2 splits it into an aligned real and imaginary channel (requires an input size of 2N with no extra inputs)")
+	parser.add_argument('--base_filters', '-b', type=int, default=None,
+		help="Base filter count of the resnet, 100 if omitted. The parameter count grows with the "
+			"square of it and does not depend on the input size: at 8 outputs 24 filters are ~150k "
+			"parameters and 34 are ~300k. When given, the count becomes part of the file name "
+			"(resnet_f24ANY-8.pt) so several widths can be built into one directory")
 	args = parser.parse_args()
 
 	if args.type == "simple":
@@ -190,7 +208,7 @@ if __name__ == "__main__":
 	elif args.type == "conv":
 		build_convnet(args.input_size, args.output_size)
 	elif args.type == "resnet":
-		build_resnet(args.output_size)
+		build_resnet(args.output_size, args.base_filters)
 	elif args.type == "upsamplenet":
 		build_upsamplenet(args.input_size, args.output_size)
 	elif args.type == "inception":

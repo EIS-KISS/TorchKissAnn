@@ -1381,7 +1381,8 @@ def load_torchscript(path: str):
 	return module, meta
 
 
-def build_source(kind: str, input_size: int, output_size: int, channels: int = 1):
+def build_source(kind: str, input_size: int, output_size: int, channels: int = 1,
+				 base_filters: int = 100):
 	"""Instantiate one of the networks in scripts/nets, as buildnet.py does."""
 	if kind == "simple":
 		from nets.simplenet import SimpleNet
@@ -1391,7 +1392,7 @@ def build_source(kind: str, input_size: int, output_size: int, channels: int = 1
 		module = ConvNet(input_size, output_size, 4, 3)
 	elif kind == "resnet":
 		from nets.resnet1d import ResNet1D
-		module = ResNet1D(in_channels=1, base_filters=100, kernel_size=16, stride=2, groups=1,
+		module = ResNet1D(in_channels=1, base_filters=base_filters, kernel_size=16, stride=2, groups=1,
 			n_classes=output_size, downsample_gap=output_size, increasefilter_gap=12)
 	elif kind == "upsamplenet":
 		from nets.upsamplenet import UpsampleNet
@@ -1450,6 +1451,10 @@ def main():
 	parser.add_argument("--channels", "-c", type=int, default=1,
 		help="Input channels for --type of the nets that support it: 1 is the whole vector as one"
 			" channel, 2 splits it into an aligned real and imaginary channel pair")
+	parser.add_argument("--base_filters", "-b", type=int, default=100,
+		help="Base filter count of --type resnet, the only knob of its parameter count: it grows"
+			" with the square of this number and not with the input length (24 is ~150k"
+			" parameters at 8 outputs, 34 ~300k, the buildnet default and this default are 100)")
 	parser.add_argument("--out", "-o", default=None, help="Output file name without extension")
 	parser.add_argument("--format", "-f", nargs="+", default=["pdf"],
 		choices=["pdf", "svg", "png"], help="Output formats, pdf is best for print")
@@ -1465,9 +1470,14 @@ def main():
 		input_size = meta.get("inputSize") or args.input_size
 		output_size = meta.get("outputSize") or args.output_size
 	else:
-		module = build_source(args.type, args.input_size, args.output_size, args.channels)
-		meta = {"name": args.type}
+		module = build_source(args.type, args.input_size, args.output_size, args.channels,
+			args.base_filters)
+		# the width is the only thing that tells two resnet drawings apart, so it belongs in the
+		# title when it is not the default
 		name = args.type
+		if args.type == "resnet" and args.base_filters != 100:
+			name = f"resnet_f{args.base_filters}"
+		meta = {"name": name}
 		input_size = args.input_size
 		output_size = args.output_size
 
