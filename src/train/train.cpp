@@ -381,11 +381,26 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if((config.datasetMode != DATASET_DIR_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION) &&
-		(config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT))
+	// The supervised modes are bound to one kind of label: classification networks are trained on
+	// the interned circuit class, regression networks on the parameter vector. Handing either the
+	// other one does not fail until well into the first test cycle, so reject it here. The
+	// unsupervised modes (autoencoder, vae, gan) only read the spectra itself and take both.
+	bool regressionMode = (config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT);
+	bool classificationMode = (config.mode == MODE_ANN || config.mode == MODE_ANN_CONV || config.mode == MODE_ANN_SCRIPT);
+	if(regressionMode && !datasetModeIsRegression(config.datasetMode))
 	{
-		Log(Log::ERROR)<<"The regression mode can only be trained with a regression dataset";
+		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode can only be trained with a regression dataset, "
+			<<"use -d "<<datasetModeToStr(DATASET_DIR_REGRESSION)<<" or -d "<<datasetModeToStr(DATASET_TAR_REGRESSION)
+			<<", not -d "<<datasetModeToStr(config.datasetMode);
+		return false;
+	}
+	if(classificationMode && datasetModeIsRegression(config.datasetMode))
+	{
+		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode can only be trained with a classification dataset, "
+			<<"use -d "<<datasetModeToStr(DATASET_DIR)<<" or -d "<<datasetModeToStr(DATASET_TAR)
+			<<", not -d "<<datasetModeToStr(config.datasetMode)
+			<<". To train on parameter targets use -m "<<trainModeToStr(MODE_REGRESSION)
+			<<" or -m "<<trainModeToStr(MODE_REGRESSION_SCRIPT)<<" instead.";
 		return false;
 	}
 

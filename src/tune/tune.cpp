@@ -123,11 +123,22 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if(config.datasetMode != DATASET_DIR_REGRESSION &&
-		config.datasetMode != DATASET_TAR_REGRESSION &&
-		config.mode == MODE_REGRESSION)
+	// Same binding as in the train tool: the classification search ranks by classification loss
+	// against class ids, the regression search against parameter vectors. Only these two modes are
+	// tunable, so every combination is either regression or classification.
+	if(config.mode == MODE_REGRESSION && !datasetModeIsRegression(config.datasetMode))
 	{
-		Log(Log::ERROR)<<"The regression mode can only be tuned with a regression dataset";
+		Log(Log::ERROR)<<"the regression mode can only be tuned with a regression dataset, "
+			<<"use -d "<<datasetModeToStr(DATASET_DIR_REGRESSION)<<" or -d "<<datasetModeToStr(DATASET_TAR_REGRESSION)
+			<<", not -d "<<datasetModeToStr(config.datasetMode);
+		return false;
+	}
+	if((config.mode == MODE_ANN || config.mode == MODE_ANN_CONV) && datasetModeIsRegression(config.datasetMode))
+	{
+		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode can only be tuned with a classification dataset, "
+			<<"use -d "<<datasetModeToStr(DATASET_DIR)<<" or -d "<<datasetModeToStr(DATASET_TAR)
+			<<", not -d "<<datasetModeToStr(config.datasetMode)
+			<<". To tune on parameter targets use -m regression instead.";
 		return false;
 	}
 

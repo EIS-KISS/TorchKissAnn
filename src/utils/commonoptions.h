@@ -48,6 +48,13 @@ static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
 	}
 }
 
+// True for the two flavours that carry a continuous parameter vector as their target, false for
+// the ones that carry an interned circuit class.
+static inline constexpr bool datasetModeIsRegression(const DatasetMode mode)
+{
+	return (mode == DATASET_DIR_REGRESSION) || (mode == DATASET_TAR_REGRESSION);
+}
+
 static inline DatasetMode parseDatasetMode(const std::string& in)
 {
 	if(in == datasetModeToStr(DATASET_DIR))
