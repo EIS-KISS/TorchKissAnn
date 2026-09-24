@@ -1412,6 +1412,9 @@ def build_source(kind: str, input_size: int, output_size: int, channels: int = 1
 	elif kind == "seresnet":
 		from nets.seresnet1d import SEResNet1D
 		module = SEResNet1D(input_size, output_size, channels)
+	elif kind == "resnetv2":
+		from nets.resnetv2_1d import ResNetV21D
+		module = ResNetV21D(input_size, output_size, channels)
 	else:
 		raise SystemExit(f"unknown network type {kind}")
 	module.eval()
@@ -1444,7 +1447,7 @@ def main():
 	source.add_argument("--network", "-n", help="TorchScript network file, e.g. resnetANY-100.pt")
 	source.add_argument("--type", "-t",
 		choices=["simple", "conv", "resnet", "upsamplenet",
-			"inception", "tcn", "gru", "transformer", "seresnet"],
+			"inception", "tcn", "gru", "transformer", "seresnet", "resnetv2"],
 		help="Build a network from scripts/nets instead of reading a file")
 	parser.add_argument("--input_size", "-i", type=int, default=100, help="Input length for --type")
 	parser.add_argument("--output_size", "-s", type=int, default=10, help="Output classes for --type")
