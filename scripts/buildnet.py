@@ -28,6 +28,7 @@ from nets.tcn1d import TCN1D
 from nets.grunet import BiGRUNet
 from nets.transformer1d import Transformer1D
 from nets.seresnet1d import SEResNet1D
+from nets.resnetv2_1d import ResNetV21D
 import json
 import argparse
 
@@ -186,14 +187,31 @@ def build_seresnet(input_size: int, output_size: int, channels: int):
 	save(script, input_size, output_size, "seresnet")
 
 
+def build_resnetv2(input_size: int, output_size: int, channels: int):
+	"""
+	Same shape as the seresnet without the squeeze-and-excitation units, the
+	control for the attention ablation: build both with the same -i/-o/-c and the
+	parameter difference is only the excitation layers.
+	"""
+	module = ResNetV21D(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"ResNetV21D output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "resnetv2")
+
+
 if __name__ == "__main__":
-	valid_network_types = "simple, conv, resnet, upsamplenet, inception, tcn, gru, transformer, seresnet"
+	valid_network_types = "simple, conv, resnet, upsamplenet, inception, tcn, gru, transformer, seresnet, resnetv2"
 	parser = argparse.ArgumentParser("TorchScript network generation script")
 	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
 	parser.add_argument('--output_size', '-o', type=int, required=True, help="Number of output classes")
 	parser.add_argument('--input_size', '-i', type=int, default=100, help="Number of input classes")
 	parser.add_argument('--channels', '-c', type=int, default=1,
-		help="Input channels for the nets that support it (inception, tcn, gru, transformer, seresnet): "
+		help="Input channels for the nets that support it (inception, tcn, gru, transformer, seresnet, resnetv2): "
 			"1 keeps the whole spectra vector as a single channel like the older nets, "
 			"2 splits it into an aligned real and imaginary channel (requires an input size of 2N with no extra inputs)")
 	parser.add_argument('--base_filters', '-b', type=int, default=None,
@@ -221,6 +239,8 @@ if __name__ == "__main__":
 		build_transformer(args.input_size, args.output_size, args.channels)
 	elif args.type == "seresnet":
 		build_seresnet(args.input_size, args.output_size, args.channels)
+	elif args.type == "resnetv2":
+		build_resnetv2(args.input_size, args.output_size, args.channels)
 	else:
 		print(f"{args.type} is not a valid network type valid types are: {valid_network_types}")
 		exit(1)
