@@ -35,6 +35,7 @@
 #include "utils/log.h"
 #include "options.h"
 #include "data/loaders/dirloader.h"
+#include "data/loaders/eisspectradataset.h"
 #include "data/eistotorch.h"
 #include "utils/log.h"
 #include "ann/classification.h"
@@ -209,6 +210,14 @@ static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 		data = eis::fitToFrequencies(range.getRangeVector(), data, false);
 	}
 
+	// The per spectra impedance scaling the training loader applied, recorded in the checkpoint. After
+	// the resampling, because the reference is computed from the points the network actually sees.
+	if(!net->getSpectraNorm().empty())
+	{
+		applySpectraNorm(data, spectraNormFromString(net->getSpectraNorm()));
+		Log(Log::DEBUG)<<"Scaled the spectra by its "<<net->getSpectraNorm()<<" |Z| as recorded in the network";
+	}
+
 	torch::Tensor input = eisToTorch(data);
 
 	if(!filter(input, config.filterFileName, config.filterMode))
@@ -372,6 +381,8 @@ int main(int argc, char** argv)
 		net->to(*offload_device);
 
 		Log(Log::INFO)<<"Loaded network with "<<net->getOutputSize()<<" outputs. Purpose: "<<net->getPurpose();
+		if(!net->getSpectraNorm().empty())
+			Log(Log::INFO)<<"Network expects every input spectra divided by its "<<net->getSpectraNorm()<<" |Z|";
 		const std::vector<std::string>& outputLabels = net->getOutputLabels();
 		if(!outputLabels.empty())
 		{

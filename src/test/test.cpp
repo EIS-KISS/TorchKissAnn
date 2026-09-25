@@ -72,6 +72,25 @@ static void applyCanonicalFromNet(const std::shared_ptr<ann::Net>& net, T& datas
 	spectra->setCanonicalTraining(false);
 }
 
+// Apply the per spectra |Z| scaling recorded in the network to a test dataset, so the spectra are
+// prepared the way the training loader prepared them. No-op for a network trained on raw
+// impedances. Like the grid this has to happen before the dataset is handed to a data loader,
+// which copies it.
+template <typename T>
+static void applySpectraNormFromNet(const std::shared_ptr<ann::Net>& net, T& dataset)
+{
+	if(net->getSpectraNorm().empty())
+		return;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+	if(spectra == nullptr)
+	{
+		Log(Log::WARN)<<"The network expects every spectra scaled by its "<<net->getSpectraNorm()<<" |Z|, but this dataset is not built from spectra, the results are meaningless";
+		return;
+	}
+	spectra->setSpectraNorm(spectraNormFromString(net->getSpectraNorm()));
+	Log(Log::INFO)<<"Scaling every spectra by its "<<net->getSpectraNorm()<<" |Z| as recorded in the network";
+}
+
 /// Column header for output index i. Results are reported in the network's index space, so the
 /// network's own labels are the right names whenever it stores them; the dataset names are only a
 /// fallback for networks trained without labels.
@@ -140,6 +159,7 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 	}
 
 	applyCanonicalFromNet(net, dataset);
+	applySpectraNormFromNet(net, dataset);
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
@@ -297,6 +317,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	}
 
 	applyCanonicalFromNet(net, dataset);
+	applySpectraNormFromNet(net, dataset);
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
@@ -383,7 +404,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), net->getOutputLabels()[output], "Error", targetsVarr, error, false, false, true);
 	}
 
-	Log(Log::INFO)<<"\nMse:\n"<<tensorToString(ret.mse)<<"\n\n R2:\n"<<tensorToString(ret.r2);
+	Log(Log::INFO)<<"\nMse:\n"<<tensorToString(ret.mse)<<"\n\nR2:\n"<<tensorToString(ret.r2);
 
 	if(config.inputImportance)
 	{

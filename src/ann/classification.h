@@ -263,24 +263,25 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	net->setPurpose("Classifier");
 	net->setExtraInputs(trainDataset->extraInputs());
 
-	// Record the canonical frequency grid (if any) so the checkpoint and the ONNX export carry
-	// everything libkissinference needs to resample a raw spectra before feeding the fixed graph.
+	// Record the input preparation the loaders applied (canonical frequency grid, per spectra |Z|
+	// scaling) so the checkpoint and the ONNX export carry everything a client needs to turn a raw
+	// spectra into the vector this graph expects.
+	if(auto* es = dynamic_cast<EisSpectraDataset*>(trainDataset))
 	{
 		CanonicalGrid cg;
-		if(auto* es = dynamic_cast<EisSpectraDataset*>(trainDataset))
-			if(es->canonicalGridInfo(cg))
-				net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
+		if(es->canonicalGridInfo(cg))
+			net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
+		SpectraNorm mode = es->spectraNormMode();
+		net->setSpectraNorm(mode == SpectraNorm::None ? std::string() : spectraNormToString(mode));
 	}
 
-	// The raw spectra span many decades of impedance, so the network is trained on a signed-log
-	// compressed, [-1,1] scaled input (the same transform regression uses). The transform is stored
-	// on the network so the test and inference paths apply the identical one; for a network without
-	// a stored transform normalizeInput is a no-op.
-	InputNormalization norm = trainDataset->getInputNormalization();
-	Log(Log::INFO)<<"Using input scalars:\n"<<norm.scalars;
-	Log(Log::INFO)<<"Using input biases:\n"<<norm.biases;
-	Log(Log::INFO)<<"Compressing the leading "<<norm.logCount<<" input features with a signed log around "<<norm.logFloor;
-	net->setInputNormalization(norm.scalars, norm.biases, norm.logCount, norm.logFloor);
+	// The raw spectra span many decades of impedance, so the network sees signed log compressed values.
+	// No affine rescaling onto [-1,1] follows it, unlike regression: a classifier does not have to
+	// reproduce a physical quantity, and with the per spectra |Z| scaling active every sample already
+	// arrives on the same scale, so a range derived affine transform would add nothing. The
+	// classification loaders never append extra inputs, so every feature here is spectral.
+	net->setInputLogCompression(trainDataset->inputSize());
+	Log(Log::INFO)<<"Compressing the leading "<<trainDataset->inputSize()<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
 
 	net->to(*offload_device);
 

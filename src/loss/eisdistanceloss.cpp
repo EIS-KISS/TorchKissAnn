@@ -27,6 +27,7 @@
 #include "modelscript.h"
 #include "tensoroperators.h"
 #include "log.h"
+#include "globals.h"
 
 EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn, torch::Tensor parameterScalarIn,
 		torch::Tensor parameterBiasIn, torch::Tensor parameterLogIn, double weightFloorIn):
@@ -113,6 +114,7 @@ torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targe
 	if(targets.dim() > 1 && targets.size(1) == static_cast<int64_t>(model->getParameterCount()) )
 		targets = targets.t();
 
+	targets = targets.to(torch::kCPU)
 	torch::Tensor targetSpectraCmplx = runScriptModel(*model, modelScript, targets, omegas);
 
 	std::pair<torch::Tensor, torch::Tensor> spectra = prepareSpectra(output, targetSpectraCmplx);
@@ -121,5 +123,5 @@ torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targe
 	// zero can contribute more than every other point together, so the optimiser spends its
 	// gradient there. log1p keeps the ordering and the small error behaviour but bounds what a
 	// single point can add
-	return torch::mean(torch::log1p(relativeErrorPerPoint(spectra.first, spectra.second)));
+	return torch::mean(torch::log1p(relativeErrorPerPoint(spectra.first, spectra.second))).to(*offload_device);
 }

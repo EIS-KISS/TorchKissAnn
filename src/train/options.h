@@ -42,7 +42,8 @@ enum
 	OPT_CANONICAL_POINTS,
 	OPT_CANONICAL_LINEAR,
 	OPT_CANONICAL_AUGMENT_SHIFT,
-	OPT_CANONICAL_AUGMENT_WINDOW
+	OPT_CANONICAL_AUGMENT_WINDOW,
+	OPT_SPECTRA_NORM
 };
 
 static struct argp_option options[] =
@@ -70,6 +71,7 @@ static struct argp_option options[] =
   {"canonical-linear",		OPT_CANONICAL_LINEAR, 0, 0, "Use a linearly spaced canonical grid instead of logarithmic"},
   {"canonical-augment-shift",	OPT_CANONICAL_AUGMENT_SHIFT, "[NUMBER]", 0, "Classification only: randomly shift each training spectra along the log frequency axis by up to this many decades (default when canonical is on: 1, set 0 to disable)"},
   {"canonical-augment-window",	OPT_CANONICAL_AUGMENT_WINDOW, "[NUMBER]", 0, "Crop each training spectra to a random contiguous sub-range keeping at least this fraction of the points, then resample (valid for regression too; default 1 = disabled, e.g. 0.5 crops down to half)"},
+  {"spectra-norm",	OPT_SPECTRA_NORM,	"[STRING]", 0,	"Classification only: divide each spectra by a reference impedance so only the shape of the Nyquist plot reaches the network: none, zmean (mean |Z|), zgeom (geometric mean |Z|), zmax (largest |Z|). Default none. Recorded in the checkpoint so _test and libkissinference apply the same scaling"},
   { 0 }
 };
 
@@ -199,6 +201,9 @@ struct Config
 	double canonicalAugmentMaxShift = 1.0;   // decades; 0 disables shift augmentation
 	double canonicalAugmentWindowMin = 1.0;  // minimum fraction of points kept when windowing; 1 disables
 	bool canonicalAugmentShiftRequested = false; // set when --canonical-augment-shift was passed explicitly
+	// Per spectra |Z| scaling for classification: name of the reference impedance each spectra is
+	// divided by (see SpectraNorm). "none" leaves the raw impedances alone.
+	std::string spectraNorm = "none";
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -293,6 +298,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_CANONICAL_AUGMENT_WINDOW:
 			config->canonicalAugmentWindowMin = std::stod(std::string(arg));
+			break;
+		case OPT_SPECTRA_NORM:
+			config->spectraNorm = arg;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

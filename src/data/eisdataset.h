@@ -38,14 +38,6 @@ struct DropDesc
 	float strength;
 };
 
-struct InputNormalization
-{
-	torch::Tensor scalars; // Multiplier and offset applied to the (log compressed) input so the observed range of every feature maps onto [-1, 1].
-	torch::Tensor biases;
-	int64_t logCount = 0;
-	double logFloor = ann::Net::DEFAULT_INPUT_LOG_FLOOR;
-};
-
 template <typename DataSelf>
 class EisDataset:
 public torch::data::datasets::Dataset<DataSelf, torch::data::Example<torch::Tensor, torch::Tensor>>
@@ -79,7 +71,6 @@ public:
 	virtual std::string dataLabel() const;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
 	virtual std::pair<torch::Tensor, torch::Tensor> inputRanges();
-	virtual InputNormalization getInputNormalization();
 
 	virtual ~EisDataset() = default;
 };
@@ -312,36 +303,6 @@ std::pair<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::inputRanges()
 	bar.mark_as_completed();
 	indicators::show_console_cursor(true);
 	return {max, min};
-}
-
-template <typename DataSelf>
-InputNormalization EisDataset<DataSelf>::getInputNormalization()
-{
-	std::pair<torch::Tensor, torch::Tensor> ranges = this->inputRanges();
-	torch::Tensor inMax = ranges.first;
-	torch::Tensor inMin = ranges.second;
-	const int64_t inSize = static_cast<int64_t>(inMax.size(0));
-
-	InputNormalization norm;
-	int64_t extraCount = 0;
-	for(const std::pair<std::string, int64_t>& extra : this->extraInputs())
-		extraCount += extra.second;
-	int64_t logCount = inSize - extraCount;
-	if(logCount < 0)
-		logCount = 0;
-	else if(logCount > inSize)
-		logCount = inSize;
-	norm.logCount = logCount;
-
-	torch::Tensor inMaxT = signedLog10Leading(inMax, norm.logCount, norm.logFloor);
-	torch::Tensor inMinT = signedLog10Leading(inMin, norm.logCount, norm.logFloor);
-
-	torch::Tensor inHalf = 0.5*(inMaxT-inMinT);
-	torch::Tensor inMid = 0.5*(inMaxT+inMinT);
-	norm.scalars = torch::where(inHalf > 0, 1.0/torch::clamp(inHalf, 1e-30, 1e30), torch::zeros_like(inHalf));
-	norm.biases = -inMid*norm.scalars;
-
-	return norm;
 }
 
 template <typename DataSelf>

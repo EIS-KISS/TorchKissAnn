@@ -18,6 +18,40 @@
 # You should have received a copy of the GNU General Public License
 # along with TorchKissAnn.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Export a TorchKissAnn TorchScript network to ONNX.
+
+The exported graph is pure network: it computes on the normalized input vector and returns the
+network's own output space. All preprocessing that training applied to raw spectra (canonical
+frequency resampling, per-spectra |Z| normalization, signed log compression, affine scaling) and
+all postprocessing of the output (affine denormalization, exponentiation of log targets) is
+described by metadata properties instead of being baked into the graph, so libkissinference can
+apply it in its own domain types. Every property is optional; an absent property means that step
+is the identity.
+
+Metadata contract for the input side, applied in this order:
+
+  canonicalGrid / canonicalFMin / canonicalFMax / canonicalPoints / canonicalLog
+      resample the raw spectra onto that frequency grid (linear interpolation, constant edge
+      extrapolation) before anything else
+  spectraNorm
+      'zmean', 'zgeom' or 'zmax': divide all 2N values by the spectra's mean |Z|, geometric mean
+      |Z| or maximum |Z|
+  inputLogCount / inputLogFloor
+      apply sign(x) * log10(1 + |x| / inputLogFloor) to the first inputLogCount values
+  inputScalars / inputBiases
+      inputScalars[i] * x[i] + inputBiases[i]
+
+And for the output side:
+
+  outputScalars / outputBiases
+      outputScalars[i] * y[i] + outputBiases[i]
+  outputLog
+      comma separated per-output flags; exponentiate (10^y) where the flag is 1
+
+The network metadata is read from the meta.json extra file that buildnet.py embeds into the
+TorchScript archive, so an exported model carries its full contract without side files.
+"""
+
 import torch
 import onnx
 import sys
@@ -38,66 +72,21 @@ def checkCompositContainer(container, key: str) -> bool:
 	return False
 
 
-def vectorFromMeta(entry, size: int, default: float) -> torch.Tensor:
-	if entry is None or len(entry) != size:
-		return torch.full((size,), default, dtype=torch.float32)
-	return torch.tensor([float(v) for v in entry], dtype=torch.float32)
+def addMetaProp(model, key: str, value) -> None:
+	if checkCompositContainer(model.metadata_props, key):
+		return
+	prop = model.metadata_props.add()
+	prop.key = key
+	prop.value = str(value)
 
 
-class NormalizedModel(torch.nn.Module):
-	"""
-	Wrap a network that was trained on a normalized input and predicts normalized values, so the
-	exported graph takes raw impedances and returns physical parameters.
-
-	libkissinference only knows how to apply an affine transform to the output, so the log domains
-	have to live inside the graph. The exported metadata therefore has to carry identity output
-	scalars and biases, otherwise the conversion would be applied twice.
-	"""
-
-	def __init__(self, model, meta):
-		super().__init__()
-		self.model = model
-		inputSize = int(meta['inputSize'])
-		outputSize = int(meta['outputSize'])
-		logCount = int(meta.get('inputLogCount', 0))
-		self.logFloor = float(meta.get('inputLogFloor', 1e-9))
-		logMask = torch.zeros(inputSize, dtype=torch.float32)
-		logMask[:logCount] = 1.0
-		self.register_buffer("logMask", logMask)
-		self.register_buffer("inputScalars", vectorFromMeta(meta.get('inputScalars'), inputSize, 1.0))
-		self.register_buffer("inputBiases", vectorFromMeta(meta.get('inputBiases'), inputSize, 0.0))
-		self.register_buffer("outputScalars", vectorFromMeta(meta.get('outputScalars'), outputSize, 1.0))
-		self.register_buffer("outputBiases", vectorFromMeta(meta.get('outputBiases'), outputSize, 0.0))
-		self.register_buffer("outputLogMask", vectorFromMeta(
-			[1.0 if v else 0.0 for v in meta['outputLog']] if meta.get('outputLog') else None, outputSize, 0.0))
-
-	def forward(self, x):
-		x = self.normalizeInput(x)
-		return self.denormalizeOutput(self.model.forward(x))
-
-	def normalizeInput(self, x):
-		compressed = torch.sign(x)*torch.log10(1.0+torch.abs(x)/self.logFloor)
-		x = torch.where(self.logMask > 0, compressed, x)
-		return x*self.inputScalars + self.inputBiases
-
-	def denormalizeOutput(self, y):
-		y = y*self.outputScalars + self.outputBiases
-		# clamped like the C++ side, so an overshooting network yields a huge number instead of inf
-		return torch.where(self.outputLogMask > 0, torch.pow(10.0, torch.clamp(y, -30.0, 30.0)), y)
-
-
-def isNormalized(meta) -> bool:
-	return meta.get('inputScalars') is not None or bool(meta.get('outputLog'))
+def addVectorMetaProp(model, key: str, values) -> None:
+	if values is None:
+		return
+	addMetaProp(model, key, ",".join(str(v) for v in values))
 
 
 def exportModel(model, meta, outname: str, output_prepend: str | None = None) -> str:
-	if isNormalized(meta):
-		print("Baking the dataset normalization into the graph, output scalars become identity")
-		model = NormalizedModel(model, meta)
-		meta = dict(meta)
-		meta['outputScalars'] = [1.0]*int(meta['outputSize'])
-		meta['outputBiases'] = [0.0]*int(meta['outputSize'])
-
 	example_input = torch.randn((1, int(meta['inputSize'])), dtype=torch.float32)
 	model.eval()
 	example_output = model.forward(example_input)
@@ -133,21 +122,17 @@ def exportModel(model, meta, outname: str, output_prepend: str | None = None) ->
 			value = value + "class_" + str(i) + ','
 		onnxmeta.value = value[:-1]
 
-	if 'outputBiases' in meta and len(meta['outputBiases']) == meta['outputSize'] and not checkCompositContainer(onnx_model.metadata_props, 'outputBiases'):
-		onnxmeta = onnx_model.metadata_props.add()
-		onnxmeta.key = 'outputBiases'
-		biases = ""
-		for bias in meta['outputBiases']:
-			biases = biases + str(bias) + ','
-		onnxmeta.value = biases[:-1]
+	# Output transform: the graph hands back values in the space the network was trained in, so the
+	# client converts them to physical units with y*outputScalars + outputBiases, reading an entry
+	# whose outputLog flag is set as the exponent of a base ten power (see the C++ affineToPhysical()).
+	if 'outputBiases' in meta and len(meta['outputBiases']) == meta['outputSize']:
+		addVectorMetaProp(onnx_model, 'outputBiases', meta['outputBiases'])
 
-	if 'outputScalars' in meta and len(meta['outputScalars']) == meta['outputSize'] and not checkCompositContainer(onnx_model.metadata_props, 'outputScalars'):
-		onnxmeta = onnx_model.metadata_props.add()
-		onnxmeta.key = 'outputScalars'
-		scalars = ""
-		for scalar in meta['outputScalars']:
-			scalars = scalars + str(scalar) + ','
-		onnxmeta.value = scalars[:-1]
+	if 'outputScalars' in meta and len(meta['outputScalars']) == meta['outputSize']:
+		addVectorMetaProp(onnx_model, 'outputScalars', meta['outputScalars'])
+
+	if meta.get('outputLog'):
+		addVectorMetaProp(onnx_model, 'outputLog', [1 if v else 0 for v in meta['outputLog']])
 
 	assert 'extraInputs' not in meta or 'extraInputLengths' in meta
 
@@ -186,6 +171,28 @@ def exportModel(model, meta, outname: str, output_prepend: str | None = None) ->
 				onnxmeta = onnx_model.metadata_props.add()
 				onnxmeta.key = key
 				onnxmeta.value = str(meta[key])
+
+	# Input preparation contract. Nothing is baked into the graph any more: the exported network
+	# computes on the normalized vector, so the client has to bring a raw spectra into that space
+	# first, in exactly this order (the same order the training loaders use):
+	#
+	#   1. resample onto the canonical grid, if canonicalGrid is present
+	#   2. divide all 2N values by the spectra's |Z| reference, if spectraNorm is present
+	#      (zmean: mean of |Z|, zgeom: geometric mean, zmax: maximum of |Z|)
+	#   3. signed log compression of the first inputLogCount values:
+	#      sign(x) * log10(1 + |x| / inputLogFloor)
+	#   4. inputScalars[i] * x[i] + inputBiases[i]
+	#
+	# Absent properties are identity at that step. Steps 3 and 4 are what regression training
+	# derives from the dataset; classification only ever sets inputLogCount (the affine transform
+	# would undo the per-spectra |Z| normalization).
+	if meta.get('spectraNorm'):
+		addMetaProp(onnx_model, 'spectraNorm', meta['spectraNorm'])
+	if int(meta.get('inputLogCount', 0)) > 0:
+		addMetaProp(onnx_model, 'inputLogCount', int(meta['inputLogCount']))
+		addMetaProp(onnx_model, 'inputLogFloor', float(meta.get('inputLogFloor', 1e-9)))
+	addVectorMetaProp(onnx_model, 'inputScalars', meta.get('inputScalars'))
+	addVectorMetaProp(onnx_model, 'inputBiases', meta.get('inputBiases'))
 
 	onnx.save(onnx_model, f"{outname}.onnx")
 

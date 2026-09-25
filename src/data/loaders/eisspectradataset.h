@@ -19,15 +19,52 @@
  */
 
 #pragma once
+#include <string>
+#include <vector>
 #include <kisstype/spectra.h>
 
 #include "data/canonicalgrid.h"
+
+/**
+ * How a single spectra is scaled to a common impedance level before it reaches the network.
+ *
+ * Every point of the spectra is divided by one reference impedance, so the shape of the Nyquist plot
+ * is untouched and only its absolute |Z| level is removed. That is what makes the transform usable
+ * for classification: the circuit topology, and therefore the class, is preserved, while the
+ * difference between, say, a 1 mm and a 10 mm electrode or two measurements of the same cell at
+ * different times stops being a difference the network has to memorise. It is NOT valid for
+ * regression, where the labels are the physical parameter values the scaling changes.
+ *
+ * The reference is computed from the points the network actually sees, i.e. after any canonical grid
+ * resampling, so a client reproducing the transform must do the resampling first.
+ */
+enum class SpectraNorm
+{
+	None,
+	ZMean,   // divide by the arithmetic mean of |Z|
+	ZGeom,   // divide by the geometric mean of |Z|, the centre of the data on a log scale
+	ZMax     // divide by the largest |Z|
+};
+
+/// Parse a mode name as it appears on the command line and in a checkpoint's meta.json. Returns
+/// SpectraNorm::None for an empty or unknown string.
+SpectraNorm spectraNormFromString(const std::string& in);
+std::string spectraNormToString(SpectraNorm mode);
+
+/// The reference impedance of one spectra, or 0 when the spectra carries no usable magnitude and
+/// must be passed through unscaled.
+fvalue spectraNormReference(const std::vector<eis::DataPoint>& data, SpectraNorm mode);
+
+/// Divide every point by the reference of the set, leaving the frequencies alone. No-op for
+/// SpectraNorm::None, an empty set or a reference of zero.
+void applySpectraNorm(std::vector<eis::DataPoint>& data, SpectraNorm mode);
 
 class EisSpectraDataset
 {
 	inline static const std::string extraInputStr = "exip_";
 
 	CanonicalGrid canonical;
+	SpectraNorm spectraNorm = SpectraNorm::None;
 
 public:
 	/**
@@ -55,6 +92,15 @@ public:
 	 */
 	void setCanonicalTraining(bool training);
 
+	/**
+	 * Scale every handed out spectra to a common impedance level. Deterministic, so the training and
+	 * the test dataset have to be configured identically; the mode is recorded in the network
+	 * metadata so _test and libkissinference can rebuild it. Only the classification loaders are
+	 * ever given a mode other than SpectraNorm::None.
+	 */
+	void setSpectraNorm(SpectraNorm mode);
+	SpectraNorm spectraNormMode() const;
+
 protected:
 	static std::pair<std::vector<std::string>, std::vector<std::string>> getExtraInputsAndLabelNames(const eis::Spectra& spectra);
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) = 0;
@@ -66,10 +112,10 @@ protected:
 	bool canonicalEnabled() const;
 
 	/**
-	 * Resample the given points onto the canonical grid. Returns the input unchanged when canonical
-	 * mode is off. When shift augmentation is active (canonical mode, training, shift enabled) the
-	 * grid is shifted by a random number of decades first, which moves the whole spectra along the
-	 * frequency axis while keeping its class.
+	 * Turn a raw loaded spectra into the points that go into the input vector: resample onto the
+	 * canonical grid when enabled (with the random window crop and frequency shift augmentations
+	 * during training), then apply the per spectra |Z| normalization. Returns the input unchanged
+	 * when neither is configured, which is the path the regression loaders take.
 	 */
 	std::vector<eis::DataPoint> resampleCanonical(const std::vector<eis::DataPoint>& data);
 

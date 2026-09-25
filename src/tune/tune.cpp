@@ -21,14 +21,17 @@
 
 #include <eisgenerator/log.h>
 
+#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <string>
 #include <typeinfo>
 
 #include "ann/classification.h"
 #include "ann/regression.h"
 #include "data/loaders/dirloader.h"
+#include "data/loaders/eisspectradataset.h"
 #include "data/loaders/regressiondirloader.h"
 #include "data/loaders/regressionloader.h"
 #include "data/loaders/tarloader.h"
@@ -37,6 +40,19 @@
 #include "log.h"
 #include "options.h"
 #include "tuner.h"
+
+// Hand the per spectra |Z| scaling to a dataset if it is one built from spectra. The scaling is
+// deterministic, so the training and the test dataset must be configured identically.
+template <typename DataSetType>
+static void applySpectraNorm(SpectraNorm mode, EisDataset<DataSetType>* dataset)
+{
+	if(dataset == nullptr || mode == SpectraNorm::None)
+		return;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(dataset);
+	if(spectra == nullptr)
+		return;
+	spectra->setSpectraNorm(mode);
+}
 
 template <typename DataSetType>
 int tuneDataset(const Config& config)
@@ -67,6 +83,14 @@ int tuneDataset(const Config& config)
 			delete testDataset;
 			return 1;
 		}
+	}
+
+	SpectraNorm spectraNormMode = spectraNormFromString(config.spectraNorm);
+	if(spectraNormMode != SpectraNorm::None)
+	{
+		applySpectraNorm(spectraNormMode, &dataset);
+		applySpectraNorm(spectraNormMode, testDataset);
+		Log(Log::INFO)<<"Scaling every spectra to a common impedance level (reference: "<<spectraNormToString(spectraNormMode)<<")";
 	}
 
 	int ret = 0;
@@ -179,6 +203,22 @@ bool check_options(const Config& config)
 			Log(Log::ERROR)<<"downsampleSteps must be at least 1";
 			return false;
 		}
+
+	SpectraNorm spectraNormMode = spectraNormFromString(config.spectraNorm);
+	std::string spectraNormName = config.spectraNorm;
+	for(char& c : spectraNormName)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	if(spectraNormMode == SpectraNorm::None && !spectraNormName.empty() && spectraNormName != "none")
+	{
+		Log(Log::ERROR)<<"--spectra-norm must be one of none, zmean, zgeom or zmax, not "<<config.spectraNorm;
+		return false;
+	}
+	if(spectraNormMode != SpectraNorm::None && config.mode == MODE_REGRESSION)
+	{
+		Log(Log::ERROR)<<"--spectra-norm can not be tuned in regression mode: dividing every spectra by its own "
+			<<"impedance level removes exactly what the parameter targets describe.";
+		return false;
+	}
 
 	return true;
 }

@@ -21,6 +21,7 @@
 
 #include <cerrno>
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <ios>
@@ -104,6 +105,24 @@ static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* da
 	spectra->setCanonicalTraining(training);
 }
 
+// Configure the per spectra |Z| scaling on a dataset. Unlike the shift augmentation this is
+// deterministic, so the training and the test dataset have to be configured identically or the
+// network would be measured against a differently scaled input. Must run before any call to
+// inputSize() and before the dataset is copied into a data loader.
+template <typename DataSetType>
+static void applySpectraNorm(const Config& config, EisDataset<DataSetType>* dataset)
+{
+	if(dataset == nullptr)
+		return;
+	SpectraNorm mode = spectraNormFromString(config.spectraNorm);
+	if(mode == SpectraNorm::None)
+		return;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(dataset);
+	if(spectra == nullptr)
+		return;
+	spectra->setSpectraNorm(mode);
+}
+
 template <typename DataSetType>
 int train(const Config& config)
 {
@@ -169,6 +188,12 @@ int train(const Config& config)
 			return 1;
 		}
 	}
+
+	applySpectraNorm(config, &dataset);
+	applySpectraNorm(config, testDataset);
+	if(spectraNormFromString(config.spectraNorm) != SpectraNorm::None)
+		Log(Log::INFO)<<"Scaling every spectra to a common impedance level (reference: "<<config.spectraNorm
+			<<"), the network sees the shape of the Nyquist plot only";
 
 	if(config.canonical)
 	{
@@ -488,6 +513,24 @@ bool check_options(const Config& config)
 	if(config.canonicalAugmentWindowMin <= 0 || config.canonicalAugmentWindowMin > 1)
 	{
 		Log(Log::ERROR)<<"--canonical-augment-window must be in (0, 1] (fraction of points to keep)";
+		return false;
+	}
+
+	SpectraNorm spectraNormMode = spectraNormFromString(config.spectraNorm);
+	std::string spectraNormName = config.spectraNorm;
+	for(char& c : spectraNormName)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	if(spectraNormMode == SpectraNorm::None && !spectraNormName.empty() && spectraNormName != "none")
+	{
+		Log(Log::ERROR)<<"--spectra-norm must be one of none, zmean, zgeom or zmax, not "<<config.spectraNorm;
+		return false;
+	}
+	if(spectraNormMode != SpectraNorm::None && !classificationMode)
+	{
+		Log(Log::ERROR)<<"--spectra-norm can only be used in the classification modes "<<trainModeToStr(MODE_ANN)<<", "
+			<<trainModeToStr(MODE_ANN_CONV)<<" and "<<trainModeToStr(MODE_ANN_SCRIPT)<<": dividing every spectra by its "
+			<<"own impedance level removes exactly what the regression targets, the autoencoder reconstruction and the "
+			<<"gan discriminator depend on.";
 		return false;
 	}
 	if(canonicalRequested && config.canonicalAugmentShiftRequested && config.canonicalAugmentMaxShift > 0 &&

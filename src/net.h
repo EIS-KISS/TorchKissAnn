@@ -53,6 +53,7 @@ protected:
 	torch::Tensor inputBiases;
 	int64_t inputLogCount = 0;
 	double inputLogFloor = DEFAULT_INPUT_LOG_FLOOR;
+	std::string spectraNorm; // Name of the per spectra |Z| scaling the loader applied to every training input, empty when the inputs are raw impedances. A client feeding the network has to reproduce it.
 	bool canonicalGrid = false; // The network expects inputs resampled onto a fixed log frequency grid.
 	double canonicalFMin = 0;
 	double canonicalFMax = 0;
@@ -97,12 +98,26 @@ public:
 	 */
 	void setInputNormalization(const torch::Tensor& scalars, const torch::Tensor& biases,
 			int64_t logCount = 0, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
+	/**
+	 * Compress the leading logCount input features with a signed log but apply no affine rescaling.
+	 * Classification uses this: the per spectra |Z| normalization already puts every input on a common
+	 * scale, so an affine transform derived from the dataset range would carry no information.
+	 */
+	void setInputLogCompression(int64_t logCount, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
+	/**
+	 * Record that the training loader scaled every spectra to a common impedance level. mode is one of
+	 * the names understood by SpectraNorm (zmean, zgeom, zmax); an empty string means the network was
+	 * trained on raw impedances. Anything feeding this network has to apply the same scaling, after
+	 * the canonical grid resampling and before normalizeInput.
+	 */
+	void setSpectraNorm(const std::string& mode);
+	/**
+	 * Name of the per spectra |Z| scaling this network expects, empty when there is none.
+	 */
+	const std::string& getSpectraNorm() const;
 	torch::Tensor getOutputScalars();
 	torch::Tensor getOutputBiases();
 	torch::Tensor getOutputLogMask();
-	torch::Tensor getInputScalars();
-	int64_t getInputLogCount() const;
-	double getInputLogFloor() const;
 	/**
 	 * Transform a raw dataset input into the space the network was trained in.
 	 */

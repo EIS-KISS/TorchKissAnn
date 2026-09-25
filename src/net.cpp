@@ -202,6 +202,8 @@ ann::Net::Net(const Json::Value& node)
 	canonicalFMax = node.get("canonicalFMax", 0.0).asDouble();
 	canonicalPoints = node.get("canonicalPoints", (Json::Int64)0).asInt64();
 	canonicalLog = node.get("canonicalLog", true).asBool();
+
+	spectraNorm = node.get("spectraNorm", "").asString();
 }
 
 void ann::Net::setOutputScalars(const torch::Tensor& tensor)
@@ -262,19 +264,23 @@ void ann::Net::setInputNormalization(const torch::Tensor& scalars, const torch::
 	inputLogFloor = logFloor;
 }
 
-torch::Tensor ann::Net::getInputScalars()
+void ann::Net::setInputLogCompression(int64_t logCount, double logFloor)
 {
-	return inputScalars;
+	assert(logCount >= 0 && logCount <= getInputSize());
+	inputScalars = torch::Tensor();
+	inputBiases = torch::Tensor();
+	inputLogCount = logCount;
+	inputLogFloor = logFloor;
 }
 
-int64_t ann::Net::getInputLogCount() const
+void ann::Net::setSpectraNorm(const std::string& mode)
 {
-	return inputLogCount;
+	spectraNorm = mode;
 }
 
-double ann::Net::getInputLogFloor() const
+const std::string& ann::Net::getSpectraNorm() const
 {
-	return inputLogFloor;
+	return spectraNorm;
 }
 
 torch::Tensor ann::Net::normalizeInput(torch::Tensor input) const
@@ -396,6 +402,11 @@ void ann::Net::getConfiguration(Json::Value& node)
 		node["canonicalPoints"] = (Json::Int64)canonicalPoints;
 		node["canonicalLog"] = canonicalLog;
 	}
+
+	// Absent means the network was trained on raw impedances. Consumers must apply this scaling to a
+	// raw spectra, after the canonical resampling, before the log compression below.
+	if(!spectraNorm.empty())
+		node["spectraNorm"] = spectraNorm;
 }
 
 void ann::Net::setCanonicalGrid(double fMin, double fMax, int64_t points, bool log)
