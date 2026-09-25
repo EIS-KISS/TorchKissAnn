@@ -122,8 +122,11 @@ torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
 
 		torch::Tensor output = network->forward(data);
 
-		targets = unargmax(targets.to(torch::kInt64), network->getOutputSize());
-		output = unargmax(output.argmax(1), network->getOutputSize());
+		// The accumulator below is scalar bookkeeping that gains nothing from living on the gpu, so
+		// bring both one hot matrices back in one transfer per batch and count on the cpu, where the
+		// result is wanted anyway. Mixing the two is what used to abort the run on gpu builds.
+		targets = unargmax(targets.to(torch::kInt64), network->getOutputSize()).to(torch::kCPU);
+		output = unargmax(output.argmax(1), network->getOutputSize()).to(torch::kCPU);
 
 		for(long i = 0; i < output.size(0); ++i)
 		{
@@ -251,7 +254,9 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	assert(net->getOutputSize() == static_cast<int64_t>(trainDataset->outputSize()));
 	if(testDataset)
 	{
-		assert(trainDataset->outputSize() == testDataset->outputSize());
+		// The test dataset may cover fewer classes than the network knows; train.cpp remaps its
+		// targets onto the training label space by name, so only a superset is impossible here.
+		assert(trainDataset->outputSize() >= testDataset->outputSize());
 		assert(trainDataset->isMulticlass() == testDataset->isMulticlass());
 	}
 

@@ -66,6 +66,9 @@ public:
 	virtual c10::optional<size_t> size() const override = 0;
 	virtual bool isMulticlass();
 	bool createLabelMap(const ann::Net& net);
+	bool createLabelMapFromLabels(const std::vector<std::string>& labels);
+	bool labelsInSameOrderAs(const std::vector<std::string>& labels);
+	torch::Tensor mapPerClassToNetOrder(const torch::Tensor& values, int64_t netOutputSize) const;
 	void setDropouts(const std::vector<DropDesc>& dropouts);
 	const std::vector<DropDesc>& getDropouts();
 
@@ -121,29 +124,81 @@ torch::Tensor EisDataset<DataSelf>::getTargetImpl(size_t index)
 template <typename DataSelf>
 bool EisDataset<DataSelf>::createLabelMap(const ann::Net& net)
 {
-	if(outputSize() > net.getOutputLabels().size())
+	return createLabelMapFromLabels(net.getOutputLabels());
+}
+
+/// Build the remap that turns this dataset's target indices into the index space described by
+/// labels. Loaders intern classes in the order they happen to encounter them, so the same classes
+/// come out in a different order depending on whether they were read from a directory or from a
+/// tar, and a subset of a dataset interns into a prefix that has nothing to do with the original
+/// numbering. Returns false, leaving the map empty, when some class of this dataset has no entry
+/// in labels; that is a genuine mismatch rather than a reordering and must not be papered over.
+template <typename DataSelf>
+bool EisDataset<DataSelf>::createLabelMapFromLabels(const std::vector<std::string>& labels)
+{
+	labelMap.clear();
+
+	if(static_cast<int64_t>(outputSize()) > static_cast<int64_t>(labels.size()))
 		return false;
 
-	for(int64_t i = 0; i < outputSize(); ++i)
+	for(int64_t i = 0; i < static_cast<int64_t>(outputSize()); ++i)
 	{
 		std::string model = outputName(i);
-		for(int64_t j = 0; j < net.getOutputLabels().size(); ++j)
+		bool found = false;
+		for(int64_t j = 0; j < static_cast<int64_t>(labels.size()); ++j)
 		{
-			if(net.getOutputLabels()[j] == model)
+			if(labels[j] == model)
 			{
-				std::pair<std::map<int64_t, int64_t>::iterator, bool> ret = labelMap.insert(i, j);
-				if(!ret.second)
-				{
-					labelMap.clear();
-					return false;
-				}
+				labelMap[i] = j;
+				found = true;
+				break;
 			}
 		}
+		if(!found)
+		{
+			labelMap.clear();
+			return false;
+		}
+	}
+	return true;
+}
+
+/// True when every class of this dataset already sits at the index labels puts it at, in which
+/// case no remap is needed and the identity path stays completely free.
+template <typename DataSelf>
+bool EisDataset<DataSelf>::labelsInSameOrderAs(const std::vector<std::string>& labels)
+{
+	if(static_cast<int64_t>(outputSize()) > static_cast<int64_t>(labels.size()))
+		return false;
+
+	for(int64_t i = 0; i < static_cast<int64_t>(outputSize()); ++i)
+		if(outputName(i) != labels[static_cast<size_t>(i)])
+			return false;
+
+	return true;
+}
+
+/// Reorder a per-class vector (class weights and the like, which the loaders compute in dataset
+/// index order) into the network's index space. Network classes this dataset does not contain get
+/// a zero, which is correct because no sample can carry their target.
+template <typename DataSelf>
+torch::Tensor EisDataset<DataSelf>::mapPerClassToNetOrder(const torch::Tensor& values, int64_t netOutputSize) const
+{
+	torch::Tensor out = torch::zeros({netOutputSize}, values.options());
+
+	if(labelMap.empty())
+	{
+		int64_t common = values.size(0) < netOutputSize ? values.size(0) : netOutputSize;
+		for(int64_t i = 0; i < common; ++i)
+			out[i] = values[i];
+		return out;
 	}
 
-	if(labelMap.size() != outputSize())
-		return false;
-	return true;
+	for(const std::pair<const int64_t, int64_t>& entry : labelMap)
+		if(entry.first >= 0 && entry.first < values.size(0) && entry.second >= 0 && entry.second < netOutputSize)
+			out[entry.second] = values[entry.first];
+
+	return out;
 }
 
 template <typename DataSelf>

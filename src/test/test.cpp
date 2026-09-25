@@ -20,6 +20,7 @@
 //
 
 #include <cstdint>
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <eisgenerator/model.h>
@@ -71,6 +72,17 @@ static void applyCanonicalFromNet(const std::shared_ptr<ann::Net>& net, T& datas
 	spectra->setCanonicalTraining(false);
 }
 
+/// Column header for output index i. Results are reported in the network's index space, so the
+/// network's own labels are the right names whenever it stores them; the dataset names are only a
+/// fallback for networks trained without labels.
+template <typename T>
+static std::string labelName(const std::vector<std::string>& netLabels, T& dataset, int64_t index)
+{
+	if(index >= 0 && static_cast<size_t>(index) < netLabels.size())
+		return netLabels[static_cast<size_t>(index)];
+	return dataset.outputName(index);
+}
+
 template <typename T>
 int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, const Config& config)
 {
@@ -94,8 +106,10 @@ int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, c
 		torch::data::DataLoaderOptions options;
 		options = options.batch_size(batch_size).workers(16);
 		auto dataLoader = torch::data::make_data_loader(dataset->map(torch::data::transforms::Stack<>()), options);
-		torch::Tensor weights =  torch::ones({static_cast<int64_t>(dataset->outputSize())}).to(*offload_device);
-		losses[i] = ann::classification::test(net, *dataLoader, dataset->size().value(), dataset->outputSize(), weights, dataset->isMulticlass()).loss;
+		// the dataset may carry a label remap applied by test() above, so size the buffers by the
+		// network output width rather than by the dataset's own (pre remap) class count
+		torch::Tensor weights =  torch::ones({net->getOutputSize()}).to(*offload_device);
+		losses[i] = ann::classification::test(net, *dataLoader, dataset->size().value(), net->getOutputSize(), weights, dataset->isMulticlass()).loss;
 	}
 
 	std::vector<double> indecies(dataset->inputSize());
@@ -138,27 +152,68 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 		return 1;
 	}
 
+	// The dataset interns classes in the order it happens to encounter them, which is the
+	// directory order for EisDirDataset and the tar order for EisTarDataset, so the same classes
+	// end up numbered differently depending on where they were read from. Accuracy, loss and the
+	// confusion matrix all compare raw network output indices against dataset target indices, so
+	// against a reinterned dataset the network scores on a permuted label space. Remap the targets
+	// onto the network's own label order whenever the names line up; a dataset carrying classes the
+	// network has never seen is a real mismatch and stays an error.
+	// Note that this has to happen before the dataset is handed to the data loader: map() copies
+	// the dataset by value, so a later mutation of it would be silently dropped.
+	std::vector<std::string> netOutputs = net->getOutputLabels();
+	int64_t evalOutputSize = net->getOutputSize();
+
+	if(net->getOutputSize() < static_cast<int64_t>(dataset.outputSize()))
+	{
+		Log(Log::ERROR)<<"Network has "<<net->getOutputSize()<<" outputs but the dataset has "<<dataset.outputSize()<<" classes";
+		return 1;
+	}
+
+	if(netOutputs.empty())
+		Log(Log::WARN)<<"Network stores no output labels, can not verify or remap the dataset class order";
+	else if(dataset.labelsInSameOrderAs(netOutputs))
+	{
+		// already numbered the way the network expects, leave the free identity path alone
+	}
+	else if(dataset.isMulticlass())
+	{
+		Log(Log::ERROR)<<"The dataset interns its classes in a different order than the network was trained with, and multiclass targets are multi hot vectors that can not be remapped by index. Reorder the dataset to match the network or train a new network on this dataset";
+		return 1;
+	}
+	else if(!dataset.createLabelMap(*net))
+	{
+		for(size_t i = 0; i < dataset.outputSize(); ++i)
+			if(std::find(netOutputs.begin(), netOutputs.end(), dataset.outputName(i)) == netOutputs.end())
+				Log(Log::ERROR)<<"The dataset has the class "<<dataset.outputName(i)<<" which the network does not know about";
+		Log(Log::ERROR)<<"Dataset and network do not describe the same set of classes, can not remap the dataset onto the network label order";
+		return 1;
+	}
+	else
+		Log(Log::INFO)<<"Dataset interns its classes in a different order than the network was trained with, remapped its targets onto the network label order";
+
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
 	// the weights are computed on the cpu, the loss has to see them on the device the network runs on
-	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), dataset.outputSize(), dataset.classWeights().to(*offload_device), dataset.isMulticlass());
+	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), evalOutputSize,
+		dataset.mapPerClassToNetOrder(dataset.classWeights(), evalOutputSize).to(*offload_device), dataset.isMulticlass());
 
 	Log(Log::INFO)<<"Test loss: "<<testRet.loss;
 	Log(Log::INFO)<<"Global Acc: "<<testRet.accOverall;
 	Log(Log::INFO)<<"Class Acc:";
 
-	for(size_t i = 0; i < dataset.outputSize(); ++i)
-		Log(Log::INFO, false)<<dataset.outputName(i)<<", ";
+	for(int64_t i = 0; i < evalOutputSize; ++i)
+		Log(Log::INFO, false)<<labelName(netOutputs, dataset, i)<<", ";
 	Log(Log::INFO)<<'\n'<<tensorToString(testRet.acc);
 
 	if(config.confustionMatrix)
 	{
 		torch::Tensor confustionMatrix = ann::classification::confusion(net, *dataLoader);
 		Log(Log::INFO)<<"Confusion matrix:";
-		for(size_t i = 0; i < dataset.outputSize(); ++i)
-			Log(Log::INFO, false)<<dataset.outputName(i)<<", ";
+		for(int64_t i = 0; i < evalOutputSize; ++i)
+			Log(Log::INFO, false)<<labelName(netOutputs, dataset, i)<<", ";
 		Log(Log::INFO)<<'\n'<<tensorToString(confustionMatrix)<<'\n';
 	}
 

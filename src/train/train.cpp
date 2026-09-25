@@ -20,6 +20,7 @@
 //
 
 #include <cerrno>
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <ios>
@@ -124,11 +125,47 @@ int train(const Config& config)
 	if(!config.testFileName.empty())
 	{
 		testDataset = new DataSetType(config.testFileName);
-		if(dataset.outputSize() != testDataset->outputSize())
+		if(testDataset->size().value() == 0)
+		{
+			Log(Log::ERROR)<<"Failed to load dataset from "<<config.testFileName;
+			delete testDataset;
+			return 2;
+		}
+
+		// Loaders intern classes in the order they happen to encounter them, so a training set read
+		// from a tar and a test set read from a directory number the same classes differently, and a
+		// test set that is a subset of the training set interns into a prefix unrelated to the
+		// original numbering. The network's label space is the training dataset's order, so remap the
+		// test targets onto it instead of scoring on a permuted label space. Only single label
+		// classification can do this: multiclass and regression targets are vectors, not indices.
+		if(!dataset.isMulticlass())
+		{
+			std::vector<std::string> trainLabels;
+			for(size_t i = 0; i < dataset.outputSize(); ++i)
+				trainLabels.push_back(dataset.outputName(i));
+
+			if(!testDataset->labelsInSameOrderAs(trainLabels))
+			{
+				if(testDataset->createLabelMapFromLabels(trainLabels))
+					Log(Log::INFO)<<"Test dataset interns its "<<testDataset->outputSize()<<" classes in a different order than the training dataset, remapped its targets onto the training label space";
+				else
+				{
+					for(size_t i = 0; i < testDataset->outputSize(); ++i)
+						if(std::find(trainLabels.begin(), trainLabels.end(), testDataset->outputName(i)) == trainLabels.end())
+							Log(Log::ERROR)<<"The test dataset has the class "<<testDataset->outputName(i)<<" which the training dataset does not contain";
+					Log(Log::ERROR)<<"Training and test dataset do not describe the same set of classes. The training dataset has "
+						<<dataset.outputSize()<<" classes, the test dataset has "<<testDataset->outputSize();
+					delete testDataset;
+					return 1;
+				}
+			}
+		}
+		else if(dataset.outputSize() != testDataset->outputSize())
 		{
 			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
 				<<"The traing dataset has "<<dataset.outputSize()
 				<<" and the test dataset has "<<testDataset->outputSize();
+			delete testDataset;
 			return 1;
 		}
 	}
