@@ -22,6 +22,7 @@
 #include <eisgenerator/log.h>
 
 #include <cctype>
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -41,20 +42,29 @@
 #include "options.h"
 #include "tuner.h"
 
-// Hand the per spectra |Z| scaling to a dataset if it is one built from spectra. The scaling is
-// deterministic, so the training and the test dataset must be configured identically.
+// Set the canonical frequency grid geometry shared by every trial. Must run before any call to
+// inputSize() so the network is sized for the grid rather than for the raw spectra. The per trial
+// augmentations are layered on top of this by tune::applyTrialInputPrep().
 template <typename DataSetType>
-static void applySpectraNorm(SpectraNorm mode, EisDataset<DataSetType>* dataset)
+static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* dataset, bool training)
 {
-	if(dataset == nullptr || mode == SpectraNorm::None)
+	if(dataset == nullptr || !config.canonical)
 		return;
 	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(dataset);
 	if(spectra == nullptr)
 		return;
-	spectra->setSpectraNorm(mode);
+
+	CanonicalGrid grid;
+	grid.enabled = true;
+	grid.fMin = config.canonicalFMin;
+	grid.fMax = config.canonicalFMax;
+	grid.points = config.canonicalPoints;
+	grid.log = config.canonicalLog;
+	spectra->setCanonicalGrid(grid);
+	spectra->setCanonicalTraining(training);
 }
 
-template <typename DataSetType>
+template <typename TrainType, typename TestType>
 int tuneDataset(const Config& config)
 {
 	if(config.fileName.empty())
@@ -63,8 +73,8 @@ int tuneDataset(const Config& config)
 		return 1;
 	}
 
-	DataSetType dataset(config.fileName);
-	DataSetType* testDataset = nullptr;
+	TrainType dataset(config.fileName);
+	TestType* testDataset = nullptr;
 
 	if(dataset.size().value() == 0)
 	{
@@ -74,8 +84,43 @@ int tuneDataset(const Config& config)
 
 	if(!config.testFileName.empty())
 	{
-		testDataset = new DataSetType(config.testFileName);
-		if(dataset.outputSize() != testDataset->outputSize())
+		testDataset = new TestType(config.testFileName);
+		if(testDataset->size().value() == 0)
+		{
+			Log(Log::ERROR)<<"Failed to load dataset from "<<config.testFileName;
+			delete testDataset;
+			return 2;
+		}
+
+		// Loaders intern classes in the order they happen to encounter them, so a training set read
+		// from a tar and a test set read from a directory number the same classes differently, and a
+		// test set covering a subset of the classes interns into a prefix unrelated to the original
+		// numbering. The network's label space is the training dataset's order, so remap the test
+		// targets onto it instead of ranking the trials on a permuted label space. Only single label
+		// classification can do this: multiclass and regression targets are vectors, not indices.
+		if(!dataset.isMulticlass())
+		{
+			std::vector<std::string> trainLabels;
+			for(size_t i = 0; i < dataset.outputSize(); ++i)
+				trainLabels.push_back(dataset.outputName(i));
+
+			if(!testDataset->labelsInSameOrderAs(trainLabels))
+			{
+				if(testDataset->createLabelMapFromLabels(trainLabels))
+					Log(Log::INFO)<<"Test dataset interns its "<<testDataset->outputSize()<<" classes in a different order than the training dataset, remapped its targets onto the training label space";
+				else
+				{
+					for(size_t i = 0; i < testDataset->outputSize(); ++i)
+						if(std::find(trainLabels.begin(), trainLabels.end(), testDataset->outputName(i)) == trainLabels.end())
+							Log(Log::ERROR)<<"The test dataset has the class "<<testDataset->outputName(i)<<" which the training dataset does not contain";
+					Log(Log::ERROR)<<"Training and test dataset do not describe the same set of classes. The training dataset has "
+						<<dataset.outputSize()<<" classes, the test dataset has "<<testDataset->outputSize();
+					delete testDataset;
+					return 1;
+				}
+			}
+		}
+		else if(dataset.outputSize() != testDataset->outputSize())
 		{
 			Log(Log::ERROR)<<"Training and test dataset don't have the same number of classes. "
 				<<"The traing dataset has "<<dataset.outputSize()
@@ -85,13 +130,14 @@ int tuneDataset(const Config& config)
 		}
 	}
 
-	SpectraNorm spectraNormMode = spectraNormFromString(config.spectraNorm);
-	if(spectraNormMode != SpectraNorm::None)
-	{
-		applySpectraNorm(spectraNormMode, &dataset);
-		applySpectraNorm(spectraNormMode, testDataset);
-		Log(Log::INFO)<<"Scaling every spectra to a common impedance level (reference: "<<spectraNormToString(spectraNormMode)<<")";
-	}
+	// The grid geometry is fixed for the whole search because it sets the input size; the swept
+	// augmentations and the |Z| scaling are reconfigured per trial by the search below.
+	applyCanonicalGrid(config, &dataset, true);
+	applyCanonicalGrid(config, testDataset, false);
+	if(config.canonical)
+		Log(Log::INFO)<<"Resampling every spectra onto the canonical grid of "<<config.canonicalPoints
+			<<(config.canonicalLog ? " log spaced" : " linearly spaced")<<" points from "
+			<<config.canonicalFMin<<" to "<<config.canonicalFMax<<" rad/s";
 
 	int ret = 0;
 	switch(config.mode)
@@ -99,13 +145,13 @@ int tuneDataset(const Config& config)
 		case MODE_ANN:
 		case MODE_ANN_CONV:
 			Log(Log::INFO)<<"Tuning a classification network with "<<(config.mode == MODE_ANN_CONV ? "conv" : "simple")<<" net";
-			ret = tune::searchClassification<DataSetType, DataSetType>(config, &dataset, testDataset);
+			ret = tune::searchClassification<TrainType, TestType>(config, &dataset, testDataset);
 			break;
 
 		case MODE_REGRESSION:
 		{
-			RegressionDataset<DataSetType>* trainDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(&dataset);
-			RegressionDataset<DataSetType>* testDatasetReg = dynamic_cast<RegressionDataset<DataSetType>*>(testDataset);
+			RegressionDataset<TrainType>* trainDatasetReg = dynamic_cast<RegressionDataset<TrainType>*>(&dataset);
+			RegressionDataset<TestType>* testDatasetReg = dynamic_cast<RegressionDataset<TestType>*>(testDataset);
 			if(!trainDatasetReg || (testDataset && !testDatasetReg))
 			{
 				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(dataset).name()<<" to tune regression as this is not a regression dataset";
@@ -113,7 +159,7 @@ int tuneDataset(const Config& config)
 				break;
 			}
 			Log(Log::INFO)<<"Tuning a regression network with "<<netTypeToStr(config.netType)<<" net";
-			ret = tune::searchRegression<DataSetType, DataSetType>(config, trainDatasetReg, testDatasetReg);
+			ret = tune::searchRegression<TrainType, TestType>(config, trainDatasetReg, testDatasetReg);
 			break;
 		}
 
@@ -204,20 +250,69 @@ bool check_options(const Config& config)
 			return false;
 		}
 
-	SpectraNorm spectraNormMode = spectraNormFromString(config.spectraNorm);
-	std::string spectraNormName = config.spectraNorm;
-	for(char& c : spectraNormName)
-		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-	if(spectraNormMode == SpectraNorm::None && !spectraNormName.empty() && spectraNormName != "none")
+	SpectraNorm spectraNormMode = SpectraNorm::None;
+	for(const std::string& name : config.spectraNorms)
 	{
-		Log(Log::ERROR)<<"--spectra-norm must be one of none, zmean, zgeom or zmax, not "<<config.spectraNorm;
-		return false;
+		std::string lowered = name;
+		for(char& c : lowered)
+			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		if(spectraNormFromString(name) == SpectraNorm::None && !lowered.empty() && lowered != "none")
+		{
+			Log(Log::ERROR)<<"--spectra-norm must be a comma separated list of none, zmean, zgeom and zmax, not "<<name;
+			return false;
+		}
+		spectraNormMode = spectraNormFromString(name);
 	}
 	if(spectraNormMode != SpectraNorm::None && config.mode == MODE_REGRESSION)
 	{
 		Log(Log::ERROR)<<"--spectra-norm can not be tuned in regression mode: dividing every spectra by its own "
 			<<"impedance level removes exactly what the parameter targets describe.";
 		return false;
+	}
+
+	for(double augmentShift : config.canonicalAugmentShifts)
+		if(!(augmentShift >= 0))
+		{
+			Log(Log::ERROR)<<"--canonical-augment-shift values must be >= 0";
+			return false;
+		}
+	for(double augmentWindow : config.canonicalAugmentWindows)
+		if(!(augmentWindow > 0 && augmentWindow <= 1))
+		{
+			Log(Log::ERROR)<<"--canonical-augment-window values must be in (0, 1] (fraction of points to keep)";
+			return false;
+		}
+
+	if(config.canonicalPoints != 0 && config.canonicalPoints < 2)
+	{
+		Log(Log::ERROR)<<"--canonical-points must be at least 2";
+		return false;
+	}
+
+	bool augmentationRequested = false;
+	for(double augmentShift : config.canonicalAugmentShifts)
+		augmentationRequested |= (augmentShift > 0);
+	for(double augmentWindow : config.canonicalAugmentWindows)
+		augmentationRequested |= (augmentWindow < 1);
+	if(augmentationRequested && !config.canonical)
+	{
+		Log(Log::ERROR)<<"the frequency augmentations operate on the resampled points, so sweeping "
+			<<"--canonical-augment-shift or --canonical-augment-window requires the canonical grid: "
+			<<"pass --canonical-fmin, --canonical-fmax and --canonical-points";
+		return false;
+	}
+	if(config.canonical && config.mode == MODE_REGRESSION)
+	{
+		bool shiftRequested = false;
+		for(double augmentShift : config.canonicalAugmentShifts)
+			shiftRequested |= (augmentShift > 0);
+		if(shiftRequested)
+		{
+			Log(Log::ERROR)<<"frequency shift augmentation can not be tuned in regression mode: shifting a "
+				<<"spectra moves the absolute position of the features and invalidates the parameter labels. "
+				<<"Window augmentation (--canonical-augment-window) is safe to use here.";
+			return false;
+		}
 	}
 
 	return true;
@@ -233,6 +328,37 @@ static void applyDefaults(Config& config)
 		config.learningRates = {0.005};
 	if(config.weightDecays.empty())
 		config.weightDecays = {0.001};
+	// The swept input preparation defaults to the single identity configuration, so a tune that
+	// does not ask for these stays exactly as cheap and as reproducible as it was before. Note
+	// that _train defaults the shift augmentation to 1 decade; here 0 means off and is what you
+	// get unless you name the values you want swept.
+	if(config.canonicalAugmentShifts.empty())
+		config.canonicalAugmentShifts = {0};
+	if(config.canonicalAugmentWindows.empty())
+		config.canonicalAugmentWindows = {1};
+	if(config.spectraNorms.empty())
+		config.spectraNorms = {"none"};
+
+	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
+}
+
+// The training loader is picked by -d. The test loader follows the shape of what is on disk so a
+// simulated tar can be scored against a directory of real measurements, which is the whole point of
+// using this tool to measure transfer. Regression-ness still follows -d.
+template <typename TrainType>
+static int dispatchTestDataset(const Config& config)
+{
+	if(std::filesystem::is_directory(config.testFileName))
+		return tuneDataset<TrainType, EisDirDataset>(config);
+	return tuneDataset<TrainType, EisTarDataset>(config);
+}
+
+template <typename TrainType>
+static int dispatchTestRegressionDataset(const Config& config)
+{
+	if(std::filesystem::is_directory(config.testFileName))
+		return tuneDataset<TrainType, RegressionLoaderDir>(config);
+	return tuneDataset<TrainType, RegressionLoaderTar>(config);
 }
 
 int main(int argc, char** argv)
@@ -257,13 +383,13 @@ int main(int argc, char** argv)
 	switch(config.datasetMode)
 	{
 		case DATASET_DIR:
-			return tuneDataset<EisDirDataset>(config);
+			return dispatchTestDataset<EisDirDataset>(config);
 		case DATASET_TAR:
-			return tuneDataset<EisTarDataset>(config);
+			return dispatchTestDataset<EisTarDataset>(config);
 		case DATASET_DIR_REGRESSION:
-			return tuneDataset<RegressionLoaderDir>(config);
+			return dispatchTestRegressionDataset<RegressionLoaderDir>(config);
 		case DATASET_TAR_REGRESSION:
-			return tuneDataset<RegressionLoaderTar>(config);
+			return dispatchTestRegressionDataset<RegressionLoaderTar>(config);
 		case DATASET_INVALID:
 			Log(Log::ERROR)<<"You must specify a valid dataset to use: " DATASET_LIST;
 			break;

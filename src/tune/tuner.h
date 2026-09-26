@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -38,6 +39,7 @@
 #include "ann/scriptnet.h"
 #include "ann/simplenet.h"
 #include "data/eisdataset.h"
+#include "data/loaders/eisspectradataset.h"
 #include "data/regressiondataset.h"
 #include "log.h"
 #include "options.h"
@@ -60,6 +62,12 @@ struct TrialConfig
 	size_t extraSteps = 3;
 	double learningRate = 0.005;
 	double weightDecay = 0.001;
+	// Input preparation swept alongside the network: maximum frequency shift augmentation in
+	// decades (0 off), minimum kept fraction of the measured points (1 off) and the name of the
+	// per spectra |Z| scaling.
+	double canonicalAugmentShift = 0;
+	double canonicalAugmentWindow = 1;
+	std::string spectraNorm = "none";
 
 	std::string netName() const
 	{
@@ -83,6 +91,8 @@ struct TrialConfig
 		else
 			ss<<"network="<<netName()<<",downsampleSteps="<<downsampleSteps<<",extraSteps="<<extraSteps;
 		ss<<",learningRate="<<learningRate<<",weightDecay="<<weightDecay;
+		ss<<",augmentShift="<<canonicalAugmentShift<<",augmentWindow="<<canonicalAugmentWindow
+			<<",spectraNorm="<<spectraNorm;
 		return ss.str();
 	}
 };
@@ -121,6 +131,7 @@ struct TrialResult
 	double seconds = 0;
 	std::vector<ann::classification::EpochStats> history;
 	std::vector<ann::regression::EpochStats> regressionHistory;
+	std::shared_ptr<ann::Net> net;
 
 	//! True when the regression loop produced the curve, which reports R2 instead of accuracy.
 	bool isRegression() const
@@ -163,6 +174,17 @@ struct TrialResult
 		if(all.empty())
 			return loss;
 		return all[bestEpoch()].testLoss;
+	}
+
+	double meanLoss() const
+	{
+		double sum = 0;
+		std::vector<EpochRow> all = rows();
+		if(all.empty())
+			return loss;
+		for(const EpochRow& row : all)
+			sum += row.testLoss;
+		return sum / all.size();
 	}
 
 	double bestQuality() const
@@ -212,14 +234,20 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 		for(const std::filesystem::path& script : scripts)
 			for(double learningRate : config.learningRates)
 				for(double weightDecay : config.weightDecays)
-				{
-					TrialConfig trial;
-					trial.netKind = NET_KIND_SCRIPT;
-					trial.scriptPath = script;
-					trial.learningRate = learningRate;
-					trial.weightDecay = weightDecay;
-					trials.push_back(trial);
-				}
+					for(double augmentShift : config.canonicalAugmentShifts)
+						for(double augmentWindow : config.canonicalAugmentWindows)
+							for(const std::string& spectraNorm : config.spectraNorms)
+							{
+								TrialConfig trial;
+								trial.netKind = NET_KIND_SCRIPT;
+								trial.scriptPath = script;
+								trial.learningRate = learningRate;
+								trial.weightDecay = weightDecay;
+								trial.canonicalAugmentShift = augmentShift;
+								trial.canonicalAugmentWindow = augmentWindow;
+								trial.spectraNorm = spectraNorm;
+								trials.push_back(trial);
+							}
 		return trials;
 	}
 
@@ -227,15 +255,21 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 		for(size_t extraSteps : config.extraSteps)
 			for(double learningRate : config.learningRates)
 				for(double weightDecay : config.weightDecays)
-				{
-					TrialConfig trial;
-					trial.netKind = netKind;
-					trial.downsampleSteps = downsampleSteps;
-					trial.extraSteps = extraSteps;
-					trial.learningRate = learningRate;
-					trial.weightDecay = weightDecay;
-					trials.push_back(trial);
-				}
+					for(double augmentShift : config.canonicalAugmentShifts)
+						for(double augmentWindow : config.canonicalAugmentWindows)
+							for(const std::string& spectraNorm : config.spectraNorms)
+							{
+								TrialConfig trial;
+								trial.netKind = netKind;
+								trial.downsampleSteps = downsampleSteps;
+								trial.extraSteps = extraSteps;
+								trial.learningRate = learningRate;
+								trial.weightDecay = weightDecay;
+								trial.canonicalAugmentShift = augmentShift;
+								trial.canonicalAugmentWindow = augmentWindow;
+								trial.spectraNorm = spectraNorm;
+								trials.push_back(trial);
+							}
 	return trials;
 }
 
@@ -255,15 +289,6 @@ inline std::shared_ptr<ann::Net> makeNet(const TrialConfig& trial, bool softmax,
 
 inline void reportResults(std::vector<TrialResult>& results, const Config& config)
 {
-	std::sort(results.begin(), results.end(), [](const TrialResult& a, const TrialResult& b)
-	{
-		if(a.ok != b.ok)
-			return a.ok;
-		if(!a.ok)
-			return false;
-		return a.loss < b.loss;
-	});
-
 	Log(Log::INFO)<<"======================= Tuning results =======================";
 	size_t rank = 0;
 	for(const TrialResult& result : results)
@@ -290,7 +315,8 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 		return;
 	}
 	csv<<"rank,trial,loss,bestEpoch,bestLoss,bestAccuracy,finalAccuracy,bestR2,finalR2,"
-		<<"parameters,seconds,metric,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,status,error\n";
+		<<"parameters,seconds,metric,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,"
+		<<"augmentShift,augmentWindow,spectraNorm,status,error\n";
 	rank = 0;
 	for(size_t i = 0; i < results.size(); ++i)
 	{
@@ -309,6 +335,8 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 			<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
 			<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
 			<<','<<result.config.learningRate<<','<<result.config.weightDecay
+			<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
+			<<','<<result.config.spectraNorm
 			<<','<<(result.ok ? "ok" : "failed")<<",\""<<result.error<<"\"\n";
 	}
 	csv.close();
@@ -316,7 +344,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	std::ofstream curves(config.outputDir/"curves.csv");
 	if(curves.is_open())
 	{
-		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,network,script,downsampleSteps,extraSteps,learningRate,weightDecay\n";
+		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm\n";
 		for(size_t i = 0; i < results.size(); ++i)
 		{
 			const TrialResult& result = results[i];
@@ -327,7 +355,9 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 					<<(regression ? epoch.quality : std::numeric_limits<double>::quiet_NaN())
 					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
 					<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
-					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay
+					<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
+					<<','<<result.config.spectraNorm<<'\n';
 		}
 		curves.close();
 	}
@@ -337,7 +367,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	std::ofstream classAcc(config.outputDir/"classaccuracy.csv");
 	if(classAcc.is_open())
 	{
-		classAcc<<"trial,epoch,class,accuracy,network,script,learningRate,weightDecay\n";
+		classAcc<<"trial,epoch,class,accuracy,network,script,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm\n";
 		for(size_t i = 0; i < results.size(); ++i)
 		{
 			const TrialResult& result = results[i];
@@ -351,7 +381,9 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 			for(int64_t c = 0; c < acc.numel(); ++c)
 				classAcc<<i<<','<<epoch.epoch<<','<<c<<','<<acc[c].item<double>()
 					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
-					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay
+					<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
+					<<','<<result.config.spectraNorm<<'\n';
 		}
 		classAcc.close();
 	}
@@ -361,7 +393,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	std::ofstream targetR2(config.outputDir/"targetr2.csv");
 	if(targetR2.is_open())
 	{
-		targetR2<<"trial,epoch,target,r2,network,script,learningRate,weightDecay\n";
+		targetR2<<"trial,epoch,target,r2,network,script,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm\n";
 		for(size_t i = 0; i < results.size(); ++i)
 		{
 			const TrialResult& result = results[i];
@@ -374,7 +406,9 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 			for(size_t t = 0; t < epoch.perOutput.size(); ++t)
 				targetR2<<i<<','<<epoch.epoch<<','<<t<<','<<epoch.perOutput[t]
 					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
-					<<','<<result.config.learningRate<<','<<result.config.weightDecay<<'\n';
+					<<','<<result.config.learningRate<<','<<result.config.weightDecay
+					<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
+					<<','<<result.config.spectraNorm<<'\n';
 		}
 		targetR2.close();
 	}
@@ -382,8 +416,62 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"targetr2.csv").string();
 }
 
+/**
+ * Point both datasets of one trial at its input preparation.
+ *
+ * The canonical grid geometry (edges, point count, spacing) is the same for every trial because it
+ * determines the network input size; only the two augmentations and the |Z| scaling vary. All of
+ * them are applied by the loaders inside getImpl(), so reconfiguring is enough and nothing has to
+ * be re-read from disk. The data loader is built inside the training call below, which is why
+ * setting this just before it takes effect.
+ *
+ * The augmentation flags are set on the training dataset only, matching _train: augmentation is
+ * something you train against, not something you measure against. The grid and the |Z| scaling
+ * however must be identical on both sides or the trial would be scored on a different input.
+ */
+template <typename DatasetType, typename TestDatasetType>
+inline void applyTrialInputPrep(const Config& config, const TrialConfig& trial,
+	EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset)
+{
+	EisSpectraDataset* train = dynamic_cast<EisSpectraDataset*>(trainDataset);
+	if(train == nullptr)
+		return;
+
+	bool regression = (config.mode == MODE_REGRESSION);
+
+	CanonicalGrid grid;
+	if(config.canonical)
+	{
+		grid.enabled = true;
+		grid.fMin = config.canonicalFMin;
+		grid.fMax = config.canonicalFMax;
+		grid.points = config.canonicalPoints;
+		grid.log = config.canonicalLog;
+		// Shifting moves every time constant, which preserves the circuit class but invalidates
+		// regression parameter labels. Windowing only crops, so it stays valid for both.
+		grid.augmentShift = (trial.canonicalAugmentShift > 0) && !regression;
+		grid.augmentMaxShift = trial.canonicalAugmentShift;
+		grid.augmentWindow = (trial.canonicalAugmentWindow < 1.0);
+		grid.augmentWindowMin = trial.canonicalAugmentWindow;
+	}
+
+	SpectraNorm mode = spectraNormFromString(trial.spectraNorm);
+
+	train->setCanonicalGrid(grid);
+	train->setCanonicalTraining(true);
+	train->setSpectraNorm(mode);
+
+	if(EisSpectraDataset* test = dynamic_cast<EisSpectraDataset*>(testDataset))
+	{
+		test->setCanonicalGrid(grid);
+		test->setCanonicalTraining(false);
+		test->setSpectraNorm(mode);
+	}
+}
+
 template <typename TrainNetFn>
-static int runTrials(const Config& config, NetKind defaultNetKind, int64_t inputSize, int64_t outputSize, bool softmax, TrainNetFn&& trainNetFn)
+static int runTrials(const Config& config, NetKind defaultNetKind, int64_t inputSize, int64_t outputSize, bool softmax, TrainNetFn&& trainNetFn,
+	const std::function<void(const TrialConfig&)>& prepare = std::function<void(const TrialConfig&)>())
 {
 	std::vector<TrialConfig> trials = buildTrials(config, defaultNetKind);
 	if(trials.empty())
@@ -395,14 +483,15 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 	Log(Log::INFO)<<"Running "<<trials.size()<<" trials with "<<config.epochs<<" epochs each";
 
 	std::vector<TrialResult> results;
-	std::shared_ptr<ann::Net> bestNet;
-	double bestLoss = std::numeric_limits<double>::infinity();
 
 	size_t index = 0;
 	for(const TrialConfig& trial : trials)
 	{
 		index++;
 		Log(Log::INFO)<<"Trial "<<index<<'/'<<trials.size()<<": "<<trial.describe();
+
+		if(prepare)
+			prepare(trial);
 
 		TrialResult result;
 		result.config = trial;
@@ -421,13 +510,10 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 				result.error = "test loss is not finite, did the training diverge?";
 			else
 			{
+				result.net = net;
+				result.net->to(torch::kCPU);
 				result.ok = true;
 				result.loss = testLoss;
-				if(testLoss < bestLoss)
-				{
-					bestLoss = testLoss;
-					bestNet = net;
-				}
 			}
 		}
 		catch(const ann::ScriptNet::load_errror& err)
@@ -447,7 +533,48 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 		results.push_back(result);
 	}
 
+	std::function<bool(const TrialResult& a, const TrialResult& b)> compare;
+
+	switch(config.metric)
+	{
+		case METRIC_BEST:
+			compare = [](const TrialResult& a, const TrialResult& b)
+			{
+				if(a.ok != b.ok)
+					return a.ok;
+				if(!a.ok)
+					return false;
+				return a.bestLoss() < b.bestLoss();
+			};
+		case METRIC_MEAN:
+			compare = [](const TrialResult& a, const TrialResult& b)
+			{
+				if(a.ok != b.ok)
+					return a.ok;
+				if(!a.ok)
+					return false;
+				return a.meanLoss() < b.meanLoss();
+			};
+		case METRIC_LAST:
+		default:
+			compare = [](const TrialResult& a, const TrialResult& b)
+			{
+				if(a.ok != b.ok)
+					return a.ok;
+				if(!a.ok)
+					return false;
+				return a.loss < b.loss;
+			};
+	};
+
+	std::sort(results.begin(), results.end(), compare);
+
 	reportResults(results, config);
+
+	std::shared_ptr<ann::Net> bestNet;
+
+	if(results.begin()->ok)
+		bestNet = results.begin()->net;
 
 	if(bestNet)
 	{
@@ -476,6 +603,10 @@ int searchRegression(const Config& config, RegressionDataset<DatasetType>* train
 			return ann::regression::train(nullptr, net, trainDataset, testDataset, config.epochs,
 				trial.learningRate, regressionLossFromConfig(config.loss), nullptr, trial.weightDecay, testLoss,
 				&result->regressionHistory);
+		},
+		[&](const TrialConfig& trial)
+		{
+			applyTrialInputPrep(config, trial, trainDataset, testDataset);
 		});
 }
 
@@ -490,6 +621,10 @@ int searchClassification(const Config& config, EisDataset<DatasetType>* trainDat
 			ann::classification::train(nullptr, net, trainDataset, testDataset, config.epochs,
 				trial.learningRate, config.noWeights, trial.weightDecay, testLoss, &result->history);
 			return 0;
+		},
+		[&](const TrialConfig& trial)
+		{
+			applyTrialInputPrep(config, trial, trainDataset, testDataset);
 		});
 }
 
