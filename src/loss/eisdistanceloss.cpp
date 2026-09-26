@@ -27,13 +27,9 @@
 #include "modelscript.h"
 #include "tensoroperators.h"
 #include "log.h"
-#include "globals.h"
 
 EisDistanceLoss::EisDistanceLoss(std::string modelString, torch::Tensor omegasIn, torch::Tensor parameterScalarIn,
 		torch::Tensor parameterBiasIn, torch::Tensor parameterLogIn, double weightFloorIn):
-// the frequencies are constants, but the dataset hands them out as tensors which require grad.
-// They are inputs to complex operations, so autograd would try to accumulate a complex gradient
-// into a real tensor and abort in backward()
 omegas(omegasIn.detach().reshape({omegasIn.numel(), -1})),
 parameterScalar(parameterScalarIn),
 parameterBias(parameterBiasIn),
@@ -63,15 +59,15 @@ std::pair<torch::Tensor, torch::Tensor> EisDistanceLoss::prepareSpectra(torch::T
 	assert(omegas.numel() > 0);
 	assert(modelScript);
 
+	output = output.to(torch::kCPU);
+	targetSpectra = targetSpectra.to(torch::kCPU);
+
 	if(output.dim() > 1 && output.size(1) == static_cast<int64_t>(model->getParameterCount()))
 		output = output.t();
 
 	torch::Tensor predictedSpectraCmplx = runScriptModel(*model, modelScript, output, omegas);
 
-	// the script output is omega major, so this puts every frequency in one row and every
-	// element of the batch in one column
-	torch::Tensor predicted = predictedSpectraCmplx.reshape({omegas.numel(), -1});
-	// the target spectra is data, the loss is only differentiated with respect to the prediction
+	torch::Tensor predicted = predictedSpectraCmplx.reshape({omegas.numel(), -1});e prediction
 	torch::Tensor target = targetSpectra.detach().reshape({omegas.numel(), -1});
 
 	return {predicted, target};
@@ -82,9 +78,6 @@ torch::Tensor EisDistanceLoss::relativeErrorPerPoint(const torch::Tensor& predic
 	torch::Tensor diffReal = torch::real(predicted) - torch::real(target);
 	torch::Tensor diffImag = torch::imag(predicted) - torch::imag(target);
 
-	// weight every point by the impedance of the target at that point, otherwise a single
-	// frequency at which the impedance is large dominates the loss and the gradient. The floor
-	// keeps points at which the target spectrum approaches zero finite.
 	torch::Tensor targetMagnitude = torch::abs(target);
 	torch::Tensor floor = torch::mean(targetMagnitude, 0, true)*weightFloor;
 
@@ -93,16 +86,18 @@ torch::Tensor EisDistanceLoss::relativeErrorPerPoint(const torch::Tensor& predic
 
 torch::Tensor EisDistanceLoss::distance(torch::Tensor output, torch::Tensor targetSpectra)
 {
+	const torch::Device computeDevice = output.device();
+
 	std::pair<torch::Tensor, torch::Tensor> spectra = prepareSpectra(output, targetSpectra);
 
-	// mean instead of sum, so the loss does not scale with the batch size and is comparable
-	// between runs and between samples of different absolute impedance
-	return torch::mean(relativeErrorPerPoint(spectra.first, spectra.second));
+	return torch::mean(relativeErrorPerPoint(spectra.first, spectra.second)).to(computeDevice);
 }
 
 torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targets)
 {
 	assert(targets.sizes() == output.sizes());
+
+	const torch::Device computeDevice = output.device();
 
 	if(parameterScalar.numel() != 0)
 	{
@@ -113,15 +108,10 @@ torch::Tensor EisDistanceLoss::forward(torch::Tensor output, torch::Tensor targe
 
 	if(targets.dim() > 1 && targets.size(1) == static_cast<int64_t>(model->getParameterCount()) )
 		targets = targets.t();
-
-	targets = targets.to(torch::kCPU)
+	targets = targets.to(torch::kCPU);
 	torch::Tensor targetSpectraCmplx = runScriptModel(*model, modelScript, targets, omegas);
 
 	std::pair<torch::Tensor, torch::Tensor> spectra = prepareSpectra(output, targetSpectraCmplx);
 
-	// the raw relative error is heavy tailed: a point at which the target spectrum is close to
-	// zero can contribute more than every other point together, so the optimiser spends its
-	// gradient there. log1p keeps the ordering and the small error behaviour but bounds what a
-	// single point can add
-	return torch::mean(torch::log1p(relativeErrorPerPoint(spectra.first, spectra.second))).to(*offload_device);
+	return torch::mean(torch::log1p(relativeErrorPerPoint(spectra.first, spectra.second))).to(computeDevice);
 }
