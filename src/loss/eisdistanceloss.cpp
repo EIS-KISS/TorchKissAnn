@@ -67,7 +67,7 @@ std::pair<torch::Tensor, torch::Tensor> EisDistanceLoss::prepareSpectra(torch::T
 
 	torch::Tensor predictedSpectraCmplx = runScriptModel(*model, modelScript, output, omegas);
 
-	torch::Tensor predicted = predictedSpectraCmplx.reshape({omegas.numel(), -1});e prediction
+	torch::Tensor predicted = predictedSpectraCmplx.reshape({omegas.numel(), -1});
 	torch::Tensor target = targetSpectra.detach().reshape({omegas.numel(), -1});
 
 	return {predicted, target};
