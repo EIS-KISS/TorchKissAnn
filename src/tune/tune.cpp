@@ -27,6 +27,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 
 #include "ann/classification.h"
@@ -62,6 +63,15 @@ static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* da
 	grid.log = config.canonicalLog;
 	spectra->setCanonicalGrid(grid);
 	spectra->setCanonicalTraining(training);
+}
+
+template <typename DataSetType>
+static RegressionDataset<DataSetType>* castToRegressionDataset(DataSetType* dataset)
+{
+	if constexpr(std::is_base_of_v<RegressionDataset<DataSetType>, DataSetType>)
+		return dynamic_cast<RegressionDataset<DataSetType>*>(dataset);
+	else
+		return nullptr;
 }
 
 template <typename TrainType, typename TestType>
@@ -150,8 +160,8 @@ int tuneDataset(const Config& config)
 
 		case MODE_REGRESSION:
 		{
-			RegressionDataset<TrainType>* trainDatasetReg = dynamic_cast<RegressionDataset<TrainType>*>(&dataset);
-			RegressionDataset<TestType>* testDatasetReg = dynamic_cast<RegressionDataset<TestType>*>(testDataset);
+			RegressionDataset<TrainType>* trainDatasetReg = castToRegressionDataset(&dataset);
+			RegressionDataset<TestType>* testDatasetReg = castToRegressionDataset(testDataset);
 			if(!trainDatasetReg || (testDataset && !testDatasetReg))
 			{
 				Log(Log::ERROR)<<"can not use a dataset of type "<<typeid(dataset).name()<<" to tune regression as this is not a regression dataset";

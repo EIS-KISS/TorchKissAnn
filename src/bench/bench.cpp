@@ -59,7 +59,7 @@ static void readScriptSizes(const std::filesystem::path& path, int64_t& inputSiz
 	{
 		throw ann::ScriptNet::load_errror(err.what());
 	}
-	for(const std::pair<std::string, std::string>& file : files)
+	for(const std::pair<const std::string, std::string>& file : files)
 	{
 		if(file.first != "meta.json" or file.second.empty())
 			continue;

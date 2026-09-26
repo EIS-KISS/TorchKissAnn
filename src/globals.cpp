@@ -67,10 +67,11 @@ void choose_device(bool forceCpu)
 		Log(Log::INFO)<<"Using GPU";
 		offload_type = torch::kCUDA;
 
-		Log(Log::INFO)<<"Found "<<torch::cuda::device_count()<<" GPUs";
+		const size_t deviceCount = static_cast<size_t>(torch::cuda::device_count());
+		Log(Log::INFO)<<"Found "<<deviceCount<<" GPUs";
 		size_t maxMemory = 0;
 		size_t maxMemoryIndex = 0;
-		for(size_t i = 0; i < torch::cuda::device_count(); ++i)
+		for(size_t i = 0; i < deviceCount; ++i)
 		{
 			size_t memory = print_device_proparties(i);
 			if(memory > maxMemory)

@@ -17,6 +17,12 @@ pkg_search_module(JSONCPP REQUIRED jsoncpp)
 pkg_search_module(KISSTYPE REQUIRED libkisstype)
 pkg_search_module(EIS REQUIRED libeisgenerator)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	set(CMAKE_PCH_PROLOGUE "#pragma GCC system_header")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+	set(CMAKE_PCH_PROLOGUE "#pragma clang system_header")
+endif()
+
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
 

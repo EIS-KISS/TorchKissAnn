@@ -55,5 +55,5 @@ public:
 	TarDataset(const TarDataset& in);
 	virtual ~TarDataset();
 
-	virtual TarDataset& operator=(const TarDataset& in);
+	TarDataset& operator=(const TarDataset& in);
 };
