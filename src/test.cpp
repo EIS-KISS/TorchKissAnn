@@ -308,9 +308,9 @@ bool testFit()
 
 	Log(Log::INFO)<<__func__<<"targetSpectra:\n"<<targetSpectra<<"\nomegas:\n"<<omegas;
 
-	std::pair<torch::Tensor, torch::Tensor> fited = eisFit(targetSpectra, omegas, modelString);
+	FitResult fited = eisFit(targetSpectra, omegas, modelString);
 
-	Log(Log::INFO)<<__func__<<"Result:\n"<<fited.first<<"\nremaining loss:\n"<<fited.second;
+	Log(Log::INFO)<<__func__<<"Result:\n"<<fited.parameters<<"\nremaining loss:\n"<<fited.chiSquared;
 	return true;
 }
 

@@ -30,9 +30,12 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "ann/autoencode.h"
+#include "ann/autoencoder.h"
 #include "ann/classification.h"
 #include "ann/convnet.h"
 #include "ann/regression.h"
@@ -62,9 +65,10 @@ struct TrialConfig
 	size_t extraSteps = 3;
 	double learningRate = 0.005;
 	double weightDecay = 0.001;
-	// Input preparation swept alongside the network: maximum frequency shift augmentation in
-	// decades (0 off), minimum kept fraction of the measured points (1 off) and the name of the
-	// per spectra |Z| scaling.
+	bool autoEncoder = false;
+	bool variational = false;
+	std::filesystem::path decoderPath;
+	size_t latentSize = 10;
 	double canonicalAugmentShift = 0;
 	double canonicalAugmentWindow = 1;
 	std::string spectraNorm = "none";
@@ -87,9 +91,17 @@ struct TrialConfig
 	{
 		std::stringstream ss;
 		if(netKind == NET_KIND_SCRIPT)
-			ss<<"script="<<scriptPath.filename().string();
+			ss<<(autoEncoder ? "encoder=" : "script=")<<scriptPath.filename().string();
 		else
 			ss<<"network="<<netName()<<",downsampleSteps="<<downsampleSteps<<",extraSteps="<<extraSteps;
+		if(autoEncoder)
+		{
+			ss<<",latentSize="<<latentSize;
+			if(!decoderPath.empty())
+				ss<<",decoder="<<decoderPath.filename().string();
+			if(variational)
+				ss<<",vae";
+		}
 		ss<<",learningRate="<<learningRate<<",weightDecay="<<weightDecay;
 		ss<<",augmentShift="<<canonicalAugmentShift<<",augmentWindow="<<canonicalAugmentWindow
 			<<",spectraNorm="<<spectraNorm;
@@ -97,9 +109,6 @@ struct TrialConfig
 	}
 };
 
-//! One point of a trial's learning curve, normalised over the two training loops: quality is
-//! the test accuracy for classification and the mean R2 for regression, perOutput is the
-//! per class accuracy or the R2 of every regression target.
 struct EpochRow
 {
 	size_t epoch;
@@ -131,18 +140,34 @@ struct TrialResult
 	double seconds = 0;
 	std::vector<ann::classification::EpochStats> history;
 	std::vector<ann::regression::EpochStats> regressionHistory;
+	std::vector<ann::autoencode::EpochStats> autoEncoderHistory;
 	std::shared_ptr<ann::Net> net;
 
-	//! True when the regression loop produced the curve, which reports R2 instead of accuracy.
 	bool isRegression() const
 	{
 		return not regressionHistory.empty();
 	}
 
+	bool isAutoEncoder() const
+	{
+		return not autoEncoderHistory.empty();
+	}
+
+	std::string taskName() const
+	{
+		if(isAutoEncoder())
+			return config.variational ? "vae" : "autoencoder";
+		return isRegression() ? "regression" : "classification";
+	}
+
 	std::vector<EpochRow> rows() const
 	{
 		std::vector<EpochRow> rows;
-		if(isRegression())
+		if(isAutoEncoder())
+			for(const ann::autoencode::EpochStats& epoch : autoEncoderHistory)
+				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
+					epoch.testLoss, toValueList(epoch.mse)});
+		else if(isRegression())
 			for(const ann::regression::EpochStats& epoch : regressionHistory)
 				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
 					epoch.r2Mean, toValueList(epoch.r2)});
@@ -153,7 +178,6 @@ struct TrialResult
 		return rows;
 	}
 
-	//! Index of the epoch with the lowest test loss, 0 if there is no curve.
 	size_t bestEpoch() const
 	{
 		std::vector<EpochRow> all = rows();
@@ -216,9 +240,30 @@ inline ann::regression::regression_loss_type_t regressionLossFromConfig(const Tr
 	}
 }
 
-inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKind)
+inline std::vector<std::vector<std::filesystem::path>> collectScriptSets(const Config& config)
 {
-	std::vector<TrialConfig> trials;
+	const bool pair = modeIsAutoEncoder(config.mode);
+	std::vector<std::vector<std::filesystem::path>> sets;
+
+	for(const std::string& entry : config.scriptPaths)
+	{
+		std::vector<std::filesystem::path> paths;
+		for(const std::string& token : tokenize(entry, ','))
+		{
+			std::string stripped = stripWhitespace(token);
+			if(!stripped.empty())
+				paths.push_back(stripped);
+		}
+		if(paths.empty())
+			continue;
+		if(pair && paths.size() != 2)
+			throw std::invalid_argument("in the autoencoder and vae modes -n must name an encoder and a decoder separated by a comma, got: "+entry);
+		if(pair)
+			sets.push_back(paths);
+		else
+			for(const std::filesystem::path& path : paths)
+				sets.push_back(std::vector<std::filesystem::path>{path});
+	}
 
 	if(!config.scriptDir.empty())
 	{
@@ -230,51 +275,99 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 			scripts.push_back(entry.path());
 		}
 		std::sort(scripts.begin(), scripts.end());
-
 		for(const std::filesystem::path& script : scripts)
-			for(double learningRate : config.learningRates)
-				for(double weightDecay : config.weightDecays)
-					for(double augmentShift : config.canonicalAugmentShifts)
-						for(double augmentWindow : config.canonicalAugmentWindows)
-							for(const std::string& spectraNorm : config.spectraNorms)
-							{
-								TrialConfig trial;
-								trial.netKind = NET_KIND_SCRIPT;
-								trial.scriptPath = script;
-								trial.learningRate = learningRate;
-								trial.weightDecay = weightDecay;
-								trial.canonicalAugmentShift = augmentShift;
-								trial.canonicalAugmentWindow = augmentWindow;
-								trial.spectraNorm = spectraNorm;
-								trials.push_back(trial);
-							}
-		return trials;
+			sets.push_back(std::vector<std::filesystem::path>{script});
 	}
 
-	for(size_t downsampleSteps : config.downsampleSteps)
-		for(size_t extraSteps : config.extraSteps)
-			for(double learningRate : config.learningRates)
-				for(double weightDecay : config.weightDecays)
-					for(double augmentShift : config.canonicalAugmentShifts)
-						for(double augmentWindow : config.canonicalAugmentWindows)
-							for(const std::string& spectraNorm : config.spectraNorms)
-							{
-								TrialConfig trial;
-								trial.netKind = netKind;
-								trial.downsampleSteps = downsampleSteps;
-								trial.extraSteps = extraSteps;
-								trial.learningRate = learningRate;
-								trial.weightDecay = weightDecay;
-								trial.canonicalAugmentShift = augmentShift;
-								trial.canonicalAugmentWindow = augmentWindow;
-								trial.spectraNorm = spectraNorm;
-								trials.push_back(trial);
-							}
+	return sets;
+}
+
+inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKind)
+{
+	std::vector<TrialConfig> trials;
+
+	const bool autoMode = modeIsAutoEncoder(config.mode);
+	const bool scriptSource = !config.scriptPaths.empty() || !config.scriptDir.empty();
+
+	std::vector<TrialConfig> networks;
+	if(scriptSource)
+	{
+		for(const std::vector<std::filesystem::path>& set : collectScriptSets(config))
+			for(size_t latentSize : config.latentSizes)
+			{
+				TrialConfig network;
+				network.netKind = NET_KIND_SCRIPT;
+				network.scriptPath = set[0];
+				if(set.size() > 1)
+					network.decoderPath = set[1];
+				network.autoEncoder = autoMode;
+				network.variational = modeIsVariational(config.mode);
+				network.latentSize = latentSize;
+				networks.push_back(network);
+			}
+	}
+	else
+	{
+		for(size_t downsampleSteps : config.downsampleSteps)
+			for(size_t extraSteps : config.extraSteps)
+				for(size_t latentSize : config.latentSizes)
+				{
+					TrialConfig network;
+					network.netKind = netKind;
+					network.downsampleSteps = downsampleSteps;
+					network.extraSteps = extraSteps;
+					network.autoEncoder = autoMode;
+					network.variational = modeIsVariational(config.mode);
+					network.latentSize = latentSize;
+					networks.push_back(network);
+				}
+	}
+
+	for(const TrialConfig& network : networks)
+		for(double learningRate : config.learningRates)
+			for(double weightDecay : config.weightDecays)
+				for(double augmentShift : config.canonicalAugmentShifts)
+					for(double augmentWindow : config.canonicalAugmentWindows)
+						for(const std::string& spectraNorm : config.spectraNorms)
+						{
+							TrialConfig trial = network;
+							trial.learningRate = learningRate;
+							trial.weightDecay = weightDecay;
+							trial.canonicalAugmentShift = augmentShift;
+							trial.canonicalAugmentWindow = augmentWindow;
+							trial.spectraNorm = spectraNorm;
+							trials.push_back(trial);
+						}
 	return trials;
 }
 
 inline std::shared_ptr<ann::Net> makeNet(const TrialConfig& trial, bool softmax, int64_t inputSize, int64_t outputSize)
 {
+	if(trial.autoEncoder)
+	{
+		// The spectra is its own target, so only the latent width is between the two halves. A
+		// variational encoder emits mu and logvar packed into one vector, hence twice the width.
+		int64_t encoderOutput = trial.variational ? 2 * static_cast<int64_t>(trial.latentSize) : static_cast<int64_t>(trial.latentSize);
+		std::shared_ptr<ann::Net> encoder;
+		std::shared_ptr<ann::Net> decoder;
+		if(trial.netKind == NET_KIND_SCRIPT)
+		{
+			encoder.reset(new ann::ScriptNet(trial.scriptPath, false, inputSize, encoderOutput));
+			decoder.reset(new ann::ScriptNet(trial.decoderPath, false, trial.latentSize, inputSize));
+		}
+		else if(trial.netKind == NET_KIND_CONV)
+		{
+			encoder.reset(new ann::ConvNet(inputSize, encoderOutput, trial.downsampleSteps, trial.extraSteps, false));
+			decoder.reset(new ann::ConvNet(trial.latentSize, inputSize, trial.downsampleSteps, trial.extraSteps, false));
+		}
+		else
+		{
+			encoder.reset(new ann::SimpleNet(inputSize, encoderOutput, trial.downsampleSteps, trial.extraSteps, false));
+			decoder.reset(new ann::SimpleNet(trial.latentSize, inputSize, trial.downsampleSteps, trial.extraSteps, false));
+		}
+		return std::shared_ptr<ann::Net>(new ann::AutoEncoder(encoder, decoder, trial.variational));
+	}
+
 	switch(trial.netKind)
 	{
 		case NET_KIND_SCRIPT:
@@ -287,6 +380,11 @@ inline std::shared_ptr<ann::Net> makeNet(const TrialConfig& trial, bool softmax,
 	}
 }
 
+inline double onlyTask(bool matches, double value)
+{
+	return matches ? value : std::numeric_limits<double>::quiet_NaN();
+}
+
 inline void reportResults(std::vector<TrialResult>& results, const Config& config)
 {
 	Log(Log::INFO)<<"======================= Tuning results =======================";
@@ -295,7 +393,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	{
 		rank++;
 		if(result.ok)
-			Log(Log::INFO)<<rank<<": loss="<<result.loss<<" "<<(result.isRegression() ? "r2" : "acc")
+			Log(Log::INFO)<<rank<<": loss="<<result.loss<<" "<<(result.isAutoEncoder() ? "mse" : (result.isRegression() ? "r2" : "acc"))
 				<<"="<<result.bestQuality()<<" params="<<result.parameters
 				<<"  "<<result.config.describe();
 		else
@@ -316,27 +414,33 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	}
 	csv<<"rank,trial,loss,bestEpoch,bestLoss,bestAccuracy,finalAccuracy,bestR2,finalR2,"
 		<<"parameters,seconds,metric,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,"
-		<<"augmentShift,augmentWindow,spectraNorm,status,error\n";
+		<<"augmentShift,augmentWindow,spectraNorm,task,decoder,latentSize,bestReconMse,finalReconMse,"
+		<<"status,error\n";
 	rank = 0;
 	for(size_t i = 0; i < results.size(); ++i)
 	{
 		const TrialResult& result = results[i];
 		const bool regression = result.isRegression();
+		const bool autoEncoder = result.isAutoEncoder();
 		rank++;
 		csv<<rank<<','<<i<<',';
 		if(result.ok)
 			csv<<result.loss<<','<<result.bestEpoch()<<','<<result.bestLoss()<<','
-				<<(regression ? std::numeric_limits<double>::quiet_NaN() : result.bestQuality())<<','
-				<<(regression ? std::numeric_limits<double>::quiet_NaN() : result.finalQuality())<<','
-				<<(regression ? result.bestQuality() : std::numeric_limits<double>::quiet_NaN())<<','
-				<<(regression ? result.finalQuality() : std::numeric_limits<double>::quiet_NaN())<<','
+				<<onlyTask(not regression && not autoEncoder, result.bestQuality())<<','
+				<<onlyTask(not regression && not autoEncoder, result.finalQuality())<<','
+				<<onlyTask(regression, result.bestQuality())<<','
+				<<onlyTask(regression, result.finalQuality())<<','
 				<<result.parameters<<','<<result.seconds;
-		csv<<','<<(regression ? "r2" : "accuracy")
+		csv<<','<<(autoEncoder ? "reconMse" : (regression ? "r2" : "accuracy"))
 			<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
 			<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
 			<<','<<result.config.learningRate<<','<<result.config.weightDecay
 			<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
 			<<','<<result.config.spectraNorm
+			<<','<<result.taskName()<<','<<result.config.decoderPath.filename().string()
+			<<','<<result.config.latentSize
+			<<','<<onlyTask(autoEncoder, result.bestQuality())
+			<<','<<onlyTask(autoEncoder, result.finalQuality())
 			<<','<<(result.ok ? "ok" : "failed")<<",\""<<result.error<<"\"\n";
 	}
 	csv.close();
@@ -344,20 +448,23 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	std::ofstream curves(config.outputDir/"curves.csv");
 	if(curves.is_open())
 	{
-		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm\n";
+		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,reconMse,network,script,decoder,downsampleSteps,extraSteps,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm,latentSize\n";
 		for(size_t i = 0; i < results.size(); ++i)
 		{
 			const TrialResult& result = results[i];
 			const bool regression = result.isRegression();
+			const bool autoEncoder = result.isAutoEncoder();
 			for(const EpochRow& epoch : result.rows())
 				curves<<i<<','<<epoch.epoch<<','<<epoch.trainLoss<<','<<epoch.testLoss<<','
-					<<(regression ? std::numeric_limits<double>::quiet_NaN() : epoch.quality)<<','
-					<<(regression ? epoch.quality : std::numeric_limits<double>::quiet_NaN())
+					<<onlyTask(not regression && not autoEncoder, epoch.quality)<<','
+					<<onlyTask(regression, epoch.quality)<<','
+					<<onlyTask(autoEncoder, epoch.quality)
 					<<','<<result.config.netName()<<','<<result.config.scriptPath.filename().string()
+					<<','<<result.config.decoderPath.filename().string()
 					<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
 					<<','<<result.config.learningRate<<','<<result.config.weightDecay
 					<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
-					<<','<<result.config.spectraNorm<<'\n';
+					<<','<<result.config.spectraNorm<<','<<result.config.latentSize<<'\n';
 		}
 		curves.close();
 	}
@@ -416,19 +523,6 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 		Log(Log::WARN)<<"Could not write "<<(config.outputDir/"targetr2.csv").string();
 }
 
-/**
- * Point both datasets of one trial at its input preparation.
- *
- * The canonical grid geometry (edges, point count, spacing) is the same for every trial because it
- * determines the network input size; only the two augmentations and the |Z| scaling vary. All of
- * them are applied by the loaders inside getImpl(), so reconfiguring is enough and nothing has to
- * be re-read from disk. The data loader is built inside the training call below, which is why
- * setting this just before it takes effect.
- *
- * The augmentation flags are set on the training dataset only, matching _train: augmentation is
- * something you train against, not something you measure against. The grid and the |Z| scaling
- * however must be identical on both sides or the trial would be scored on a different input.
- */
 template <typename DatasetType, typename TestDatasetType>
 inline void applyTrialInputPrep(const Config& config, const TrialConfig& trial,
 	EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset)
@@ -437,7 +531,7 @@ inline void applyTrialInputPrep(const Config& config, const TrialConfig& trial,
 	if(train == nullptr)
 		return;
 
-	bool regression = (config.mode == MODE_REGRESSION);
+	bool regression = modeIsRegression(config.mode);
 
 	CanonicalGrid grid;
 	if(config.canonical)
@@ -473,10 +567,21 @@ template <typename TrainNetFn>
 static int runTrials(const Config& config, NetKind defaultNetKind, int64_t inputSize, int64_t outputSize, bool softmax, TrainNetFn&& trainNetFn,
 	const std::function<void(const TrialConfig&)>& prepare = std::function<void(const TrialConfig&)>())
 {
-	std::vector<TrialConfig> trials = buildTrials(config, defaultNetKind);
+	std::vector<TrialConfig> trials;
+	try
+	{
+		trials = buildTrials(config, defaultNetKind);
+	}
+	catch(const std::exception& err)
+	{
+		Log(Log::ERROR)<<err.what();
+		return 1;
+	}
 	if(trials.empty())
 	{
-		Log(Log::ERROR)<<"Nothing to tune, "<<(config.scriptDir.empty() ? "no configurations were specified" : "no TorchScript models were found in "+config.scriptDir.string());
+		Log(Log::ERROR)<<"Nothing to tune, "<<((config.scriptDir.empty() && config.scriptPaths.empty())
+			? "no configurations were specified"
+			: "no TorchScript models were found"+(config.scriptDir.empty() ? std::string() : " in "+config.scriptDir.string()));
 		return 1;
 	}
 
@@ -546,6 +651,7 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 					return false;
 				return a.bestLoss() < b.bestLoss();
 			};
+			break;
 		case METRIC_MEAN:
 			compare = [](const TrialResult& a, const TrialResult& b)
 			{
@@ -555,6 +661,7 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 					return false;
 				return a.meanLoss() < b.meanLoss();
 			};
+			break;
 		case METRIC_LAST:
 		default:
 			compare = [](const TrialResult& a, const TrialResult& b)
@@ -565,6 +672,7 @@ static int runTrials(const Config& config, NetKind defaultNetKind, int64_t input
 					return false;
 				return a.loss < b.loss;
 			};
+			break;
 	};
 
 	std::sort(results.begin(), results.end(), compare);
@@ -620,6 +728,25 @@ int searchClassification(const Config& config, EisDataset<DatasetType>* trainDat
 		{
 			ann::classification::train(nullptr, net, trainDataset, testDataset, config.epochs,
 				trial.learningRate, config.noWeights, trial.weightDecay, testLoss, &result->history);
+			return 0;
+		},
+		[&](const TrialConfig& trial)
+		{
+			applyTrialInputPrep(config, trial, trainDataset, testDataset);
+		});
+}
+
+template <typename DatasetType, typename TestDatasetType = DatasetType>
+int searchAutoEncoder(const Config& config, EisDataset<DatasetType>* trainDataset, EisDataset<TestDatasetType>* testDataset)
+{
+	return runTrials(config, NET_KIND_SIMPLE,
+		trainDataset->inputSize(), trainDataset->inputSize(), false,
+		[&](std::shared_ptr<ann::Net>& net, const TrialConfig& trial, double* testLoss,
+			TrialResult* result) -> int
+		{
+			std::shared_ptr<ann::AutoEncoder> autoencoder = std::dynamic_pointer_cast<ann::AutoEncoder>(net);
+			ann::autoencode::train(nullptr, autoencoder, trainDataset, testDataset, config.epochs,
+				trial.learningRate, config.klBeta, trial.weightDecay, testLoss, &result->autoEncoderHistory);
 			return 0;
 		},
 		[&](const TrialConfig& trial)

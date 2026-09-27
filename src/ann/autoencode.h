@@ -18,6 +18,9 @@
  * along with TorchKissAnn.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <limits>
+#include <vector>
+
 #include <torch/nn/modules/loss.h>
 #include <torch/optim/adamw.h>
 #include <torch/optim/sgd.h>
@@ -48,9 +51,10 @@ inline torch::Tensor klDivergence(const torch::Tensor& mu, const torch::Tensor& 
 
 template <typename DataLoader, typename LossFn>
 int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, double beta, size_t epoch,
-			size_t data_size, TrainLog* log = nullptr)
+			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
+	float lossAccumulator = 0;
 	network->train();
 
 	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
@@ -85,6 +89,8 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 		loss.backward();
 		optimizer.step();
 
+		lossAccumulator += loss.template item<float>();
+
 		if(log && index % loginterval == 0)
 		{
 			auto end = std::min(data_size, (index + 1) * batch_size);
@@ -94,14 +100,18 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 		index++;
 	}
 
+	if(meanTrainLoss)
+		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<double>::quiet_NaN();
+
 	return 0;
 }
 
 template <typename DataLoader, typename LossFn>
 int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, TrainLog* log = nullptr)
+			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
+	float lossAccumulator = 0;
 	network->train();
 
 	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
@@ -137,6 +147,8 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 		loss.backward();
 		optimizer.step();
 
+		lossAccumulator += loss.template item<float>();
+
 		if(log && index % loginterval == 0)
 		{
 			auto end = std::min(data_size, (index + 1) * batch_size);
@@ -145,6 +157,9 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 
 		index++;
 	}
+
+	if(meanTrainLoss)
+		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<double>::quiet_NaN();
 
 	return 0;
 }
@@ -158,6 +173,14 @@ struct TestReturn
 
 	torch::Tensor mse;
 	double loss;
+};
+
+struct EpochStats
+{
+	size_t epoch;
+	double trainLoss;
+	double testLoss;
+	torch::Tensor mse;
 };
 
 template <typename DataLoader, typename LossFn>
@@ -224,7 +247,8 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 }
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
-void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0)
+void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0,
+	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr)
 {
 	assert(net->getInputSize() == dataset->get(0).data.size(0));
 	if(testDataset)
@@ -256,7 +280,7 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 		sum += torch::sum(param).item<double>();
 	}
 	Log(Log::INFO)<<"Training "<<active_parameters<<" active parameters and "<<inactive_parameters<<" inactive parameters sum "<<sum;
-	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(0));
+	torch::optim::AdamW optimizer(net->parameters(), torch::optim::AdamWOptions(learingRate).weight_decay(weightDecay));
 
 	torch::nn::MSELoss mseloss(torch::nn::MSELossOptions().reduction(torch::kMean));
 
@@ -266,15 +290,16 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		int epochRet;
+		double meanTrainLoss = std::numeric_limits<double>::quiet_NaN();
 		if(net->isVariational())
 		{
 			double epochBeta = beta;
 			if(klWarmup > 0)
 				epochBeta = beta * std::min(1.0, double(i + 1) / double(klWarmup));
-			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), trainLog);
+			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), trainLog, &meanTrainLoss);
 		}
 		else
-			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), trainLog);
+			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), trainLog, &meanTrainLoss);
 
 		if(epochRet != 0)
 			break;
@@ -283,9 +308,16 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 		{
 			TestReturn testret = test(net, *testDataLoader, mseloss, dataset->size().value(), i, trainLog);
 			Log(Log::INFO)<<"Mse: "<<testret.mse;
+			if(finalTestLoss)
+				*finalTestLoss = testret.loss;
+			if(history)
+				history->push_back(EpochStats{i, meanTrainLoss, testret.loss, testret.mse});
 		}
+		else if(history)
+			history->push_back(EpochStats{i, meanTrainLoss, std::numeric_limits<double>::quiet_NaN(), torch::Tensor()});
 
-		trainLog->saveNetwork(net);
+		if(trainLog)
+			trainLog->saveNetwork(net);
 		Log(Log::INFO)<<"Epoch "<<i<<'/'<<epochs;
 	}
 
@@ -294,7 +326,8 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 		sum += torch::sum(param).item<double>();
 	Log(Log::INFO)<<"End sum "<<sum;
 
-	trainLog->saveNetwork(net, true);
+	if(trainLog)
+		trainLog->saveNetwork(net, true);
 }
 
 }

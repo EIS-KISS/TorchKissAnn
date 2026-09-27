@@ -65,6 +65,28 @@ static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* da
 	spectra->setCanonicalTraining(training);
 }
 
+static std::string netKindDescription(const Config& config)
+{
+	if(modeIsScript(config.mode) || !config.scriptPaths.empty() || !config.scriptDir.empty())
+		return "script";
+	if(config.mode == MODE_ANN_CONV)
+		return "conv";
+	return netTypeToStr(config.netType);
+}
+
+//! "2,4,8" so the swept latent widths fit on one log line.
+static std::string joinSizes(const std::vector<size_t>& sizes)
+{
+	std::string out;
+	for(size_t size : sizes)
+	{
+		if(!out.empty())
+			out += ",";
+		out += std::to_string(size);
+	}
+	return out;
+}
+
 template <typename DataSetType>
 static RegressionDataset<DataSetType>* castToRegressionDataset(DataSetType* dataset)
 {
@@ -102,12 +124,7 @@ int tuneDataset(const Config& config)
 			return 2;
 		}
 
-		// Loaders intern classes in the order they happen to encounter them, so a training set read
-		// from a tar and a test set read from a directory number the same classes differently, and a
-		// test set covering a subset of the classes interns into a prefix unrelated to the original
-		// numbering. The network's label space is the training dataset's order, so remap the test
-		// targets onto it instead of ranking the trials on a permuted label space. Only single label
-		// classification can do this: multiclass and regression targets are vectors, not indices.
+
 		if(!dataset.isMulticlass())
 		{
 			std::vector<std::string> trainLabels;
@@ -154,11 +171,13 @@ int tuneDataset(const Config& config)
 	{
 		case MODE_ANN:
 		case MODE_ANN_CONV:
-			Log(Log::INFO)<<"Tuning a classification network with "<<(config.mode == MODE_ANN_CONV ? "conv" : "simple")<<" net";
+		case MODE_ANN_SCRIPT:
+			Log(Log::INFO)<<"Tuning a classification network with "<<netKindDescription(config)<<" net";
 			ret = tune::searchClassification<TrainType, TestType>(config, &dataset, testDataset);
 			break;
 
 		case MODE_REGRESSION:
+		case MODE_REGRESSION_SCRIPT:
 		{
 			RegressionDataset<TrainType>* trainDatasetReg = castToRegressionDataset(&dataset);
 			RegressionDataset<TestType>* testDatasetReg = castToRegressionDataset(testDataset);
@@ -168,10 +187,20 @@ int tuneDataset(const Config& config)
 				ret = 1;
 				break;
 			}
-			Log(Log::INFO)<<"Tuning a regression network with "<<netTypeToStr(config.netType)<<" net";
+			Log(Log::INFO)<<"Tuning a regression network with "<<netKindDescription(config)<<" net";
 			ret = tune::searchRegression<TrainType, TestType>(config, trainDatasetReg, testDatasetReg);
 			break;
 		}
+
+		case MODE_AUTO_SCRIPT:
+		case MODE_AUTO:
+		case MODE_VAE_SCRIPT:
+		case MODE_VAE:
+			Log(Log::INFO)<<"Tuning a "<<(modeIsVariational(config.mode) ? "variational autoencoder" : "autoencoder")
+				<<" with latent size "<<joinSizes(config.latentSizes)<<" and "
+				<<(netKindDescription(config))<<" encoder and decoder";
+			ret = tune::searchAutoEncoder<TrainType, TestType>(config, &dataset, testDataset);
+			break;
 
 		default:
 			Log(Log::ERROR)<<"Tuneing is not yet supported in the mode "<<trainModeToStr(config.mode);
@@ -203,28 +232,43 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	// Same binding as in the train tool: the classification search ranks by classification loss
-	// against class ids, the regression search against parameter vectors. Only these two modes are
-	// tunable, so every combination is either regression or classification.
-	if(config.mode == MODE_REGRESSION && !datasetModeIsRegression(config.datasetMode))
+	if(modeIsRegression(config.mode) && !datasetModeIsRegression(config.datasetMode))
 	{
-		Log(Log::ERROR)<<"the regression mode can only be tuned with a regression dataset, "
+		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode can only be tuned with a regression dataset, "
 			<<"use -d "<<datasetModeToStr(DATASET_DIR_REGRESSION)<<" or -d "<<datasetModeToStr(DATASET_TAR_REGRESSION)
 			<<", not -d "<<datasetModeToStr(config.datasetMode);
 		return false;
 	}
-	if((config.mode == MODE_ANN || config.mode == MODE_ANN_CONV) && datasetModeIsRegression(config.datasetMode))
+	if(modeIsClassification(config.mode) && datasetModeIsRegression(config.datasetMode))
 	{
 		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode can only be tuned with a classification dataset, "
 			<<"use -d "<<datasetModeToStr(DATASET_DIR)<<" or -d "<<datasetModeToStr(DATASET_TAR)
 			<<", not -d "<<datasetModeToStr(config.datasetMode)
-			<<". To tune on parameter targets use -m regression instead.";
+			<<". To tune on parameter targets use -m regression or -m regression_script instead.";
 		return false;
 	}
 
-	if(config.loss != LOSS_MSE && config.mode != MODE_REGRESSION)
+	if(config.loss != LOSS_MSE && !modeIsRegression(config.mode))
 	{
 		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used in regression mode";
+		return false;
+	}
+
+	const bool scriptSource = !config.scriptPaths.empty() || !config.scriptDir.empty();
+	if(modeIsScript(config.mode) && !scriptSource)
+	{
+		Log(Log::ERROR)<<"the "<<trainModeToStr(config.mode)<<" mode tunes TorchScript models, name them with -n or point --scripts at a directory of them";
+		return false;
+	}
+	if(!config.scriptPaths.empty() && !config.scriptDir.empty())
+	{
+		Log(Log::ERROR)<<"-n and --scripts both name TorchScript models, pick one of them";
+		return false;
+	}
+	if((config.mode == MODE_AUTO || config.mode == MODE_VAE) && scriptSource)
+	{
+		Log(Log::ERROR)<<trainModeToStr(config.mode)<<" sweeps the taper of native encoder and decoder networks, to tune a TorchScript pair use -m "
+			<<(modeIsVariational(config.mode) ? "vae" : "autoencoder");
 		return false;
 	}
 
@@ -235,8 +279,49 @@ bool check_options(const Config& config)
 			Log(Log::ERROR)<<config.scriptDir.string()<<" is not a directory";
 			return false;
 		}
-		if(!config.downsampleSteps.empty() || !config.extraSteps.empty())
+		if(modeIsAutoEncoder(config.mode))
+		{
+			Log(Log::ERROR)<<"--scripts can not be used in the "<<trainModeToStr(config.mode)
+				<<" mode: one file in a directory is one network, an autoencoder needs an encoder and a decoder. "
+				<<"Name the pairs with -n encoder.pt,decoder.pt and repeat -n to compare several";
+			return false;
+		}
+		if(config.downsampleStepsRequested || config.extraStepsRequested)
 			Log(Log::WARN)<<"--downsample-steps and --extra-steps are ignored when comparing TorchScript models";
+	}
+
+	for(const std::string& entry : config.scriptPaths)
+	{
+		size_t count = 0;
+		for(const std::string& token : tokenize(entry, ','))
+			if(!stripWhitespace(token).empty())
+				count++;
+		if(count == 0)
+		{
+			Log(Log::ERROR)<<"-n was given an empty path";
+			return false;
+		}
+		if(modeIsAutoEncoder(config.mode) && count != 2)
+		{
+			Log(Log::ERROR)<<"in the autoencoder and vae modes -n must name an encoder and a decoder separated by a comma, got: "<<entry;
+			return false;
+		}
+	}
+
+	for(size_t latentSize : config.latentSizes)
+		if(latentSize < 1)
+		{
+			Log(Log::ERROR)<<"--latent-size and --latent-sizes must be at least 1";
+			return false;
+		}
+
+	if(modeIsAutoEncoder(config.mode) && config.netType == NET_CONV)
+	{
+		Log(Log::ERROR)<<"--network conv can not be used in the "<<trainModeToStr(config.mode)
+			<<" mode: a conv network shortens the sequence instead of lengthening it and can not act as a decoder. "
+			<<"Use -m "<<(modeIsVariational(config.mode) ? "vae" : "autoencoder")<<" with -n encoder.pt,decoder.pt and an "
+			<<"upsamplenet as the decoder (buildnet.py -t upsamplenet -i <latent size> -o <spectra size>)";
+		return false;
 	}
 
 	for(double learningRate : config.learningRates)
@@ -260,7 +345,7 @@ bool check_options(const Config& config)
 			return false;
 		}
 
-	SpectraNorm spectraNormMode = SpectraNorm::None;
+	bool spectraNormRequested = false;
 	for(const std::string& name : config.spectraNorms)
 	{
 		std::string lowered = name;
@@ -271,12 +356,13 @@ bool check_options(const Config& config)
 			Log(Log::ERROR)<<"--spectra-norm must be a comma separated list of none, zmean, zgeom and zmax, not "<<name;
 			return false;
 		}
-		spectraNormMode = spectraNormFromString(name);
+		if(spectraNormFromString(name) != SpectraNorm::None)
+			spectraNormRequested = true;
 	}
-	if(spectraNormMode != SpectraNorm::None && config.mode == MODE_REGRESSION)
+	if(spectraNormRequested && !modeIsClassification(config.mode))
 	{
-		Log(Log::ERROR)<<"--spectra-norm can not be tuned in regression mode: dividing every spectra by its own "
-			<<"impedance level removes exactly what the parameter targets describe.";
+		Log(Log::ERROR)<<"--spectra-norm can only be tuned in the classification modes: dividing every spectra by its own "
+			<<"impedance level removes exactly what the regression targets and the autoencoder reconstruction describe.";
 		return false;
 	}
 
@@ -299,6 +385,13 @@ bool check_options(const Config& config)
 		return false;
 	}
 
+	if(config.canonical && modeIsAutoEncoder(config.mode))
+	{
+		Log(Log::ERROR)<<"the canonical grid is not available in the "<<trainModeToStr(config.mode)
+			<<" mode, it is supported in the classification and regression modes only";
+		return false;
+	}
+
 	bool augmentationRequested = false;
 	for(double augmentShift : config.canonicalAugmentShifts)
 		augmentationRequested |= (augmentShift > 0);
@@ -311,7 +404,7 @@ bool check_options(const Config& config)
 			<<"pass --canonical-fmin, --canonical-fmax and --canonical-points";
 		return false;
 	}
-	if(config.canonical && config.mode == MODE_REGRESSION)
+	if(config.canonical && modeIsRegression(config.mode))
 	{
 		bool shiftRequested = false;
 		for(double augmentShift : config.canonicalAugmentShifts)
@@ -337,24 +430,23 @@ static void applyDefaults(Config& config)
 	if(config.learningRates.empty())
 		config.learningRates = {0.005};
 	if(config.weightDecays.empty())
-		config.weightDecays = {0.001};
-	// The swept input preparation defaults to the single identity configuration, so a tune that
-	// does not ask for these stays exactly as cheap and as reproducible as it was before. Note
-	// that _train defaults the shift augmentation to 1 decade; here 0 means off and is what you
-	// get unless you name the values you want swept.
+	{
+		// torchkissann_train trains autoencoders and VAEs with weight decay switched off, so an
+		// untuned weight decay has to be 0 here too or the winner would not describe what _train does.
+		config.weightDecays = {(modeIsAutoEncoder(config.mode) && !config.weightDecaysRequested) ? 0.0 : 0.001};
+	}
 	if(config.canonicalAugmentShifts.empty())
 		config.canonicalAugmentShifts = {0};
 	if(config.canonicalAugmentWindows.empty())
 		config.canonicalAugmentWindows = {1};
 	if(config.spectraNorms.empty())
 		config.spectraNorms = {"none"};
+	if(config.latentSizes.empty())
+		config.latentSizes = {config.latentSize};
 
 	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
 }
 
-// The training loader is picked by -d. The test loader follows the shape of what is on disk so a
-// simulated tar can be scored against a directory of real measurements, which is the whole point of
-// using this tool to measure transfer. Regression-ness still follows -d.
 template <typename TrainType>
 static int dispatchTestDataset(const Config& config)
 {
