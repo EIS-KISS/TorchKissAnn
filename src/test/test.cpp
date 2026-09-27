@@ -136,7 +136,13 @@ int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, c
 		indecies[i] = i;
 
 	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), losses, "loss importance");
-	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), "Input", "loss", indecies, losses, false, false, true);
+
+	PlotOptions options;
+	options.type = PLOT_TYPE_SCATTER;
+	options.xLabel = "Input";
+	options.yLabel = "Loss";
+
+	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), indecies, losses, options);
 
 	return 0;
 }
@@ -226,7 +232,7 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	for(int64_t i = 0; i < evalOutputSize; ++i)
 		Log(Log::INFO, false)<<labelName(netOutputs, dataset, i)<<", ";
-	Log(Log::INFO)<<'\n'<<tensorToString(testRet.acc);
+	Log(Log::INFO)<<'\n'<<tensorToString(testRet.acc, false);
 
 	if(config.confustionMatrix)
 	{
@@ -285,16 +291,23 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 		loss[i] = ret.loss;
 	}
 
+	PlotOptions options;
+	options.type = PLOT_TYPE_SCATTER;
+	options.xLabel = "Input";
+	options.yLabel = "r2";
+
 	for(size_t i = 0; i < dataset->outputSize(); ++i)
 	{
 		std::valarray<double> r2(dataset->inputSize());
 		for(size_t j = 0; j < dataset->inputSize(); ++j)
 			r2[j] = std::max(r2s[j][i].item<float>(), 0.0f);
 		csv::save(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".csv"), r2, "r2");
-		save2dPlot(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".svg"), "Input", "r2", indecies, r2, false, false, true);
+
+		save2dPlot(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".svg"), indecies, r2, options);
 	}
 	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), loss, "loss importance");
-	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), "Input", "loss", indecies, loss, false, false, true);
+	options.yLabel = "Loss";
+	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), indecies, loss, options);
 
 	return 0;
 }
@@ -400,11 +413,26 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		}
 		csv::save(config.outputDir/(net->getOutputLabels()[output]+"_target.csv"), targetsVarr, "target");
 		csv::save(config.outputDir/(net->getOutputLabels()[output]+"_prediction.csv"), predictionsVarr, "prediction");
-		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+".svg"), "Target", "Prediction", targetsVarr, predictionsVarr, false, false, true);
-		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), net->getOutputLabels()[output], "Error", targetsVarr, error, false, false, true);
+
+		PlotOptions options;
+		options.type = PLOT_TYPE_SCATTER;
+		options.xlog = true;
+		options.ylog = true;
+		options.xLabel = "Target";
+		options.yLabel = "Prediction";
+
+		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+".svg"), targetsVarr, predictionsVarr, options);
+
+		options.xLabel = net->getOutputLabels()[output];
+		options.yLabel = "Error";
+
+		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), targetsVarr, error, options);
 	}
 
-	Log(Log::INFO)<<"\nMse:\n"<<tensorToString(ret.mse)<<"\n\nR2:\n"<<tensorToString(ret.r2);
+	Log(Log::INFO)<<"\nMean MSE: "<<(ret.mse.sum()/ret.mse.numel()).item<float>();
+	Log(Log::INFO)<<"Mean R2: "<<(ret.r2.sum()/ret.r2.numel()).item<float>();
+
+	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false)<<"\nR2:\n"<<tensorToString(ret.r2, false);
 
 	if(config.inputImportance)
 	{
@@ -483,7 +511,14 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 			std::pair<std::valarray<double>, std::valarray<double>> output = torchToValarray<double>(ret.outputs[i].to(torch::kFloat64));
 			std::pair<std::valarray<double>, std::valarray<double>> referance = torchToValarray<double>(ret.inputs[i].to(torch::kFloat64));
 
-			save2dPlot(imgDir/("output_" + std::to_string(i) + ".png"), "Re(Z)", "Im(Z)", {output, referance});
+			PlotOptions options;
+			options.type = PLOT_TYPE_LINE;
+			options.xLabel = "Re(Z)";
+			options.yLabel = "Im(Z)";
+			options.xlog = true;
+			options.ylog = true;
+
+			save2dPlot(imgDir/("output_" + std::to_string(i) + ".png"), {output, referance}, options);
 		}
 	}
 
@@ -503,20 +538,33 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		csv::save(config.outputDir/"latents-with-meta.csv", torch::cat({ret.latents, metadata}, 1), "x ,y, z, class, r, g, b");
 	}
 
+	PlotOptions pltoptions;
+	pltoptions.xLabel = "x";
+	pltoptions.yLabel = "y";
+	pltoptions.zLabel = "z";
+	pltoptions.type = PLOT_TYPE_SCATTER;
+
 	switch(ret.latents.size(1))
 	{
 		default:
 		case 3:
-			save3dPlot(config.outputDir/"latent.svg", "x", "y", "z", x, y, z, false);
+
+			save3dPlot(config.outputDir/"latent.svg", x, y, z, pltoptions);
 			break;
 		case 2:
-			save2dPlot(config.outputDir/"latent.svg", "x", "y", x, y, false, false, true);
+		{
+			save2dPlot(config.outputDir/"latent.svg", x, y, pltoptions);
 			break;
+		}
 		case 1:
+		{
 			for(int64_t i = 0; i < ret.latents.size(0); ++i)
 				y[i] = i;
-			save2dPlot(config.outputDir/"latent.svg", "n", "x", y, x, false, false, true);
+			pltoptions.xLabel = "n";
+			pltoptions.yLabel = "x";
+			save2dPlot(config.outputDir/"latent.svg", y, x, pltoptions);
 			break;
+		}
 		case 0:
 			assert(false);
 	}

@@ -28,12 +28,11 @@
 #include <sciplot/Plot2D.hpp>
 #include <sciplot/Plot3D.hpp>
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, const PlotOptions& options)
 {
-		sciplot::Plot2D plot;
-	plot.xlabel(xLabel);
-	plot.ylabel(yLabel);
+	sciplot::Plot2D plot;
+	plot.xlabel(options.xLabel);
+	plot.ylabel(options.yLabel);
 
 	std::valarray<double> xMaxC(data.size());
 	std::valarray<double> xMinC(data.size());
@@ -53,7 +52,7 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	double yMin = yMinC.min();
 	double yMax = yMaxC.max();
 
-	if(square)
+	if(options.square)
 	{
 		xMin = std::min(xMin, yMin);
 		yMin = xMin;
@@ -64,12 +63,14 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 
 	plot.xrange(xMin, xMax);
 	plot.yrange(yMin, yMax);
-	if(log)
+	if(options.xlog)
+		plot.xtics().logscale(10);
+	if(options.ylog)
 		plot.ytics().logscale(10);
 
 	for(const std::pair<std::valarray<double>, std::valarray<double>>& curve : data)
 	{
-		if(points)
+		if(options.type == PLOT_TYPE_SCATTER)
 			plot.drawPoints(curve.first, curve.second);
 		else
 			plot.drawCurve(curve.first, curve.second);
@@ -84,25 +85,23 @@ bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 }
 
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData, const PlotOptions& options)
 {
-	return save2dPlot(path, xLabel, yLabel, {{xData, yData}}, square, log, points);
+	return save2dPlot(path, {{xData, yData}}, options);
 }
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::vector<double> xData, std::vector<double> yData, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::vector<double> xData, std::vector<double> yData, const PlotOptions& options)
 {
-	return save2dPlot(path, xLabel, yLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), square, log, points);
+	return save2dPlot(path, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), options);
 }
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log)
+bool save3dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData,
+                std::valarray<double> zData, const PlotOptions& options)
 {
 	sciplot::Plot3D plot;
-	plot.xlabel(xLabel);
-	plot.ylabel(yLabel);
-	plot.zlabel(zLabel);
+	plot.xlabel(options.xLabel);
+	plot.ylabel(options.yLabel);
+	plot.zlabel(options.zLabel);
 
 	double xMin = xData.min();
 	double xMax = xData.max();
@@ -115,12 +114,12 @@ bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	plot.yrange(yMin, yMax);
 	plot.zrange(zMin, zMax);
 
-	if(log)
-	{
+	if(options.xlog)
 		plot.xtics().logscale(10);
+	if(options.ylog)
 		plot.ytics().logscale(10);
+	if(options.zlog)
 		plot.ztics().logscale(10);
-	}
 
 	plot.drawPoints(xData, yData, zData);
 
@@ -134,43 +133,48 @@ bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, co
 	return true;
 }
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log)
+bool save3dPlot(const std::filesystem::path& path,
+                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, const PlotOptions& options)
 {
-	return save3dPlot(path, xLabel, yLabel, zLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), std::valarray<double>(zData.data(), zData.size()), log);
+	return save3dPlot(path,
+					  std::valarray<double>(xData.data(), xData.size()),
+					  std::valarray<double>(yData.data(), yData.size()),
+					  std::valarray<double>(zData.data(), zData.size()),
+					  options);
 }
 
 #else
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, const PlotOptions& options)
 {
 	return true;
 }
 
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::valarray<double> xData, std::valarray<double> yData, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData, const PlotOptions& options)
 {
-	return save2dPlot(path, xLabel, yLabel, {{xData, yData}}, square, log, points);
+	return save2dPlot(path, {{xData, yData}}, options);
 }
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-	std::vector<double> xData, std::vector<double> yData, bool square, bool log, bool points)
+bool save2dPlot(const std::filesystem::path& path, std::vector<double> xData, std::vector<double> yData, const PlotOptions& options)
 {
-	return save2dPlot(path, xLabel, yLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), square, log, points);
+	return save2dPlot(path, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), options);
 }
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log)
+bool save3dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData,
+                std::valarray<double> zData, const PlotOptions& options)
 {
 	return true;
 }
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log)
+bool save3dPlot(const std::filesystem::path& path,
+                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, const PlotOptions& options
 {
-	return save3dPlot(path, xLabel, yLabel, zLabel, std::valarray<double>(xData.data(), xData.size()), std::valarray<double>(yData.data(), yData.size()), std::valarray<double>(zData.data(), zData.size()), log);
+	return save3dPlot(path,
+					  std::valarray<double>(xData.data(), xData.size()),
+					  std::valarray<double>(yData.data(), yData.size()),
+					  std::valarray<double>(zData.data(), zData.size()),
+					  options);
 }
 
 #endif

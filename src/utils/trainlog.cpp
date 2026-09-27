@@ -216,7 +216,13 @@ void TrainLog::plot(std::filesystem::path logDir, std::vector<std::pair<size_t, 
 		losses[i] = loss[i].second;
 	}
 
-	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", "steps", "loss", steps, losses, false, true);
+	PlotOptions options;
+	options.xLabel = "steps";
+	options.yLabel = "loss";
+	options.type = PLOT_TYPE_LINE;
+	options.ylog = true;
+
+	save2dPlot(test ? logDir/"valLoss.png" : logDir/"trainLoss.png", steps, losses, options);
 }
 
 TrainLog::~TrainLog()

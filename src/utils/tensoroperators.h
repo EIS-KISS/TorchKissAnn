@@ -64,7 +64,7 @@ torch::Tensor unargmax(const torch::Tensor& in, int64_t size);
 torch::Tensor complexToLinear(torch::Tensor& tensor);
 torch::Tensor linearToComplex(torch::Tensor& tensor);
 
-std::string tensorToString(const torch::Tensor& tensor);
+std::string tensorToString(const torch::Tensor& tensor, bool scientific = true);
 
 torch::Tensor safeConcat(std::initializer_list<torch::Tensor> list, int64_t dim);
 

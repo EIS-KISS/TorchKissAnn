@@ -119,10 +119,11 @@ torch::Tensor complexToLinear(torch::Tensor& in)
 	return out;
 }
 
-std::string tensorToString(const torch::Tensor& tensor)
+std::string tensorToString(const torch::Tensor& tensor, bool scientific)
 {
 	std::stringstream ss;
-	ss<<std::scientific;
+	if(scientific)
+		ss<<std::scientific;
 
 	if(tensor.dim() == 2)
 	{

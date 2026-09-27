@@ -24,17 +24,30 @@
 #include <valarray>
 #include <vector>
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-                std::valarray<double> xData, std::valarray<double> yData, bool square = false, bool log = false, bool points = false);
+enum PlotType
+{
+    PLOT_TYPE_SCATTER,
+    PLOT_TYPE_LINE
+};
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-                std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, bool square = false, bool log = false, bool points = false);
+struct PlotOptions
+{
+    std::string xLabel = "X Axis";
+    std::string yLabel = "Y Axis";
+    std::string zLabel = "Z Axis";
+    bool square = false;
+    bool xlog = false;
+    bool ylog = false;
+    bool zlog = false;
+    enum PlotType type = PLOT_TYPE_LINE;
+};
 
-bool save2dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel,
-                std::vector<double> xData, std::vector<double> yData, bool square = false, bool log = false, bool points = false);
+bool save2dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData, const PlotOptions& options);
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, bool log = false);
+bool save2dPlot(const std::filesystem::path& path, std::vector<std::pair<std::valarray<double>, std::valarray<double>>> data, const PlotOptions& options);
 
-bool save3dPlot(const std::filesystem::path& path, const std::string& xLabel, const std::string& yLabel, const std::string& zLabel,
-                std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, bool log = false);
+bool save2dPlot(const std::filesystem::path& path, std::vector<double> xData, std::vector<double> yData, const PlotOptions& options);
+
+bool save3dPlot(const std::filesystem::path& path, std::valarray<double> xData, std::valarray<double> yData, std::valarray<double> zData, const PlotOptions& options);
+
+bool save3dPlot(const std::filesystem::path& path, std::vector<double> xData, std::vector<double> yData, std::vector<double> zData, const PlotOptions& options);
