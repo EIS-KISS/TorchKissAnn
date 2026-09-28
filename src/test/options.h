@@ -19,6 +19,7 @@
  */
 
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <argp.h>
@@ -34,6 +35,15 @@ inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that tests models for TorchKissAnn";
 static char args_doc[] = "";
 
+enum TestArgpKey
+{
+	OPT_FIT_BATCH = 0x81,
+	OPT_FIT_RESTARTS,
+	OPT_FIT_EVALUATIONS,
+	OPT_FIT_LIMIT,
+	OPT_FIT_POINTS,
+};
+
 static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
@@ -45,9 +55,16 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where testing logs will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
+  {"loss",			's', "[STRING]",	0,	"loss function to use for regression: " LOSS_LIST},
   {"no-confustion",	-1, 0,				0,	"dont compute or output the confustion matrix"},
   {"network",		'n', "[PATH]",		0,	"path to the network to test"},
   {"ignore-missmatch",	'i', 0,			0,	"Ignore missmatches in label names"},
+  {"fit-mismatch",	'a', 0,				0,	"classification only: fit the circuit the network predicted to every spectra it labelled wrongly and report an after fit accuracy, the share of the test set for which the network names a circuit that actually describes the spectra. Requires a network that stores its output labels"},
+  {"fit-batch-size",	OPT_FIT_BATCH, "[NUMBER]", 0, "number of mismatches fitted simultaneously, default: 64"},
+  {"fit-restarts",	OPT_FIT_RESTARTS, "[NUMBER]", 0, "random restarts per mismatch on top of the start the circuit implies, default: 4. Every restart multiplies the time the after fit pass takes"},
+  {"fit-evaluations",	OPT_FIT_EVALUATIONS, "[NUMBER]", 0, "maximum number of spectrum simulations per restart and batch, default: 400"},
+  {"fit-limit",		OPT_FIT_LIMIT, "[FRACTION]", 0, "rms deviation below which the predicted circuit counts as plausible, default: 0.01, raised to three times the noise of the spectra when that is larger"},
+  {"fit-points",	OPT_FIT_POINTS, "[NUMBER]", 0, "thin each mismatch to this many evenly spaced points for the search, default: 25, 0 fits every point. The jacobian costs one backward per point so this is the cheapest way to buy restarts: the verdict (rms against the noise floor) is still scored on the whole spectra, only the minima the optimiser explores change"},
   { 0 }
 };
 
@@ -63,6 +80,13 @@ struct Config
 	bool inputImportance = false;
 	bool outputMoreImages = false;
 	bool confustionMatrix = true;
+	bool fitMismatch = false;
+	int64_t fitBatchSize = 64;
+	int64_t fitRestarts = 4;
+	int64_t fitEvaluations = 400;
+	double fitLimit = 0.01;
+	int64_t fitPoints = 25;
+	LossType loss = LOSS_MSE;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -110,6 +134,33 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'g':
 			config->outputMoreImages = true;
+			break;
+		case 'a':
+			config->fitMismatch = true;
+			break;
+		case 's':
+			config->loss = parseLossType(arg);
+			if(config->loss == LOSS_INVALID)
+			{
+				Log(Log::ERROR)<<"loss has to be one of: " LOSS_LIST;
+				argp_usage(state);
+			}
+			break;
+			break;
+		case OPT_FIT_BATCH:
+			config->fitBatchSize = std::stoll(arg);
+			break;
+		case OPT_FIT_RESTARTS:
+			config->fitRestarts = std::stoll(arg);
+			break;
+		case OPT_FIT_EVALUATIONS:
+			config->fitEvaluations = std::stoll(arg);
+			break;
+		case OPT_FIT_LIMIT:
+			config->fitLimit = std::stod(arg);
+			break;
+		case OPT_FIT_POINTS:
+			config->fitPoints = std::stoll(arg);
 			break;
 		case -1:
 			config->confustionMatrix = false;

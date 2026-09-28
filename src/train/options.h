@@ -75,104 +75,6 @@ static struct argp_option options[] =
   { 0 }
 };
 
-typedef enum
-{
-	MODE_INVALID = -1,
-	MODE_ANN = 0,
-	MODE_ANN_CONV,
-	MODE_ANN_SCRIPT,
-	MODE_AUTO_SCRIPT,
-	MODE_AUTO,
-	MODE_GAN,
-	MODE_REGRESSION,
-	MODE_REGRESSION_SCRIPT,
-	MODE_VAE_SCRIPT,
-	MODE_VAE
-} TrainMode;
-
-static std::string trainModeToStr(const TrainMode mode)
-{
-	switch(mode)
-	{
-		case MODE_ANN:
-			return "ann";
-		case MODE_ANN_CONV:
-			return "conv";
-		case MODE_ANN_SCRIPT:
-			return "script";
-		case MODE_AUTO_SCRIPT:
-			return "autoencoder";
-		case MODE_AUTO:
-			return "autoencoder_simple";
-		case MODE_GAN:
-			return "gan";
-		case MODE_REGRESSION:
-			return "regression";
-		case MODE_REGRESSION_SCRIPT:
-			return "regression_script";
-		case MODE_VAE_SCRIPT:
-			return "vae";
-		case MODE_VAE:
-			return "vae_simple";
-		default:
-			return "Invalid";
-	}
-}
-
-static TrainMode parseTrainMode(const std::string& in)
-{
-	if(in.empty() || in == trainModeToStr(MODE_ANN))
-		return MODE_ANN;
-	else if(in == trainModeToStr(MODE_ANN_CONV))
-		return MODE_ANN_CONV;
-	else if(in == trainModeToStr(MODE_ANN_SCRIPT))
-		return MODE_ANN_SCRIPT;
-	else if(in == trainModeToStr(MODE_AUTO_SCRIPT))
-		return MODE_AUTO_SCRIPT;
-	else if(in == trainModeToStr(MODE_AUTO))
-		return MODE_AUTO;
-	else if(in == trainModeToStr(MODE_GAN))
-		return MODE_GAN;
-	else if(in == trainModeToStr(MODE_REGRESSION))
-		return MODE_REGRESSION;
-	else if(in == trainModeToStr(MODE_REGRESSION_SCRIPT))
-		return MODE_REGRESSION_SCRIPT;
-	else if(in == trainModeToStr(MODE_VAE_SCRIPT))
-		return MODE_VAE_SCRIPT;
-	else if(in == trainModeToStr(MODE_VAE))
-		return MODE_VAE;
-	return MODE_INVALID;
-}
-
-typedef enum
-{
-	LOSS_INVALID = -1,
-	LOSS_MSE = 0,
-	LOSS_SPECTRA
-} TrainLoss;
-
-static std::string lossTypeToStr(const TrainLoss loss)
-{
-	switch(loss)
-	{
-		case LOSS_MSE:
-			return "mse";
-		case LOSS_SPECTRA:
-			return "spectra";
-		default:
-			return "Invalid";
-	}
-}
-
-static TrainLoss parseLossType(const std::string& in)
-{
-	if(in.empty() || in == lossTypeToStr(LOSS_MSE))
-		return LOSS_MSE;
-	else if(in == lossTypeToStr(LOSS_SPECTRA))
-		return LOSS_SPECTRA;
-	return LOSS_INVALID;
-}
-
 struct Config
 {
 	TrainMode mode = MODE_INVALID;
@@ -187,7 +89,7 @@ struct Config
 	size_t extraLayers = 3;
 	size_t latentSize = 10;
 	double klBeta = 1.0;
-	TrainLoss loss = LOSS_MSE;
+	LossType loss = LOSS_MSE;
 	bool noGpu = false;
 	bool noWeights = false;
 	// Canonical frequency grid: resample every spectra onto a fixed grid so the same

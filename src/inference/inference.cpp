@@ -177,7 +177,7 @@ static torch::Tensor classify(torch::Tensor& input, PredictionMode mode, std::sh
 
 	switch(mode)
 	{
-		case MODE_ANN:
+		case PRED_MODE_ANN:
 			output = ann::classification::use(input, net);
 			break;
 		default:
@@ -341,12 +341,12 @@ static bool requiresNetwork(PredictionMode mode)
 {
 	switch(mode)
 	{
-		case MODE_ANN:
-		case MODE_REGRESSION:
+		case PRED_MODE_ANN:
+		case PRED_MODE_REGRESSION:
 			return true;
-		case MODE_SHOW:
-		case MODE_REEXPORT:
-		case MODE_INVALID:
+		case PRED_MODE_SHOW:
+		case PRED_MODE_REEXPORT:
+		case PRED_MODE_INVALID:
 		default:
 			return false;
 	}
@@ -396,15 +396,15 @@ int main(int argc, char** argv)
 
 	switch(config.mode)
 	{
-		case MODE_ANN:
+		case PRED_MODE_ANN:
 			return classifyPipeline(config, net);
-		case MODE_REGRESSION:
+		case PRED_MODE_REGRESSION:
 			return regressionPipe(config, net);
-		case MODE_SHOW:
+		case PRED_MODE_SHOW:
 			return showPipe(config);
-		case MODE_REEXPORT:
+		case PRED_MODE_REEXPORT:
 			return reexportPipe(config);
-		case MODE_INVALID:
+		case PRED_MODE_INVALID:
 		default:
 			Log(Log::ERROR)<<"An invalid mode was specified";
 			return 1;

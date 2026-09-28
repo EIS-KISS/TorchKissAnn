@@ -29,7 +29,6 @@
 #include "tokenize.h"
 
 #define MODE_LIST "ann, conv, script, regression, regression_script, autoencoder, autoencoder_simple, vae, vae_simple"
-#define LOSS_LIST "mse, spectra"
 #define NETWORK_LIST "simple, conv"
 #define METRIC_LIST "last, best, mean"
 
@@ -130,129 +129,6 @@ static TuneMetric parseMetric(const std::string& in)
 
 typedef enum
 {
-	MODE_INVALID = -1,
-	MODE_ANN = 0,
-	MODE_ANN_CONV,
-	MODE_ANN_SCRIPT,
-	MODE_REGRESSION,
-	MODE_REGRESSION_SCRIPT,
-	MODE_AUTO_SCRIPT,
-	MODE_AUTO,
-	MODE_VAE_SCRIPT,
-	MODE_VAE
-} TrainMode;
-
-static std::string trainModeToStr(const TrainMode mode)
-{
-	switch(mode)
-	{
-		case MODE_ANN:
-			return "ann";
-		case MODE_ANN_CONV:
-			return "conv";
-		case MODE_ANN_SCRIPT:
-			return "script";
-		case MODE_REGRESSION:
-			return "regression";
-		case MODE_REGRESSION_SCRIPT:
-			return "regression_script";
-		case MODE_AUTO_SCRIPT:
-			return "autoencoder";
-		case MODE_AUTO:
-			return "autoencoder_simple";
-		case MODE_VAE_SCRIPT:
-			return "vae";
-		case MODE_VAE:
-			return "vae_simple";
-		default:
-			return "Invalid";
-	}
-}
-
-static TrainMode parseTrainMode(const std::string& in)
-{
-	if(in.empty() || in == trainModeToStr(MODE_ANN))
-		return MODE_ANN;
-	else if(in == trainModeToStr(MODE_ANN_CONV))
-		return MODE_ANN_CONV;
-	else if(in == trainModeToStr(MODE_ANN_SCRIPT))
-		return MODE_ANN_SCRIPT;
-	else if(in == trainModeToStr(MODE_REGRESSION))
-		return MODE_REGRESSION;
-	else if(in == trainModeToStr(MODE_REGRESSION_SCRIPT))
-		return MODE_REGRESSION_SCRIPT;
-	else if(in == trainModeToStr(MODE_AUTO_SCRIPT))
-		return MODE_AUTO_SCRIPT;
-	else if(in == trainModeToStr(MODE_AUTO))
-		return MODE_AUTO;
-	else if(in == trainModeToStr(MODE_VAE_SCRIPT))
-		return MODE_VAE_SCRIPT;
-	else if(in == trainModeToStr(MODE_VAE))
-		return MODE_VAE;
-	return MODE_INVALID;
-}
-
-//! The modes that rank on a classification label space, on a parameter vector, or on the
-//! reconstruction of the spectra itself. Mirrors the grouping in torchkissann_train.
-static bool modeIsClassification(const TrainMode mode)
-{
-	return mode == MODE_ANN || mode == MODE_ANN_CONV || mode == MODE_ANN_SCRIPT;
-}
-
-static bool modeIsRegression(const TrainMode mode)
-{
-	return mode == MODE_REGRESSION || mode == MODE_REGRESSION_SCRIPT;
-}
-
-//! Autoencoders and VAEs are unsupervised: they read the spectra only, so they accept either
-//! dataset flavour and are scored on reconstruction error instead of on a label.
-static bool modeIsAutoEncoder(const TrainMode mode)
-{
-	return mode == MODE_AUTO_SCRIPT || mode == MODE_AUTO || mode == MODE_VAE_SCRIPT || mode == MODE_VAE;
-}
-
-static bool modeIsVariational(const TrainMode mode)
-{
-	return mode == MODE_VAE_SCRIPT || mode == MODE_VAE;
-}
-
-//! True when the network under test is a TorchScript model rather than a native taper.
-static bool modeIsScript(const TrainMode mode)
-{
-	return mode == MODE_ANN_SCRIPT || mode == MODE_REGRESSION_SCRIPT || mode == MODE_AUTO_SCRIPT || mode == MODE_VAE_SCRIPT;
-}
-
-typedef enum
-{
-	LOSS_INVALID = -1,
-	LOSS_MSE = 0,
-	LOSS_SPECTRA
-} TrainLoss;
-
-static std::string lossTypeToStr(const TrainLoss loss)
-{
-	switch(loss)
-	{
-		case LOSS_MSE:
-			return "mse";
-		case LOSS_SPECTRA:
-			return "spectra";
-		default:
-			return "Invalid";
-	}
-}
-
-static TrainLoss parseLossType(const std::string& in)
-{
-	if(in.empty() || in == lossTypeToStr(LOSS_MSE))
-		return LOSS_MSE;
-	else if(in == lossTypeToStr(LOSS_SPECTRA))
-		return LOSS_SPECTRA;
-	return LOSS_INVALID;
-}
-
-typedef enum
-{
 	NET_INVALID = -1,
 	NET_SIMPLE = 0,
 	NET_CONV
@@ -308,7 +184,7 @@ struct Config
 	size_t latentSize = 10;  // autoencoder and vae modes
 	std::vector<size_t> latentSizes; // swept latent widths, defaults to the single latentSize above
 	double klBeta = 1.0;     // weight of the KL term in the vae modes
-	TrainLoss loss = LOSS_MSE;
+	LossType loss = LOSS_MSE;
 	TuneMetric metric = METRIC_LAST;
 	bool noGpu = false;
 	bool noWeights = false;

@@ -79,57 +79,41 @@ public:
 	void setOutputBiases(const torch::Tensor& tensor);
 	void setOutputLogMask(const torch::Tensor& tensor);
 	void setInputFrequencies(const torch::Tensor& tensor);
-	/**
-	 * Record that the network was trained on inputs resampled onto a fixed canonical frequency grid.
-	 * libkissinference needs fMin, fMax, points and log to reproduce the resampling (linear
-	 * interpolation with constant extrapolation, matching eis::fitToFrequencies) before feeding the
-	 * fixed size graph.
-	 */
+	// Record that the network was trained on inputs resampled onto a fixed canonical frequency grid.
+	// libkissinference needs fMin, fMax, points and log to reproduce the resampling (linear
+	// interpolation with constant extrapolation, matching eis::fitToFrequencies) before feeding the
+	// fixed size graph.
 	void setCanonicalGrid(double fMin, double fMax, int64_t points, bool log);
 	bool hasCanonicalGrid() const;
 	double getCanonicalFMin() const;
 	double getCanonicalFMax() const;
 	int64_t getCanonicalPoints() const;
 	bool getCanonicalLog() const;
-	/**
-	 * Configure how a raw dataset input is turned into what the network sees. Empty scalars disable
-	 * the transform. logCount features at the front of the input vector are compressed with a
-	 * signed log first, which is what the spectral parts of an EIS input need.
-	 */
+	// Configure how a raw dataset input is turned into what the network sees. Empty scalars disable
+	// the transform. logCount features at the front of the input vector are compressed with a
+	// signed log first, which is what the spectral parts of an EIS input need.
 	void setInputNormalization(const torch::Tensor& scalars, const torch::Tensor& biases,
 			int64_t logCount = 0, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
-	/**
-	 * Compress the leading logCount input features with a signed log but apply no affine rescaling.
-	 * Classification uses this: the per spectra |Z| normalization already puts every input on a common
-	 * scale, so an affine transform derived from the dataset range would carry no information.
-	 */
+	// Compress the leading logCount input features with a signed log but apply no affine rescaling.
+	// Classification uses this: the per spectra |Z| normalization already puts every input on a common
+	//scale, so an affine transform derived from the dataset range would carry no information.
 	void setInputLogCompression(int64_t logCount, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
-	/**
-	 * Record that the training loader scaled every spectra to a common impedance level. mode is one of
-	 * the names understood by SpectraNorm (zmean, zgeom, zmax); an empty string means the network was
-	 * trained on raw impedances. Anything feeding this network has to apply the same scaling, after
-	 * the canonical grid resampling and before normalizeInput.
-	 */
+	// Record that the training loader scaled every spectra to a common impedance level. mode is one of
+	// the names understood by SpectraNorm (zmean, zgeom, zmax); an empty string means the network was
+	// trained on raw impedances. Anything feeding this network has to apply the same scaling, after
+	// the canonical grid resampling and before normalizeInput.
 	void setSpectraNorm(const std::string& mode);
-	/**
-	 * Name of the per spectra |Z| scaling this network expects, empty when there is none.
-	 */
+
+	// Name of the per spectra |Z| scaling this network expects, empty when there is none.
 	const std::string& getSpectraNorm() const;
 	torch::Tensor getOutputScalars();
 	torch::Tensor getOutputBiases();
 	torch::Tensor getOutputLogMask();
-	/**
-	 * Transform a raw dataset input into the space the network was trained in.
-	 */
+
 	torch::Tensor normalizeInput(torch::Tensor input) const;
-	/**
-	 * Transform physical targets into the space the network was trained in.
-	 */
 	torch::Tensor normalizeTarget(torch::Tensor target) const;
-	/**
-	 * Transform a raw network output into physical values.
-	 */
 	torch::Tensor denormalizeOutput(torch::Tensor output) const;
+
 	void setExtraInputs(const std::vector<std::pair<std::string, int64_t>>& in);
 	std::vector<std::pair<std::string, int64_t>> getExtraInputs();
 	virtual void getConfiguration(Json::Value& node);

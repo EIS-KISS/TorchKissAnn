@@ -21,6 +21,7 @@
 #pragma once
 
 #define DATASET_LIST "dir, tar, dirreg, tarreg"
+#define LOSS_LIST "mse, spectra"
 
 typedef enum
 {
@@ -66,4 +67,129 @@ static inline DatasetMode parseDatasetMode(const std::string& in)
 	else if(in == datasetModeToStr(DATASET_TAR_REGRESSION))
 		return DATASET_TAR_REGRESSION;
 	return DATASET_INVALID;
+}
+
+
+typedef enum
+{
+	LOSS_INVALID = -1,
+	LOSS_MSE = 0,
+	LOSS_SPECTRA
+} LossType;
+
+static inline std::string lossTypeToStr(const LossType loss)
+{
+	switch(loss)
+	{
+		case LOSS_MSE:
+			return "mse";
+		case LOSS_SPECTRA:
+			return "spectra";
+		default:
+			return "Invalid";
+	}
+}
+
+static inline LossType parseLossType(const std::string& in)
+{
+	if(in.empty() || in == lossTypeToStr(LOSS_MSE))
+		return LOSS_MSE;
+	else if(in == lossTypeToStr(LOSS_SPECTRA))
+		return LOSS_SPECTRA;
+	return LOSS_INVALID;
+}
+
+
+typedef enum
+{
+	MODE_INVALID = -1,
+	MODE_ANN = 0,
+	MODE_ANN_CONV,
+	MODE_ANN_SCRIPT,
+	MODE_AUTO_SCRIPT,
+	MODE_AUTO,
+	MODE_GAN,
+	MODE_REGRESSION,
+	MODE_REGRESSION_SCRIPT,
+	MODE_VAE_SCRIPT,
+	MODE_VAE
+} TrainMode;
+
+static inline std::string trainModeToStr(const TrainMode mode)
+{
+	switch(mode)
+	{
+		case MODE_ANN:
+			return "ann";
+		case MODE_ANN_CONV:
+			return "conv";
+		case MODE_ANN_SCRIPT:
+			return "script";
+		case MODE_AUTO_SCRIPT:
+			return "autoencoder";
+		case MODE_AUTO:
+			return "autoencoder_simple";
+		case MODE_GAN:
+			return "gan";
+		case MODE_REGRESSION:
+			return "regression";
+		case MODE_REGRESSION_SCRIPT:
+			return "regression_script";
+		case MODE_VAE_SCRIPT:
+			return "vae";
+		case MODE_VAE:
+			return "vae_simple";
+		default:
+			return "Invalid";
+	}
+}
+
+static inline TrainMode parseTrainMode(const std::string& in)
+{
+	if(in.empty() || in == trainModeToStr(MODE_ANN))
+		return MODE_ANN;
+	else if(in == trainModeToStr(MODE_ANN_CONV))
+		return MODE_ANN_CONV;
+	else if(in == trainModeToStr(MODE_ANN_SCRIPT))
+		return MODE_ANN_SCRIPT;
+	else if(in == trainModeToStr(MODE_AUTO_SCRIPT))
+		return MODE_AUTO_SCRIPT;
+	else if(in == trainModeToStr(MODE_AUTO))
+		return MODE_AUTO;
+	else if(in == trainModeToStr(MODE_GAN))
+		return MODE_GAN;
+	else if(in == trainModeToStr(MODE_REGRESSION))
+		return MODE_REGRESSION;
+	else if(in == trainModeToStr(MODE_REGRESSION_SCRIPT))
+		return MODE_REGRESSION_SCRIPT;
+	else if(in == trainModeToStr(MODE_VAE_SCRIPT))
+		return MODE_VAE_SCRIPT;
+	else if(in == trainModeToStr(MODE_VAE))
+		return MODE_VAE;
+	return MODE_INVALID;
+}
+
+static inline bool modeIsClassification(const TrainMode mode)
+{
+	return mode == MODE_ANN || mode == MODE_ANN_CONV || mode == MODE_ANN_SCRIPT;
+}
+
+static inline bool modeIsRegression(const TrainMode mode)
+{
+	return mode == MODE_REGRESSION || mode == MODE_REGRESSION_SCRIPT;
+}
+
+static inline bool modeIsAutoEncoder(const TrainMode mode)
+{
+	return mode == MODE_AUTO_SCRIPT || mode == MODE_AUTO || mode == MODE_VAE_SCRIPT || mode == MODE_VAE;
+}
+
+static inline bool modeIsVariational(const TrainMode mode)
+{
+	return mode == MODE_VAE_SCRIPT || mode == MODE_VAE;
+}
+
+static inline bool modeIsScript(const TrainMode mode)
+{
+	return mode == MODE_ANN_SCRIPT || mode == MODE_REGRESSION_SCRIPT || mode == MODE_AUTO_SCRIPT || mode == MODE_VAE_SCRIPT;
 }

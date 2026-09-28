@@ -164,17 +164,29 @@ struct TrialResult
 	{
 		std::vector<EpochRow> rows;
 		if(isAutoEncoder())
+		{
 			for(const ann::autoencode::EpochStats& epoch : autoEncoderHistory)
+			{
 				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
 					epoch.testLoss, toValueList(epoch.mse)});
+			}
+		}
 		else if(isRegression())
+		{
 			for(const ann::regression::EpochStats& epoch : regressionHistory)
+			{
 				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
 					epoch.r2Mean, toValueList(epoch.r2)});
+			}
+		}
 		else
+		{
 			for(const ann::classification::EpochStats& epoch : history)
+			{
 				rows.push_back(EpochRow{epoch.epoch, epoch.trainLoss, epoch.testLoss,
 					epoch.testAccuracy, toValueList(epoch.classAccuracy)});
+			}
+		}
 		return rows;
 	}
 
@@ -228,7 +240,7 @@ struct TrialResult
 	}
 };
 
-inline ann::regression::regression_loss_type_t regressionLossFromConfig(const TrainLoss loss)
+inline ann::regression::regression_loss_type_t regressionLossFromConfig(const LossType loss)
 {
 	switch(loss)
 	{
@@ -255,14 +267,22 @@ inline std::vector<std::vector<std::filesystem::path>> collectScriptSets(const C
 				paths.push_back(stripped);
 		}
 		if(paths.empty())
+		{
 			continue;
+		}
 		if(pair && paths.size() != 2)
+		{
 			throw std::invalid_argument("in the autoencoder and vae modes -n must name an encoder and a decoder separated by a comma, got: "+entry);
+		}
 		if(pair)
+		{
 			sets.push_back(paths);
+		}
 		else
+		{
 			for(const std::filesystem::path& path : paths)
 				sets.push_back(std::vector<std::filesystem::path>{path});
+		}
 	}
 
 	if(!config.scriptDir.empty())
@@ -293,6 +313,7 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 	if(scriptSource)
 	{
 		for(const std::vector<std::filesystem::path>& set : collectScriptSets(config))
+		{
 			for(size_t latentSize : config.latentSizes)
 			{
 				TrialConfig network;
@@ -305,11 +326,14 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 				network.latentSize = latentSize;
 				networks.push_back(network);
 			}
+		}
 	}
 	else
 	{
 		for(size_t downsampleSteps : config.downsampleSteps)
+		{
 			for(size_t extraSteps : config.extraSteps)
+			{
 				for(size_t latentSize : config.latentSizes)
 				{
 					TrialConfig network;
@@ -321,13 +345,20 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 					network.latentSize = latentSize;
 					networks.push_back(network);
 				}
+			}
+		}
 	}
 
 	for(const TrialConfig& network : networks)
+	{
 		for(double learningRate : config.learningRates)
+		{
 			for(double weightDecay : config.weightDecays)
+			{
 				for(double augmentShift : config.canonicalAugmentShifts)
+				{
 					for(double augmentWindow : config.canonicalAugmentWindows)
+					{
 						for(const std::string& spectraNorm : config.spectraNorms)
 						{
 							TrialConfig trial = network;
@@ -338,6 +369,11 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 							trial.spectraNorm = spectraNorm;
 							trials.push_back(trial);
 						}
+					}
+				}
+			}
+		}
+	}
 	return trials;
 }
 

@@ -62,7 +62,7 @@ void trainWithSplitDataset(const Config& config, DataSetType* dataset);
 template <typename DataSetType, typename TestDataSetType = DataSetType>
 void trainSwitch(const Config& config, EisDataset<DataSetType>* dataset, EisDataset<TestDataSetType>* testDataset);
 
-static ann::regression::regression_loss_type_t regressionLossFromConfig(const TrainLoss loss)
+static ann::regression::regression_loss_type_t regressionLossFromConfig(const LossType loss)
 {
 	switch(loss)
 	{

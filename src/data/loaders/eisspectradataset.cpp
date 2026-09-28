@@ -204,6 +204,11 @@ void applySpectraNorm(std::vector<eis::DataPoint>& data, SpectraNorm mode)
 
 std::vector<eis::DataPoint> EisSpectraDataset::resampleCanonical(const std::vector<eis::DataPoint>& data)
 {
+	return resampleCanonical(data, spectraNorm);
+}
+
+std::vector<eis::DataPoint> EisSpectraDataset::resampleCanonical(const std::vector<eis::DataPoint>& data, SpectraNorm norm)
+{
 	std::vector<eis::DataPoint> sorted = data;
 
 	if(canonical.enabled)
@@ -252,7 +257,12 @@ std::vector<eis::DataPoint> EisSpectraDataset::resampleCanonical(const std::vect
 
 	// Last, so the reference is computed from the points the network actually sees. A client
 	// reproducing the transform has to resample before scaling for the same reason.
-	applySpectraNorm(sorted, spectraNorm);
+	applySpectraNorm(sorted, norm);
 
 	return sorted;
+}
+
+std::vector<eis::DataPoint> EisSpectraDataset::rawSpectraAtIndex(size_t index)
+{
+	return resampleCanonical(loadSpectraAtIndex(index).data, SpectraNorm::None);
 }

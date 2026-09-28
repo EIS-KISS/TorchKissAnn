@@ -101,6 +101,14 @@ public:
 	void setSpectraNorm(SpectraNorm mode);
 	SpectraNorm spectraNormMode() const;
 
+	/**
+	 * The measured points of one spectra on the frequency axis the network is shown, but without the
+	 * per spectra |Z| scaling: a fit has to be carried out against physical impedances, so it can not
+	 * use what the network sees. Canonical resampling is kept, because that grid, not the raw one, is
+	 * the data the prediction was made from.
+	 */
+	std::vector<eis::DataPoint> rawSpectraAtIndex(size_t index);
+
 protected:
 	static std::pair<std::vector<std::string>, std::vector<std::string>> getExtraInputsAndLabelNames(const eis::Spectra& spectra);
 	virtual eis::Spectra loadSpectraAtIndex(size_t index) = 0;
@@ -118,6 +126,10 @@ protected:
 	 * when neither is configured, which is the path the regression loaders take.
 	 */
 	std::vector<eis::DataPoint> resampleCanonical(const std::vector<eis::DataPoint>& data);
+
+	/// As above with the scaling mode given explicitly, for a caller that wants the grid without the
+	/// scaling the network is shown.
+	std::vector<eis::DataPoint> resampleCanonical(const std::vector<eis::DataPoint>& data, SpectraNorm norm);
 
 private:
 	bool canonicalTraining = false;

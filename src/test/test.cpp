@@ -21,10 +21,14 @@
 
 #include <cstdint>
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
+#include <map>
 #include <memory>
 #include <torch/torch.h>
 #include <valarray>
@@ -50,6 +54,7 @@
 #include "colortabel.h"
 #include "data/eistotorch.h"
 #include "data/loaders/eisspectradataset.h"
+#include "fit/fit.h"
 
 // Rebuild the canonical grid recorded in the network onto a test dataset so the test spectra are
 // resampled onto the same grid the network was trained on. No-op when the network has no grid.
@@ -100,6 +105,208 @@ static std::string labelName(const std::vector<std::string>& netLabels, T& datas
 	if(index >= 0 && static_cast<size_t>(index) < netLabels.size())
 		return netLabels[static_cast<size_t>(index)];
 	return dataset.outputName(index);
+}
+
+/// One misclassified spectra together with the circuit the network named for it.
+struct Mismatch
+{
+	int64_t index;
+	std::string actual;
+	std::string predicted;
+	torch::Tensor values;
+	torch::Tensor omegas;
+};
+
+const char* fitVerdictName(const FitResult& fit)
+{
+	if(not fit.success)
+		return "no fit";
+	switch(fit.verdict)
+	{
+		case FitVerdict::Fits:
+			return "fits";
+		case FitVerdict::Marginal:
+			return "marginal";
+		case FitVerdict::DoesNotFit:
+			return "does not fit";
+	}
+	return "unknown";
+}
+
+/**
+ * Fit the circuit the network predicted to every spectra it labelled wrongly.
+ *
+ * Naming the wrong class is only a real failure when no circuit describes the spectra at all: answer
+ * "lr-p" for a spectra that is really "r-p" and the network has still handed the user a model they
+ * can work with, one whose parameters mean something. eisFitBatch() decides that per spectra, and
+ * the after fit accuracy counts a misclassification as good as right whenever the circuit the
+ * network named fits. Marginal verdicts are reported but not counted, they say the circuit misses a
+ * feature of the measurement.
+ *
+ * Mismatches are grouped by the circuit they were predicted to, because one batch fits one circuit,
+ * and within that by their frequency grid, because one batch shares one grid.
+ */
+template <typename T>
+void afterFitAccuracy(const std::shared_ptr<ann::Net>& net, T& dataset, const Config& config,
+		const std::vector<std::string>& netOutputs, const torch::Tensor& predictions,
+		const torch::Tensor& targets)
+{
+	if(netOutputs.empty())
+	{
+		Log(Log::WARN)<<"--fit-mismatch needs a network that stores the circuit of every class as its output labels, "<<config.netpath<<" stores none";
+		return;
+	}
+	if(dataset.isMulticlass())
+	{
+		Log(Log::WARN)<<"--fit-mismatch needs one circuit per class, a multiclass network answers with a set of them, skipping";
+		return;
+	}
+
+	torch::Tensor predicted = predictions.to(torch::kCPU).argmax(1).to(torch::kLong).reshape({-1});
+	torch::Tensor actual = targets.to(torch::kCPU).to(torch::kLong).reshape({-1});
+	const int64_t total = std::min(predicted.numel(), actual.numel());
+
+	int64_t correct = 0;
+	std::vector<Mismatch> mismatches;
+	for(int64_t i = 0; i < total; ++i)
+	{
+		int64_t guess = predicted[i].item<int64_t>();
+		int64_t truth = actual[i].item<int64_t>();
+		if(guess == truth)
+		{
+			++correct;
+			continue;
+		}
+		if(guess < 0 || static_cast<size_t>(guess) >= netOutputs.size())
+		{
+			Log(Log::WARN)<<"the network answered with output "<<guess<<" for spectra "<<i<<", which carries no label, can not fit that";
+			continue;
+		}
+
+		std::vector<eis::DataPoint> measured = dataset.rawSpectraAtIndex(static_cast<size_t>(i));
+		if(measured.size() < 3)
+		{
+			Log(Log::WARN)<<"spectra "<<i<<" has only "<<measured.size()<<" points, its mismatch is left out of the after fit accuracy";
+			continue;
+		}
+		std::sort(measured.begin(), measured.end());
+		torch::Tensor omegas;
+		torch::Tensor values = eisToComplexTensor(measured, &omegas);
+		mismatches.push_back({i, labelName(netOutputs, dataset, truth), netOutputs[static_cast<size_t>(guess)],
+				values, omegas});
+	}
+
+	Log(Log::INFO)<<"\nFitting the predicted circuit to the "<<mismatches.size()<<" of "<<total
+		<<" spectra the network labelled wrongly";
+
+	// A plausibility check, not a parameter extraction: the fit only has to get near enough to the
+	// minimum for the verdict to be right. The single fit's 1e-10 tolerance never stops on measured
+	// data, whose cost keeps falling along flat directions, so every start would burn its whole
+	// budget and a run over a real test set would take hours.
+	FitOptions options;
+	options.restarts = std::max<int64_t>(0, config.fitRestarts);
+	options.maxEvaluations = std::max<int64_t>(1, config.fitEvaluations);
+	options.fitLimit = config.fitLimit;
+	options.searchPoints = config.fitPoints;
+	options.tolerance = 1e-4;
+	const int64_t batch = std::max<int64_t>(1, config.fitBatchSize);
+
+	std::map<std::pair<std::string, std::vector<double>>, std::vector<size_t>> groups;
+	for(size_t k = 0; k < mismatches.size(); ++k)
+	{
+		torch::Tensor grid = mismatches[k].omegas.to(torch::kFloat64);
+		std::vector<double> key(grid.size(0));
+		std::copy_n(grid.data_ptr<double>(), grid.size(0), key.begin());
+		groups[{mismatches[k].predicted, std::move(key)}].push_back(k);
+	}
+
+	std::vector<std::string> verdict(mismatches.size(), "no fit");
+	std::vector<double> rms(mismatches.size(), 0);
+	// per predicted circuit: mismatches, fits, marginal, rejected
+	std::map<std::string, std::array<int64_t, 4>> perCircuit;
+	int64_t done = 0;
+
+	for(const auto& [circuit, members]: groups)
+	{
+		std::array<int64_t, 4>& row = perCircuit[circuit.first];
+		row[0] += static_cast<int64_t>(members.size());
+
+		for(size_t begin = 0; begin < members.size(); begin += static_cast<size_t>(batch))
+		{
+			size_t end = std::min(members.size(), begin+static_cast<size_t>(batch));
+
+			std::vector<torch::Tensor> rows;
+			rows.reserve(end-begin);
+			for(size_t k = begin; k < end; ++k)
+				rows.push_back(mismatches[members[k]].values);
+
+			std::vector<FitResult> results;
+			try
+			{
+				results = eisFitBatch(torch::stack(rows), mismatches[members[begin]].omegas,
+						circuit.first, options);
+			}
+			catch(const std::exception& error)
+			{
+				// a class label that is not a circuit eis::Model can compile: those mismatches stay
+				// unfitted rather than taking the whole report down
+				Log(Log::WARN)<<"the class "<<circuit.first<<" is not a circuit the fit can use: "<<error.what();
+				continue;
+			}
+
+			for(size_t k = begin; k < end; ++k)
+			{
+				const FitResult& fit = results[k-begin];
+				verdict[members[k]] = fitVerdictName(fit);
+				rms[members[k]] = fit.rmsRelativeError;
+				if(fit.success && fit.verdict == FitVerdict::Fits)
+					row[1]++;
+				else if(fit.success && fit.verdict == FitVerdict::Marginal)
+					row[2]++;
+				else
+					row[3]++;
+			}
+
+			done += static_cast<int64_t>(end-begin);
+			Log(Log::INFO)<<"  fitted "<<done<<" of "<<mismatches.size()<<" mismatches to "<<circuit.first;
+		}
+	}
+
+	int64_t fits = 0, marginal = 0, rejected = 0;
+	for(const auto& [circuit, row]: perCircuit)
+	{
+		fits += row[1];
+		marginal += row[2];
+		rejected += row[3];
+	}
+
+	const double accuracy = total > 0 ? static_cast<double>(correct+fits)/static_cast<double>(total) : 0;
+
+	Log(Log::INFO)<<"\nAfter fit accuracy";
+	Log(Log::INFO)<<"  classified correctly        "<<correct<<" of "<<total<<" ("<<correct/double(total)*100<<" %)";
+	Log(Log::INFO)<<"  misclassified               "<<mismatches.size();
+	Log(Log::INFO)<<"  predicted circuit fits      "<<fits;
+	Log(Log::INFO)<<"  predicted circuit marginal  "<<marginal<<" (not counted)";
+	Log(Log::INFO)<<"  predicted circuit rejected  "<<rejected;
+	Log(Log::INFO)<<"  accuracy after the fit      "<<accuracy*100<<" %";
+
+	Log(Log::INFO)<<"\n  Predicted circuit       Mismatches   Fits   Marginal   Rejected";
+	for(const auto& [circuit, row]: perCircuit)
+		Log(Log::INFO)<<'\n'<<std::left<<std::setw(25)<<circuit<<std::right<<std::setw(10)<<row[0]
+			<<std::setw(8)<<row[1]<<std::setw(11)<<row[2]<<std::setw(10)<<row[3];
+	Log(Log::INFO)<<'\n';
+
+	std::filesystem::create_directories(config.outputDir);
+	std::ofstream csv(config.outputDir/"afterfit.csv");
+	if(not csv)
+	{
+		Log(Log::WARN)<<"could not write "<<config.outputDir/"afterfit.csv";
+		return;
+	}
+	csv<<"index,target,predicted,verdict,rms_relative\n";
+	for(size_t k = 0; k < mismatches.size(); ++k)
+		csv<<mismatches[k].index<<",\""<<mismatches[k].actual<<"\",\""<<mismatches[k].predicted
+			<<"\","<<verdict[k]<<","<<std::setprecision(6)<<rms[k]<<'\n';
 }
 
 template <typename T>
@@ -250,6 +457,9 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 		inputImportance<T>(net, &dataset, 16, config);
 	}
 
+	if(config.fitMismatch)
+		afterFitAccuracy<T>(net, dataset, config, netOutputs, testRet.predictions, testRet.targets);
+
 	return 0;
 }
 
@@ -387,8 +597,35 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	options = options.batch_size(batch_size).workers(16);
 	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
 
-	std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
-	ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
+	ann::regression::TestReturn ret;
+
+	if(config.loss == LOSS_MSE)
+	{
+		std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
+		ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
+	}
+	else if(config.loss == LOSS_SPECTRA)
+	{
+
+		//(std::string modelString, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
+				//torch::Tensor parameterBias = torch::Tensor(), torch::Tensor parameterLog = torch::Tensor(),
+				//double weightFloor = DEFAULT_WEIGHT_FLOOR)
+		if(!dataset.frequencies().has_value())
+		{
+			Log(Log::ERROR)<<"Dataset must provide a omega range for LOSS_SPECTRA";
+			return 1;
+		}
+		torch::Tensor omega = dataset.frequencies().value();
+		RegressionNormalization norm = dataset.getNormalization();
+		std::unique_ptr<EisDistanceLoss> lossEis(new EisDistanceLoss(dataset.targetName(), omega, net->getOutputScalars(),
+				net->getOutputBiases(), net->getOutputLogMask()));
+		ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossEis, dataset.size().value());
+	}
+	else
+	{
+		Log(Log::ERROR)<<"Unkown or unimplemented loss type specified";
+		return 1;
+	}
 
 	torch::Tensor targets = ret.targets.contiguous();
 	auto targetAccessor = targets.accessor<float, 2>();

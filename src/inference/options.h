@@ -31,7 +31,7 @@ const inline char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application takes in EIS spectra and assigns equivalent circuts to them";
 static char args_doc[] = "";
 
-#define PREDICTION_MODE_LIST "ann, regression, show, reexport"
+#define PREDICTION_PRED_MODE_LIST "ann, regression, show, reexport"
 #define FILE_TYPE_LIST "csv, gan, gen"
 
 static struct argp_option options[] =
@@ -42,7 +42,7 @@ static struct argp_option options[] =
   {"input",			'i', "[FILE]",		0,	"Input file name" },
   {"dataset",	 	'd', "[STRING]",	0,	"The dataset type to test on :" DATASET_LIST},
   {"type",			't', "[FORMAT]",	0,	"String identifying the file type of the input file. valid options are: " FILE_TYPE_LIST },
-  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: " PREDICTION_MODE_LIST},
+  {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: " PREDICTION_PRED_MODE_LIST},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
   { 0 }
@@ -50,11 +50,11 @@ static struct argp_option options[] =
 
 typedef enum
 {
-	MODE_INVALID = -1,
-	MODE_ANN = 0,
-	MODE_REGRESSION,
-	MODE_SHOW,
-	MODE_REEXPORT
+	PRED_MODE_INVALID = -1,
+	PRED_MODE_ANN = 0,
+	PRED_MODE_REGRESSION,
+	PRED_MODE_SHOW,
+	PRED_MODE_REEXPORT
 } PredictionMode;
 
 typedef enum
@@ -70,7 +70,7 @@ struct Config
 	std::string spectraFileName;
 	std::string filterFileName;
 	DatasetMode datasetMode = DATASET_INVALID;
-	PredictionMode mode = MODE_ANN;
+	PredictionMode mode = PRED_MODE_ANN;
 	FilterMode filterMode = FILTER_NONE;
 	FileType fileType = FILE_TYPE_CSV;
 
@@ -80,13 +80,13 @@ static const char* modeToStr(const PredictionMode mode)
 {
 	switch(mode)
 	{
-		case MODE_ANN:
+		case PRED_MODE_ANN:
 			return "ann";
-		case MODE_REGRESSION:
+		case PRED_MODE_REGRESSION:
 			return "regression";
-		case MODE_SHOW:
+		case PRED_MODE_SHOW:
 			return "show";
-		case MODE_REEXPORT:
+		case PRED_MODE_REEXPORT:
 			return "reexport";
 		default:
 			return "invalid";
@@ -95,16 +95,16 @@ static const char* modeToStr(const PredictionMode mode)
 
 static PredictionMode parseMode(const std::string& in)
 {
-	if(in.empty() || in == modeToStr(MODE_ANN))
-		return MODE_ANN;
-	else if (in == modeToStr(MODE_REGRESSION))
-		return MODE_REGRESSION;
-	else if (in == modeToStr(MODE_SHOW))
-		return MODE_SHOW;
-	else if (in == modeToStr(MODE_REEXPORT))
-		return MODE_REEXPORT;
+	if(in.empty() || in == modeToStr(PRED_MODE_ANN))
+		return PRED_MODE_ANN;
+	else if (in == modeToStr(PRED_MODE_REGRESSION))
+		return PRED_MODE_REGRESSION;
+	else if (in == modeToStr(PRED_MODE_SHOW))
+		return PRED_MODE_SHOW;
+	else if (in == modeToStr(PRED_MODE_REEXPORT))
+		return PRED_MODE_REEXPORT;
 
-	return MODE_INVALID;
+	return PRED_MODE_INVALID;
 }
 
 static FilterMode parseFilterMode(const std::string& in)
@@ -190,7 +190,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'm':
 			config->mode = parseMode(arg);
-			if(config->mode == MODE_INVALID)
+			if(config->mode == PRED_MODE_INVALID)
 			{
 				std::cout<<arg<<" is not a vaild classifier method.\n";
 				argp_usage(state);
