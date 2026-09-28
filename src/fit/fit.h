@@ -33,14 +33,19 @@ struct FitOptions
 	double weightFloor = 1e-3;
 	double fitLimit = 0.01;
 	uint64_t seed = 0x5655;
+	// Search on at most this many frequency points, thinned evenly across the measurement, and score
+	// the outcome on all of them. The Jacobian costs one backward pass per point, so this is the
+	// cheapest way to make a high effort search affordable on a dense spectrum. Zero, the default,
+	// searches every point.
+	int64_t searchPoints = 0;
 };
 
 
 enum class FitVerdict
 {
-	FIT_VERDICT_FIT,
-	FIT_VERDICT_MARGINAL,
-	FIT_VERDICT_UNFITTED
+	Fits,
+	Marginal,
+	DoesNotFit
 };
 
 struct FitResult
@@ -65,7 +70,7 @@ struct FitResult
 	double maxRelativeError = 0;
 	double noiseFloor = 0;
 	double residualCorrelation = 0;
-	FitVerdict verdict = FitVerdict::FIT_VERDICT_UNFITTED; // Only meaningful when success is true.
+	FitVerdict verdict = FitVerdict::DoesNotFit; // Only meaningful when success is true.
 	// Residual limits verdict for verdict
 	double goodFitLimit = 0;
 	double poorFitLimit = 0;
@@ -90,6 +95,29 @@ struct FitResult
 // @return the fitted parameters and the diagnostics of the fit
 FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string& modelString,
 		const FitOptions& options = FitOptions());
+
+// @brief Fits the same equivalent circuit to a batch of measured spectra at once.
+//
+// Every spectrum gets its own Levenberg Marquardt state, its own restarts and its own diagnostics,
+// exactly as if eisFit() were called on it alone, but the circuit is simulated and differentiated
+// for the whole batch in one pass: parameters are a {n,B} tensor, the compiled circuit broadcasts
+// them against the {N,1} frequencies and yields {N,B}. One backward pass therefore serves the
+// Jacobians of all B fits, which is what makes fitting hundreds of spectra affordable.
+//
+// The restart sampling uses a vectorised random generator, so a batched fit explores a different
+// sequence of starts than the single fit with the same seed would; on a well posed problem both
+// find the same minimum.
+//
+// @param spectra one row per spectrum, complex, one entry per frequency. All spectra must share
+// the frequency grid given in omegas
+// @param omegas the angular frequencies all spectra were measured at, rad/s
+// @param modelString the circuit to fit, e.g. r-rp, syntax as understood by eis::Model
+// @param options see FitOptions. startingParams may be one {n} vector shared by the batch or a
+// {n,B} tensor with one start per spectrum. maxEvaluations bounds the simulations per start for
+// the batch as a whole, FitResult::evaluations reports that shared count
+// @return one FitResult per row of spectra, in the same order
+std::vector<FitResult> eisFitBatch(const torch::Tensor& spectra, const torch::Tensor& omegas,
+		const std::string& modelString, const FitOptions& options = FitOptions());
 
 
 // @brief Rewrites a model string with the given parameters substituted for its own.

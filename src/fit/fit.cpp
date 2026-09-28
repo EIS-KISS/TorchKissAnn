@@ -29,6 +29,8 @@
 #include <string>
 #include <vector>
 
+#include <ATen/CPUGeneratorImpl.h>
+
 #include <eisgenerator/componant/componant.h>
 #include <eisgenerator/model.h>
 
@@ -51,6 +53,21 @@ constexpr double CORRELATED_RESIDUAL = 0.8;
 torch::Tensor doubles(const std::vector<double>& values)
 {
 	return torch::tensor(values).to(torch::kFloat64);
+}
+
+// evenly spaced indices covering the whole grid, endpoints included, or an undefined tensor when
+// the grid needs no thinning. Log spaced frequencies stay log spaced: the thinning picks every
+// k-th point, so the decimated grid is still a sensible spectrum to fit.
+torch::Tensor thinIndices(int64_t points, int64_t limit)
+{
+	if(limit <= 0 or limit >= points or limit < 3)
+		return torch::Tensor();
+	std::vector<int64_t> idx;
+	idx.reserve(limit);
+	for(int64_t k = 0; k < limit; ++k)
+		idx.push_back(k*(points-1)/(limit-1));
+	idx.back() = points-1;
+	return torch::tensor(idx);
 }
 
 std::string formatValue(double value)
@@ -262,14 +279,14 @@ std::vector<bool> explicitParameters(const std::string& modelString,
 // for and is honoured exactly. A bare element carries whatever sweep range the generator substitutes,
 // and that is widened, because a spectrum whose true resistance is 100 kOhm must not be reported as
 // pinned to the 10 kOhm top of an example range.
-void deriveBox(Problem& problem, double widenDecades, std::vector<double>& lower,
-		std::vector<double>& upper, std::vector<double>& start)
+void deriveBox(eis::Model& model, const std::string& modelString, double widenDecades,
+		std::vector<double>& lower, std::vector<double>& upper, std::vector<double>& start,
+		int64_t& parameterCount)
 {
-	std::vector<eis::Range> ranges = problem.model.getFlatParameterRanges();
-	std::vector<eis::Range> defaults = problem.model.getDefaultParameters();
-	std::vector<bool> given = explicitParameters(problem.modelString,
-			problem.model.getFlatComponants());
-	problem.parameterCount = static_cast<int64_t>(ranges.size());
+	std::vector<eis::Range> ranges = model.getFlatParameterRanges();
+	std::vector<eis::Range> defaults = model.getDefaultParameters();
+	std::vector<bool> given = explicitParameters(modelString, model.getFlatComponants());
+	parameterCount = static_cast<int64_t>(ranges.size());
 
 	for(size_t i = 0; i < ranges.size(); ++i)
 	{
@@ -407,6 +424,202 @@ void applyVerdict(FitResult& result, double fitLimit)
 		result.verdict = FitVerdict::FIT_VERDICT_FIT;
 }
 
+// The same fit as eisFit() carried out for B spectra at once. Every spectrum keeps its own
+// Levenberg Marquardt state, but the circuit is simulated and differentiated for the whole batch
+// in one pass through the compiled script: parameters are {n,B}, the script broadcasts them
+// against the {N,1} frequencies and yields {N,B}, so a single backward pass returns the gradient
+// column of every fit.
+struct BatchProblem
+{
+	eis::Model model;
+	std::string modelString;
+	std::shared_ptr<torch::CompilationUnit> script;
+	torch::Tensor omegas;   // {N,1}
+	torch::Tensor target;   // {N,B} complex
+	torch::Tensor scale;    // {N,B}
+	torch::Tensor logLower; // {n,1}, broadcast against the columns of {n,B}
+	torch::Tensor logUpper; // {n,1}
+	int64_t parameterCount = 0;
+	int64_t batch = 0;
+	int64_t evaluations = 0;
+
+	explicit BatchProblem(const std::string& from): model(from), modelString(from)
+	{
+		script = compileModel(model);
+	}
+
+	torch::Tensor simulate(const torch::Tensor& parameters)
+	{
+		++evaluations;
+		return runScriptModel(model, script, parameters, omegas)
+			.reshape({omegas.numel(), parameters.size(1)});
+	}
+
+	// A non-differentiable call pins the profiling executor to the plain plan for this input
+	// shape, which is the one that survives repeated backwards, see notes/fit-path.md
+	void warmUp(const torch::Tensor& parameters)
+	{
+		simulate(parameters);
+	}
+
+	torch::Tensor clampToBox(const torch::Tensor& logParameters) const
+	{
+		return torch::clamp(logParameters, logLower, logUpper);
+	}
+
+	torch::Tensor residualOfPhysical(const torch::Tensor& parameters)
+	{
+		torch::Tensor difference = simulate(parameters) - target;
+		torch::Tensor stacked = torch::stack({torch::real(difference), torch::imag(difference)}, 0);
+		return (scale.unsqueeze(0)*stacked).reshape({stacked.size(0)*stacked.size(1), batch});
+	}
+
+	torch::Tensor residual(const torch::Tensor& logParameters)
+	{
+		return residualOfPhysical(torch::pow(10.0, clampToBox(logParameters)));
+	}
+
+	torch::Tensor cost(const torch::Tensor& logParameters)
+	{
+		torch::Tensor r = residual(logParameters);
+		return torch::sum(r*r, 0);
+	}
+
+	// {2N,n,B}: slice b is the Jacobian of fit b with the chain factor p·ln10 folded in
+	torch::Tensor jacobian(const torch::Tensor& logParameters)
+	{
+		torch::Tensor physical = torch::pow(10.0, clampToBox(logParameters));
+		torch::Tensor leaf = physical.clone().detach().requires_grad_();
+		torch::Tensor r = residualOfPhysical(leaf);
+
+		std::vector<torch::Tensor> rows;
+		rows.reserve(r.size(0));
+		for(int64_t k = 0; k < r.size(0); ++k)
+		{
+			torch::Tensor seed = torch::zeros_like(r);
+			seed[k] = 1.0;
+			torch::autograd::variable_list gradient = torch::autograd::grad({r}, {leaf}, {seed},
+					true, false, true);
+			rows.push_back(gradient.at(0).defined() ? gradient.at(0) : torch::zeros_like(leaf));
+		}
+		return torch::stack(rows, 0)*(physical*std::log(10.0)).unsqueeze(0);
+	}
+};
+
+struct BatchOutcome
+{
+	torch::Tensor logParameters; // {n,B}
+	torch::Tensor values;        // {B}
+	torch::Tensor valid;         // {B}
+	torch::Tensor converged;     // {B}
+	int64_t evaluations = 0;
+};
+
+// Levenberg Marquardt on the log parameters, one independent optimiser per column. The damping
+// factor, the acceptance test and the termination condition are the single fit's applied
+// column-wise: a column stops moving the moment nothing improves however far its trust region
+// was shrunk, the others carry on until they too sit still or the shared budget runs out.
+BatchOutcome runBatchStart(BatchProblem& problem, const torch::Tensor& startLogParameters,
+		double tolerance, int64_t budget)
+{
+	BatchOutcome outcome;
+	torch::Tensor x = problem.clampToBox(startLogParameters).detach().clone();
+
+	torch::Tensor cost = problem.cost(x);
+	torch::Tensor valid = torch::isfinite(cost);
+
+	torch::Tensor lambda = torch::full({problem.batch}, 1e-2, torch::kFloat64);
+	torch::Tensor converged = torch::zeros({problem.batch}, torch::kBool);
+	const int64_t usedByStart = problem.evaluations;
+
+	while(problem.evaluations - usedByStart < budget)
+	{
+		torch::Tensor active = valid.logical_and(converged.logical_not());
+		if(not torch::any(active).item<bool>())
+			break;
+
+		// a column whose simulation blew up carries NaN through the normal matrix and would take
+		// the batched solve down with it, so it is zeroed out here and simply never improves
+		torch::Tensor j = problem.jacobian(x);
+		torch::Tensor r = problem.residual(x);
+		j = torch::where(valid.reshape({1, 1, problem.batch}), j, torch::zeros_like(j));
+		r = torch::where(valid.reshape({1, problem.batch}), r, torch::zeros_like(r));
+
+		torch::Tensor jt = j.permute({2, 1, 0});
+		torch::Tensor normal = torch::bmm(jt, j.permute({2, 0, 1}));
+		torch::Tensor gradient = torch::bmm(jt, r.t().unsqueeze(-1));
+		torch::Tensor curvature = torch::diagonal(normal, 0, -2, -1);
+		torch::Tensor scaleOfCurvature = std::get<0>(torch::max(torch::abs(curvature), 1));
+		scaleOfCurvature = torch::where(torch::isfinite(scaleOfCurvature)
+				& (scaleOfCurvature > 0), scaleOfCurvature, torch::ones_like(scaleOfCurvature));
+
+		torch::Tensor improved = torch::zeros_like(active);
+		int attempts = 0;
+		for(; attempts < 30; ++attempts)
+		{
+			torch::Tensor pending = active.logical_and(improved.logical_not());
+			if(not torch::any(pending).item<bool>())
+				break;
+
+			// curvature is {batch,n}, so its diagonal matrices are built by scaling the identity
+			// column-wise; torch::diag() of a 2-D tensor would extract a diagonal instead
+			torch::Tensor identity = torch::eye(problem.parameterCount, normal.options());
+			torch::Tensor damped = normal
+				+ (lambda.reshape({-1, 1, 1})*curvature.unsqueeze(-1)
+					+ 1e-12*scaleOfCurvature.reshape({-1, 1, 1}))*identity;
+
+			torch::Tensor step;
+			try
+			{
+				step = torch::linalg_solve(damped, gradient);
+			}
+			catch(const std::exception&)
+			{
+				// one numerically hopeless matrix must not cost the whole batch its step
+				step = torch::zeros({problem.batch, problem.parameterCount, 1}, torch::kFloat64);
+				for(int64_t b = 0; b < problem.batch; ++b)
+				{
+					if(not pending[b].item<bool>())
+						continue;
+					try
+					{
+						step[b] = torch::linalg_solve(damped[b], gradient[b]);
+					}
+					catch(const std::exception&) {}
+				}
+			}
+
+			torch::Tensor stepSum = torch::sum(step*step, {1, 2}).reshape({problem.batch});
+			torch::Tensor candidate = problem.clampToBox(
+					x - step.squeeze(-1).permute({1, 0}));
+			torch::Tensor candidateCost = problem.cost(candidate);
+			// the tolerance gates what counts as an improvement at all, relative to the cost it is
+			// measured against, exactly as in the single fit
+			torch::Tensor accept = pending.logical_and(torch::isfinite(candidateCost))
+				.logical_and(torch::isfinite(stepSum))
+				.logical_and(candidateCost < cost*(1.0-tolerance));
+
+			x = torch::where(accept.unsqueeze(0), candidate, x);
+			cost = torch::where(accept, candidateCost, cost);
+			lambda = torch::where(pending, torch::where(accept,
+					torch::clamp(lambda*0.3, 1e-14, std::numeric_limits<double>::infinity()),
+					lambda*10.0), lambda);
+			improved = improved.logical_or(accept);
+		}
+
+		// nothing improved however far the trust region was shrunk: a local minimum, per column.
+		// Only running out of evaluations is not convergence.
+		converged = converged.logical_or(active.logical_and(improved.logical_not()));
+	}
+
+	outcome.logParameters = x;
+	outcome.values = cost;
+	outcome.valid = valid;
+	outcome.converged = converged;
+	outcome.evaluations = problem.evaluations - usedByStart;
+	return outcome;
+}
+
 }
 
 FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string& modelString,
@@ -421,15 +634,28 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 	if(problem.target.numel() != problem.omegas.numel() or problem.target.numel() < 2)
 		return result;
 
+	std::vector<double> lower;
+	std::vector<double> upper;
+	std::vector<double> start;
+	deriveBox(problem.model, problem.modelString, 0, lower, upper, start, problem.parameterCount);
+
+	// the search can run on a thinned copy of the spectra: the Jacobian costs one backward per
+	// frequency, so cutting the grid cuts the search time by the same factor. Everything after the
+	// search - rms, noise floor, residual correlation, chi squared, uncertainties - is scored on the
+	// full grid again, because the noise floor is a finite difference of adjacent points and would
+	// collapse on a thinned one, silently tightening the fit limit.
+	torch::Tensor fullOmgas = problem.omegas;
+	torch::Tensor fullTarget = problem.target;
+	torch::Tensor thinned = thinIndices(problem.target.numel(), options.searchPoints);
+	if(thinned.defined())
+	{
+		problem.omegas = problem.omegas.index_select(0, thinned);
+		problem.target = problem.target.index_select(0, thinned);
+	}
 	torch::Tensor magnitude = torch::abs(problem.target);
 	torch::Tensor floor = torch::mean(magnitude)*options.weightFloor;
 	torch::Tensor weight = 1.0/torch::sqrt(magnitude*magnitude + floor*floor);
 	problem.scale = torch::sqrt(weight/problem.target.numel());
-
-	std::vector<double> lower;
-	std::vector<double> upper;
-	std::vector<double> start;
-	deriveBox(problem, 0, lower, upper, start);
 	// the narrow box is kept for the restarts to sample even after the box is widened: a point drawn
 	// from twelve decades is almost always hopeless, one drawn from the element's own range usually
 	// lands in a real basin
@@ -464,7 +690,8 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 		std::vector<double> stageLower;
 		std::vector<double> stageUpper;
 		std::vector<double> stageStart;
-		deriveBox(problem, stage == 0 ? 0 : SWEEP_WIDENING_DECADES, stageLower, stageUpper, stageStart);
+		deriveBox(problem.model, problem.modelString, stage == 0 ? 0 : SWEEP_WIDENING_DECADES,
+				stageLower, stageUpper, stageStart, problem.parameterCount);
 
 		if(stage == 1)
 		{
@@ -535,6 +762,16 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 		return result;
 
 	torch::NoGradGuard noGrad;
+	// the search may have run on a thinned grid; score on every point
+	if(thinned.defined())
+	{
+		problem.omegas = fullOmgas;
+		problem.target = fullTarget;
+		magnitude = torch::abs(problem.target);
+		floor = torch::mean(magnitude)*options.weightFloor;
+		weight = 1.0/torch::sqrt(magnitude*magnitude + floor*floor);
+		problem.scale = torch::sqrt(weight/problem.target.numel());
+	}
 	result.parameters = torch::pow(10.0, problem.clampToBox(best.logParameters)).detach();
 	result.success = true;
 	result.converged = best.converged;
@@ -542,7 +779,7 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 	result.lowerBounds = doubles(lower);
 	result.upperBounds = doubles(upper);
 	result.evaluations = best.evaluations;
-	result.chiSquared = best.value;
+	result.chiSquared = problem.cost(best.logParameters);
 
 	const int64_t points = problem.target.numel();
 	const int64_t dof = std::max<int64_t>(1, 2*points - problem.parameterCount);
@@ -596,6 +833,276 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 	applyVerdict(result, options.fitLimit);
 
 	return result;
+}
+
+std::vector<FitResult> eisFitBatch(const torch::Tensor& spectra, const torch::Tensor& omegas,
+		const std::string& modelString, const FitOptions& options)
+{
+	std::vector<FitResult> results;
+
+	torch::Tensor rows = spectra.to(torch::kComplexDouble);
+	if(rows.dim() == 1)
+		rows = rows.reshape({1, -1});
+	if(rows.dim() != 2 or rows.size(1) < 2 or omegas.numel() != rows.size(1))
+		return results;
+
+	const int64_t batch = rows.size(0);
+	const int64_t points = rows.size(1);
+	results.resize(batch);
+	if(batch == 0)
+		return results;
+
+	BatchProblem problem(modelString);
+	problem.batch = batch;
+	problem.omegas = omegas.to(torch::kFloat64).reshape({points, 1});
+	problem.target = rows.t().contiguous();
+
+	std::vector<double> lower;
+	std::vector<double> upper;
+	std::vector<double> start;
+	deriveBox(problem.model, problem.modelString, 0, lower, upper, start, problem.parameterCount);
+
+	// as in the single fit: the search may run on a thinned grid, the scoring below does not
+	torch::Tensor fullOmgas = problem.omegas;
+	torch::Tensor fullTarget = problem.target;
+	torch::Tensor thinned = thinIndices(points, options.searchPoints);
+	if(thinned.defined())
+	{
+		problem.omegas = problem.omegas.index_select(0, thinned);
+		problem.target = problem.target.index_select(0, thinned);
+	}
+	torch::Tensor magnitude = torch::abs(problem.target);
+	torch::Tensor floor = torch::mean(magnitude, 0, true)*options.weightFloor;
+	torch::Tensor weight = 1.0/torch::sqrt(magnitude*magnitude + floor*floor);
+	problem.scale = torch::sqrt(weight/problem.target.size(0));
+	// the narrow box is kept for the restarts to sample even after the box is widened, as in the
+	// single fit
+	std::vector<double> narrowLower = lower;
+	std::vector<double> narrowUpper = upper;
+	const int64_t parameterCount = problem.parameterCount;
+	if(parameterCount < 1)
+		return results;
+
+	torch::Tensor startAll = doubles(start).reshape({parameterCount, 1})
+		.expand({parameterCount, batch}).contiguous();
+	if(options.startingParams.defined())
+	{
+		torch::Tensor given = options.startingParams.to(torch::kFloat64);
+		if(given.numel() == parameterCount)
+			given = given.reshape({parameterCount, 1}).expand({parameterCount, batch});
+		else if(given.numel() == parameterCount*batch)
+			given = given.reshape({parameterCount, batch});
+		else
+			given = torch::Tensor();
+		if(given.defined())
+		{
+			torch::Tensor clamped = torch::clamp(given,
+					doubles(lower).reshape({parameterCount, 1})*10.0,
+					doubles(upper).reshape({parameterCount, 1})*0.1);
+			startAll = torch::where(torch::isfinite(given).logical_and(given > 0), clamped, startAll);
+		}
+	}
+
+	problem.warmUp(startAll);
+
+	for(FitResult& result: results)
+	{
+		result.parameterNames = problem.model.getParameterNames();
+		result.uncertainties = torch::full({parameterCount},
+				std::numeric_limits<double>::quiet_NaN(), torch::kFloat64);
+	}
+
+	torch::Generator generator = torch::make_generator<at::CPUGeneratorImpl>(options.seed);
+
+	torch::Tensor bestValue = torch::full({batch},
+			std::numeric_limits<double>::infinity(), torch::kFloat64);
+	torch::Tensor bestLog = torch::zeros({parameterCount, batch}, torch::kFloat64);
+	torch::Tensor bestValid = torch::zeros({batch}, torch::kBool);
+	torch::Tensor bestConverged = torch::zeros({batch}, torch::kBool);
+	torch::Tensor bestStartParams = startAll.clone();
+	torch::Tensor starts = torch::zeros({batch}, torch::TensorOptions().dtype(torch::kInt64));
+	torch::Tensor bestStart = torch::zeros({batch}, torch::TensorOptions().dtype(torch::kInt64));
+	std::vector<int64_t> evaluations(batch, 0);
+
+	for(int stage = 0; stage < 2; ++stage)
+	{
+		std::vector<double> stageLower;
+		std::vector<double> stageUpper;
+		std::vector<double> stageStart;
+		deriveBox(problem.model, problem.modelString, stage == 0 ? 0 : SWEEP_WIDENING_DECADES,
+				stageLower, stageUpper, stageStart, problem.parameterCount);
+
+		torch::Tensor stageLowerT = doubles(stageLower).reshape({parameterCount, 1});
+		torch::Tensor stageUpperT = doubles(stageUpper).reshape({parameterCount, 1});
+		torch::Tensor stageStartT = doubles(stageStart).reshape({parameterCount, 1})
+			.expand({parameterCount, batch}).contiguous();
+
+		if(stage == 1)
+		{
+			// seed the wide stage from what the narrow one actually found, per column; a column
+			// that never produced a result starts from the box middle like any bare model would
+			torch::Tensor settled = torch::pow(10.0, problem.clampToBox(bestLog));
+			settled = torch::where(bestValid.unsqueeze(0), settled, stageStartT);
+			stageStartT = torch::clamp(settled, stageLowerT, stageUpperT);
+			lower = stageLower;
+			upper = stageUpper;
+		}
+
+		problem.logLower = torch::log10(stageLowerT);
+		problem.logUpper = torch::log10(stageUpperT);
+
+		torch::Tensor home = torch::log10(stageStartT);
+		torch::Tensor narrowLogLow = torch::log10(doubles(narrowLower).reshape({parameterCount, 1}));
+		torch::Tensor narrowLogHigh = torch::log10(doubles(narrowUpper).reshape({parameterCount, 1}));
+
+		for(int attempt = 0; attempt <= options.restarts; ++attempt)
+		{
+			torch::Tensor candidate;
+			if(attempt == 0)
+				candidate = home;
+			else
+			{
+				torch::Tensor uniform = 0.02 + 0.96*torch::rand({parameterCount, batch},
+						generator, torch::kFloat64);
+				torch::Tensor random = narrowLogLow + uniform*(narrowLogHigh-narrowLogLow);
+
+				// basin hopping by coordinate, per column: keep everything this spectrum's last
+				// start settled on and redraw one parameter anywhere in its box
+				torch::Tensor hop = bestLog.clone();
+				torch::Tensor which = torch::floor(torch::rand({batch}, generator,
+						torch::kFloat64)*static_cast<double>(parameterCount)).clamp(
+							0, static_cast<double>(parameterCount-1)).to(torch::kLong);
+				torch::Tensor logLow = torch::log10(stageLowerT);
+				torch::Tensor logHigh = torch::log10(stageUpperT);
+				torch::Tensor drawn = logLow + torch::rand({parameterCount, batch}, generator,
+						torch::kFloat64)*(logHigh-logLow);
+				// one fresh value per column, that of the parameter this column picked
+				torch::Tensor value = drawn.gather(0, which.unsqueeze(0)).squeeze(0);
+				hop.index_put_({which, torch::arange(batch, torch::TensorOptions().dtype(torch::kLong))},
+						value);
+
+				torch::Tensor useHop = (attempt % 2) == 1 ? bestValid
+					: torch::zeros({batch}, torch::kBool);
+				candidate = torch::where(useHop.unsqueeze(0), hop, random);
+			}
+
+			BatchOutcome outcome = runBatchStart(problem, candidate, options.tolerance,
+					std::max<int64_t>(1, options.maxEvaluations));
+
+			starts += outcome.valid.to(torch::kInt64);
+			torch::Tensor better = outcome.valid.logical_and(outcome.values < bestValue);
+			bestValue = torch::where(better, outcome.values, bestValue);
+			bestLog = torch::where(better.unsqueeze(0), outcome.logParameters, bestLog);
+			bestValid = bestValid.logical_or(outcome.valid);
+			bestConverged = torch::where(better, outcome.converged, bestConverged);
+			bestStartParams = torch::where(better.unsqueeze(0), stageStartT, bestStartParams);
+			bestStart = torch::where(better, starts, bestStart);
+			for(int64_t b = 0; b < batch; ++b)
+				if(better[b].item<bool>())
+					evaluations[b] = outcome.evaluations;
+		}
+	}
+
+	torch::NoGradGuard noGrad;
+	if(thinned.defined())
+	{
+		problem.omegas = fullOmgas;
+		problem.target = fullTarget;
+		magnitude = torch::abs(problem.target);
+		floor = torch::mean(magnitude, 0, true)*options.weightFloor;
+		weight = 1.0/torch::sqrt(magnitude*magnitude + floor*floor);
+		problem.scale = torch::sqrt(weight/points);
+	}
+	torch::Tensor bestPhysical = torch::pow(10.0, problem.clampToBox(bestLog));
+	torch::Tensor fittedAll = problem.simulate(bestPhysical);
+	torch::Tensor chiAll = problem.cost(bestLog);
+
+	torch::Tensor jacobianAll;
+	torch::Tensor residualAll;
+	try
+	{
+		torch::AutoGradMode enableGrad(true);
+		jacobianAll = problem.jacobian(bestLog);
+		residualAll = problem.residual(bestLog);
+	}
+	catch(const std::exception&) {}
+
+	const int64_t dof = std::max<int64_t>(1, 2*points - parameterCount);
+
+	for(int64_t b = 0; b < batch; ++b)
+	{
+		FitResult& result = results[b];
+		if(not bestValid[b].item<bool>())
+			continue;
+
+		result.success = true;
+		result.converged = bestConverged[b].item<bool>();
+		result.parameters = bestPhysical.select(1, b).clone();
+		result.startParameters = bestStartParams.select(1, b).clone();
+		result.lowerBounds = doubles(lower);
+		result.upperBounds = doubles(upper);
+		result.evaluations = evaluations[b];
+		result.chiSquared = chiAll[b].item<double>();
+		result.reducedChiSquared = result.chiSquared*2.0*points/dof;
+		result.starts = static_cast<int>(starts[b].item<int64_t>());
+		result.bestStart = static_cast<int>(bestStart[b].item<int64_t>());
+
+		torch::Tensor targetColumn = problem.target.select(1, b);
+		torch::Tensor magnitudeColumn = magnitude.select(1, b);
+		result.fittedSpectra = fittedAll.select(1, b).clone();
+		result.residuals = targetColumn - result.fittedSpectra;
+		torch::Tensor error = torch::abs(result.residuals)/magnitudeColumn;
+		result.rmsRelativeError = torch::mean(error*error).item<double>();
+		result.rmsRelativeError = std::sqrt(result.rmsRelativeError);
+		result.maxRelativeError = error.max().item<double>();
+		result.noiseFloor = estimateNoiseFloor(targetColumn.contiguous(), magnitudeColumn.contiguous());
+		result.residualCorrelation = lagOneAutocorrelation(error);
+
+		for(int64_t i = 0; i < parameterCount; ++i)
+		{
+			double logLow = problem.logLower[i].item<double>();
+			double logHigh = problem.logUpper[i].item<double>();
+			double logValue = bestLog[i][b].item<double>();
+			result.atBound.push_back(logValue-logLow <= BOUND_SLACK*(logHigh-logLow)
+					or logHigh-logValue <= BOUND_SLACK*(logHigh-logLow));
+		}
+
+		// the curvature around each column's optimum gives its one sigma per parameter; the
+		// decomposition is per column because one singular normal matrix must not take the
+		// uncertainties of every other spectrum down with it
+		if(jacobianAll.defined())
+		{
+			try
+			{
+				torch::Tensor j = jacobianAll.select(2, b);
+				torch::Tensor singular = torch::linalg_svdvals(j);
+				double largest = singular[0].item<double>();
+				double smallest = singular[singular.numel()-1].item<double>();
+				result.conditionNumber = smallest > 0 ? largest/smallest
+					: std::numeric_limits<double>::infinity();
+
+				torch::Tensor r = residualAll.select(1, b);
+				double variance = torch::sum(r*r).item<double>()/dof;
+				torch::Tensor diagonal = torch::diagonal(torch::linalg_inv(torch::t(j).matmul(j))*variance);
+				for(int64_t i = 0; i < parameterCount; ++i)
+				{
+					double entry = diagonal[i].item<double>();
+					result.uncertainties[i] = std::isfinite(entry) and entry > 0 ? std::sqrt(entry)
+						: std::numeric_limits<double>::quiet_NaN();
+				}
+				// the Jacobian was taken in log10 space, so the sigma is a fraction of the parameter
+				result.uncertainties = result.uncertainties*result.parameters*std::log(10.0);
+			}
+			catch(const std::exception&)
+			{
+				// a singular normal matrix leaves the uncertainties at NaN
+			}
+		}
+
+		applyVerdict(result, options.fitLimit);
+	}
+
+	return results;
 }
 
 std::string fittedModelString(const std::string& modelString, const torch::Tensor& parameters)
