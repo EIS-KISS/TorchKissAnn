@@ -606,10 +606,6 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	}
 	else if(config.loss == LOSS_SPECTRA)
 	{
-
-		//(std::string modelString, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
-				//torch::Tensor parameterBias = torch::Tensor(), torch::Tensor parameterLog = torch::Tensor(),
-				//double weightFloor = DEFAULT_WEIGHT_FLOOR)
 		if(!dataset.frequencies().has_value())
 		{
 			Log(Log::ERROR)<<"Dataset must provide a omega range for LOSS_SPECTRA";
@@ -666,7 +662,8 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		save2dPlot(config.outputDir/(net->getOutputLabels()[output]+"_error.svg"), targetsVarr, error, options);
 	}
 
-	Log(Log::INFO)<<"\nMean MSE: "<<(ret.mse.sum()/ret.mse.numel()).item<float>();
+	Log(Log::INFO)<<"\nLoss: "<<ret.loss;
+	Log(Log::INFO)<<"Mean MSE: "<<(ret.mse.sum()/ret.mse.numel()).item<float>();
 	Log(Log::INFO)<<"Mean R2: "<<(ret.r2.sum()/ret.r2.numel()).item<float>();
 
 	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false)<<"\nR2:\n"<<tensorToString(ret.r2, false);
