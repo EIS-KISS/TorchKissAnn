@@ -123,11 +123,11 @@ const char* fitVerdictName(const FitResult& fit)
 		return "no fit";
 	switch(fit.verdict)
 	{
-		case FitVerdict::Fits:
+		case FitVerdict::FIT_VERDICT_FIT:
 			return "fits";
-		case FitVerdict::Marginal:
+		case FitVerdict::FIT_VERDICT_MARGINAL:
 			return "marginal";
-		case FitVerdict::DoesNotFit:
+		case FitVerdict::FIT_VERDICT_UNFITTED:
 			return "does not fit";
 	}
 	return "unknown";
@@ -259,9 +259,9 @@ void afterFitAccuracy(const std::shared_ptr<ann::Net>& net, T& dataset, const Co
 				const FitResult& fit = results[k-begin];
 				verdict[members[k]] = fitVerdictName(fit);
 				rms[members[k]] = fit.rmsRelativeError;
-				if(fit.success && fit.verdict == FitVerdict::Fits)
+				if(fit.success && fit.verdict == FitVerdict::FIT_VERDICT_FIT)
 					row[1]++;
-				else if(fit.success && fit.verdict == FitVerdict::Marginal)
+				else if(fit.success && fit.verdict == FitVerdict::FIT_VERDICT_MARGINAL)
 					row[2]++;
 				else
 					row[3]++;
@@ -602,7 +602,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	if(config.loss == LOSS_MSE)
 	{
 		std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
-		ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
+		ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
 	}
 	else if(config.loss == LOSS_SPECTRA)
 	{
@@ -619,7 +619,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		RegressionNormalization norm = dataset.getNormalization();
 		std::unique_ptr<EisDistanceLoss> lossEis(new EisDistanceLoss(dataset.targetName(), omega, net->getOutputScalars(),
 				net->getOutputBiases(), net->getOutputLogMask()));
-		ann::regression::TestReturn ret = ann::regression::test(net, *dataLoader, *lossEis, dataset.size().value());
+		ret = ann::regression::test(net, *dataLoader, *lossEis, dataset.size().value());
 	}
 	else
 	{

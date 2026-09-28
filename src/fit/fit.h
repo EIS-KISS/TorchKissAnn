@@ -41,12 +41,12 @@ struct FitOptions
 };
 
 
-enum class FitVerdict
+typedef enum
 {
-	Fits,
-	Marginal,
-	DoesNotFit
-};
+	FIT_VERDICT_UNFITTED,
+	FIT_VERDICT_MARGINAL,
+	FIT_VERDICT_FIT
+} FitVerdict;
 
 struct FitResult
 {
@@ -70,7 +70,7 @@ struct FitResult
 	double maxRelativeError = 0;
 	double noiseFloor = 0;
 	double residualCorrelation = 0;
-	FitVerdict verdict = FitVerdict::DoesNotFit; // Only meaningful when success is true.
+	FitVerdict verdict = FIT_VERDICT_UNFITTED; // Only meaningful when success is true.
 	// Residual limits verdict for verdict
 	double goodFitLimit = 0;
 	double poorFitLimit = 0;

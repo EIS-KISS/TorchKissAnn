@@ -106,12 +106,12 @@ void printVerdict(const FitResult& fit)
 {
 	switch(fit.verdict)
 	{
-		case FitVerdict::DoesNotFit:
+		case FitVerdict::FIT_VERDICT_UNFITTED:
 			Log(Log::INFO)<<"Verdict: the model does not fit the spectra, its residual is "
 				<<percent(fit.rmsRelativeError)<<" where at worst "<<percent(fit.poorFitLimit)
 				<<" should be reachable";
 			break;
-		case FitVerdict::Marginal:
+		case FitVerdict::FIT_VERDICT_MARGINAL:
 			if(fit.rmsRelativeError > fit.goodFitLimit)
 				Log(Log::INFO)<<"Verdict: marginal, the residual of "<<percent(fit.rmsRelativeError)
 					<<" is above the "<<percent(fit.goodFitLimit)<<" a fitting model should reach";
@@ -121,7 +121,7 @@ void printVerdict(const FitResult& fit)
 					<<std::fixed<<std::setprecision(2)<<fit.residualCorrelation
 					<<"), the model misses a feature of the spectra";
 			break;
-		case FitVerdict::Fits:
+		case FitVerdict::FIT_VERDICT_FIT:
 			Log(Log::INFO)<<"Verdict: the model fits the spectra, its residual of "
 				<<percent(fit.rmsRelativeError)<<" is within the "<<percent(fit.goodFitLimit)<<" limit";
 			break;
@@ -183,11 +183,11 @@ const char* verdictName(const FitResult& fit)
 		return "no fit";
 	switch(fit.verdict)
 	{
-		case FitVerdict::Fits:
+		case FitVerdict::FIT_VERDICT_FIT:
 			return "fits";
-		case FitVerdict::Marginal:
+		case FitVerdict::FIT_VERDICT_MARGINAL:
 			return "marginal";
-		case FitVerdict::DoesNotFit:
+		case FitVerdict::FIT_VERDICT_UNFITTED:
 			return "does not fit";
 	}
 	return "unknown";
@@ -333,13 +333,13 @@ int fitDirectory(const Config& config)
 
 				switch(fit.verdict)
 				{
-					case FitVerdict::Fits:
+					case FitVerdict::FIT_VERDICT_FIT:
 						++fits;
 						break;
-					case FitVerdict::Marginal:
+					case FitVerdict::FIT_VERDICT_MARGINAL:
 						++marginal;
 						break;
-					case FitVerdict::DoesNotFit:
+					case FitVerdict::FIT_VERDICT_UNFITTED:
 						++unfit;
 						break;
 				}
@@ -465,5 +465,5 @@ int main(int argc, char** argv)
 			measured, modelString))
 		return 3;
 
-	return fit.verdict == FitVerdict::DoesNotFit ? 4 : 0;
+	return fit.verdict == FitVerdict::FIT_VERDICT_UNFITTED ? 4 : 0;
 }
