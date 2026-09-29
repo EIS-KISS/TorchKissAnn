@@ -70,6 +70,8 @@ static ann::regression::regression_loss_type_t regressionLossFromConfig(const Lo
 			return ann::regression::REG_LOSS_EIS;
 		case LOSS_PERMUTATION:
 			return ann::regression::REG_LOSS_PERMUTATION;
+		case LOSS_COMPOSITE:
+			return ann::regression::REG_LOSS_COMPOSITE;
 		case LOSS_MSE:
 		default:
 			return ann::regression::REG_LOSS_MSE;

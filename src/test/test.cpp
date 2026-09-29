@@ -547,7 +547,7 @@ static std::pair<std::valarray<double>, std::valarray<double>> spectraToPlotData
 }
 
 template <typename T>
-void predictedSpectraPlots(T& dataset, const Config& config, const torch::Tensor& predictions)
+void predictedSpectraPlots(T& dataset, const Config& config, const torch::Tensor& predictions, const torch::Tensor& targets)
 {
 	std::string modelString = dataset.targetName();
 	if(modelString.empty() or modelString == "Unkown")
@@ -577,6 +577,10 @@ void predictedSpectraPlots(T& dataset, const Config& config, const torch::Tensor
 
 	std::filesystem::path imgDir = config.outputDir/"spectra";
 	std::filesystem::create_directories(imgDir);
+
+	// one line per plotted spectra: the circuit with the predicted parameters, then the one with
+	// the target parameters, so a plot can be read back as a concrete circuit pair
+	std::ofstream ecmFile(imgDir/"ecm.txt");
 
 	const int64_t total = std::min(predictions.size(0), static_cast<int64_t>(dataset.size().value()));
 	int64_t written = 0;
@@ -611,10 +615,11 @@ void predictedSpectraPlots(T& dataset, const Config& config, const torch::Tensor
 		options.yLabel = "Im(Z)";
 
 		save2dPlot(imgDir/("spectra_"+std::to_string(i)+".png"), {predictedPlot, spectraToPlotData(measuredSpectra)}, options);
+		ecmFile<<fittedModelString(modelString, predictions[i])<<" | "<<fittedModelString(modelString, targets[i])<<'\n';
 		++written;
 	}
 
-	Log(Log::INFO)<<"Wrote "<<written<<" measured against predicted spectra plots to "<<imgDir;
+	Log(Log::INFO)<<"Wrote "<<written<<" measured against predicted spectra plots to "<<imgDir<<" and the circuit pairs to "<<imgDir/"ecm.txt";
 }
 
 template <typename T>
@@ -727,6 +732,18 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 				net->getOutputBiases(), net->getOutputLogMask()));
 		ret = ann::regression::test(net, *dataLoader, *lossPermutation, dataset.size().value());
 	}
+	else if(config.loss == LOSS_COMPOSITE)
+	{
+		if(!dataset.frequencies().has_value())
+		{
+			Log(Log::ERROR)<<"Dataset must provide a omega range for LOSS_COMPOSITE";
+			return 1;
+		}
+		torch::Tensor omega = dataset.frequencies().value();
+		std::unique_ptr<EisCompositeLoss> lossComposite(new EisCompositeLoss(dataset.targetName(), omega, net->getOutputScalars(),
+				net->getOutputBiases(), net->getOutputLogMask()));
+		ret = ann::regression::test(net, *dataLoader, *lossComposite, dataset.size().value());
+	}
 	else
 	{
 		Log(Log::ERROR)<<"Unkown or unimplemented loss type specified";
@@ -779,7 +796,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false)<<"\nR2:\n"<<tensorToString(ret.r2, false);
 
 	if(config.outputMoreImages)
-		predictedSpectraPlots<T>(dataset, config, predictions);
+		predictedSpectraPlots<T>(dataset, config, predictions, targets);
 
 	if(config.inputImportance)
 	{

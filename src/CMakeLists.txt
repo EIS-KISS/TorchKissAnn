@@ -30,6 +30,7 @@ set(SRC_FILES
 	ann/autoencoder.cpp
 	loss/eisdistanceloss.cpp
 	loss/permutationmsseloss.cpp
+	loss/eiscompositeloss.cpp
 	fit/fit.cpp
 	globals.cpp
 	net.cpp
