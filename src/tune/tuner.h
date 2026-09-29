@@ -246,6 +246,8 @@ inline ann::regression::regression_loss_type_t regressionLossFromConfig(const Lo
 	{
 		case LOSS_SPECTRA:
 			return ann::regression::REG_LOSS_EIS;
+		case LOSS_PERMUTATION:
+			return ann::regression::REG_LOSS_PERMUTATION;
 		case LOSS_MSE:
 		default:
 			return ann::regression::REG_LOSS_MSE;

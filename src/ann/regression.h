@@ -41,6 +41,7 @@
 #include "log.h"
 #include "trainlog.h"
 #include "loss/eisdistanceloss.h"
+#include "loss/permutationmsseloss.h"
 #include "data/regressiondataset.h"
 #include "data/loaders/eisspectradataset.h"
 #include "tensoroptions.h"
@@ -55,7 +56,8 @@ namespace regression
 typedef enum
 {
 	REG_LOSS_EIS,
-	REG_LOSS_MSE
+	REG_LOSS_MSE,
+	REG_LOSS_PERMUTATION
 } regression_loss_type_t;
 
 torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
@@ -306,7 +308,8 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 
 	std::unique_ptr<torch::nn::MSELoss> lossMse;
 	std::unique_ptr<EisDistanceLoss> lossEis;
-	if(loss == REG_LOSS_EIS)
+	std::unique_ptr<PermutationMseLoss> lossPermutation;
+	if(loss == REG_LOSS_EIS || loss == REG_LOSS_PERMUTATION)
 	{
 		torch::Tensor omega = trainDataset->frequencies().value_or(torch::Tensor());
 		if(omega.numel() < 2)
@@ -314,10 +317,20 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			Log(Log::WARN)<<"Dataset does not provide frequencies, simulating the loss on a fallback grid";
 			omega = torch::logspace(LOSS_START_DECADE, LOSS_FINISH_DECADE, LOSS_POINT_COUNT);
 		}
-		Log(Log::INFO)<<"Loss will simulate "<<omega.numel()<<" points from "<<omega.min().item<float>()
-			<<" to "<<omega.max().item<float>()<<" rad/s and will be based on "<<trainDataset->targetName();
-		lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega,
-					norm.targetScalars, norm.targetBiases, norm.targetLogMask));
+		if(loss == REG_LOSS_EIS)
+		{
+			Log(Log::INFO)<<"Loss will simulate "<<omega.numel()<<" points from "<<omega.min().item<float>()
+				<<" to "<<omega.max().item<float>()<<" rad/s and will be based on "<<trainDataset->targetName();
+			lossEis.reset(new EisDistanceLoss(trainDataset->targetName(), omega,
+						norm.targetScalars, norm.targetBiases, norm.targetLogMask));
+		}
+		else
+		{
+			Log(Log::INFO)<<"Loss will score the predictions in the normalized parameter space against the equivalent parameter permutation with the smallest error on "
+				<<trainDataset->targetName();
+			lossPermutation.reset(new PermutationMseLoss(trainDataset->targetName(), omega,
+						norm.targetScalars, norm.targetBiases, norm.targetLogMask));
+		}
 	}
 	else
 	{
@@ -359,6 +372,10 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			 ret = trainImpl(net, *trainDataLoader,
 				*lossEis, optimizer, epoch, trainDataset->size().value(),
 				trainDataset->outputSize(), trainLog, finalLoss, &meanTrainLoss);
+		else if(lossPermutation)
+			 ret = trainImpl(net, *trainDataLoader,
+				*lossPermutation, optimizer, epoch, trainDataset->size().value(),
+				trainDataset->outputSize(), trainLog, finalLoss, &meanTrainLoss);
 		else
 			ret = trainImpl(net, *trainDataLoader,
 							*lossMse, optimizer, epoch, trainDataset->size().value(),
@@ -372,6 +389,8 @@ int train(TrainLog* trainLog, std::shared_ptr<Net> net, RegressionDataset<Datase
 			// evaluate with the same loss the network was trained with
 			TestReturn testret = lossEis ?
 				test(net, *testDataLoader, *lossEis, testDataset->size().value(), epoch, trainLog) :
+				lossPermutation ?
+				test(net, *testDataLoader, *lossPermutation, testDataset->size().value(), epoch, trainLog) :
 				test(net, *testDataLoader, *lossMse, testDataset->size().value(), epoch, trainLog);
 			Log(Log::INFO)<<"Test r2: "<<testret.r2;
 			Log(Log::INFO)<<"Test mse: "<<testret.mse;

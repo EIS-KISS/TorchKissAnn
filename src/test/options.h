@@ -50,7 +50,7 @@ static struct argp_option options[] =
   {"quiet", 		'q', 0,				0,	"only output data" },
   {"input-importance", 'p', 0,			0,	"compute imput importance"},
   {"dataset", 		'd', "[STRING]",	0,	"dataset type to use for testing: " DATASET_LIST},
-  {"images", 		'g', 0,				0,	"output more graphs"},
+  {"images", 		'g', 0,				0,	"output more graphs: regression additionally writes one Nyquist plot per spectra into <output-dir>/spectra showing the measured points against the spectra the predicted parameters simulate"},
   {"file", 			'f', "[STRING]",	0,	"filename for dataset"},
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where testing logs will be saved"},

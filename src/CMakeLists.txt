@@ -29,6 +29,7 @@ set(SRC_FILES
 	ann/regression.cpp
 	ann/autoencoder.cpp
 	loss/eisdistanceloss.cpp
+	loss/permutationmsseloss.cpp
 	fit/fit.cpp
 	globals.cpp
 	net.cpp

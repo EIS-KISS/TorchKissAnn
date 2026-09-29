@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -49,6 +50,7 @@
 #include "tensoroperators.h"
 #include "tensoroptions.h"
 #include "tokenize.h"
+#include "modelscript.h"
 #include "ploting.h"
 #include "save.h"
 #include "colortabel.h"
@@ -427,7 +429,10 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	// sequential, the per spectra diagnostics below index the dataset by the position a sample
+	// came out of the loader, which a random sampler would shuffle
+	auto dataLoader = torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
+			dataset.map(torch::data::transforms::Stack<>()), options);
 
 	// the weights are computed on the cpu, the loss has to see them on the device the network runs on
 	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), evalOutputSize,
@@ -522,6 +527,96 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 	return 0;
 }
 
+static std::pair<std::valarray<double>, std::valarray<double>> spectraToPlotData(const torch::Tensor& spectra)
+{
+	torch::Tensor real = torch::real(spectra).to(torch::kFloat64).reshape({-1}).contiguous();
+	torch::Tensor imag = torch::imag(spectra).to(torch::kFloat64).reshape({-1}).contiguous();
+
+	std::vector<double> x;
+	std::vector<double> y;
+	auto realAccessor = real.accessor<double, 1>();
+	auto imagAccessor = imag.accessor<double, 1>();
+	for(int64_t i = 0; i < real.size(0); ++i)
+	{
+		if(not std::isfinite(realAccessor[i]) or not std::isfinite(imagAccessor[i]))
+			continue;
+		x.push_back(realAccessor[i]);
+		y.push_back(imagAccessor[i]);
+	}
+	return {std::valarray<double>(x.data(), x.size()), std::valarray<double>(y.data(), y.size())};
+}
+
+template <typename T>
+void predictedSpectraPlots(T& dataset, const Config& config, const torch::Tensor& predictions)
+{
+	std::string modelString = dataset.targetName();
+	if(modelString.empty() or modelString == "Unkown")
+	{
+		Log(Log::WARN)<<"the spectra plots need the dataset to name the circuit its targets describe, "<<config.fileName<<" does not, skipping them";
+		return;
+	}
+
+	std::shared_ptr<eis::Model> model;
+	std::shared_ptr<torch::CompilationUnit> modelScript;
+	try
+	{
+		model = std::make_shared<eis::Model>(modelString);
+		modelScript = compileModel(*model);
+	}
+	catch(const std::exception& error)
+	{
+		Log(Log::WARN)<<"the circuit "<<modelString<<" can not be compiled, skipping the spectra plots: "<<error.what();
+		return;
+	}
+
+	if(predictions.size(1) != static_cast<int64_t>(model->getParameterCount()))
+	{
+		Log(Log::WARN)<<"the network predicts "<<predictions.size(1)<<" parameters but the circuit "<<modelString<<" has "<<model->getParameterCount()<<", skipping the spectra plots";
+		return;
+	}
+
+	std::filesystem::path imgDir = config.outputDir/"spectra";
+	std::filesystem::create_directories(imgDir);
+
+	const int64_t total = std::min(predictions.size(0), static_cast<int64_t>(dataset.size().value()));
+	int64_t written = 0;
+	int64_t stride = 1;
+	if(dataset.size().value() > 200)
+		stride = dataset.size().value() / 200;
+	for(int64_t i = 0; i < total; i+=stride)
+	{
+		std::vector<eis::DataPoint> measured = dataset.rawSpectraAtIndex(static_cast<size_t>(i));
+		if(measured.size() < 3)
+		{
+			Log(Log::WARN)<<"spectra "<<i<<" has only "<<measured.size()<<" points, leaving it out of the spectra plots";
+			continue;
+		}
+		std::sort(measured.begin(), measured.end());
+
+		torch::Tensor omegas;
+		torch::Tensor measuredSpectra = eisToComplexTensor(measured, &omegas);
+		torch::Tensor simulatedSpectra = runScriptModel(*model, modelScript, predictions[i].reshape({-1}),
+				omegas.reshape({omegas.numel(), -1})).reshape({omegas.numel()});
+
+		std::pair<std::valarray<double>, std::valarray<double>> predictedPlot = spectraToPlotData(simulatedSpectra);
+		if(predictedPlot.first.size() == 0)
+		{
+			Log(Log::WARN)<<"the parameters of spectra "<<i<<" simulate no finite impedance, leaving it out of the spectra plots";
+			continue;
+		}
+
+		PlotOptions options;
+		options.type = PLOT_TYPE_LINE;
+		options.xLabel = "Re(Z)";
+		options.yLabel = "Im(Z)";
+
+		save2dPlot(imgDir/("spectra_"+std::to_string(i)+".png"), {predictedPlot, spectraToPlotData(measuredSpectra)}, options);
+		++written;
+	}
+
+	Log(Log::INFO)<<"Wrote "<<written<<" measured against predicted spectra plots to "<<imgDir;
+}
+
 template <typename T>
 int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 {
@@ -595,7 +690,10 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
+	// sequential, predictedSpectraPlots() below indexes the dataset by the position a sample came
+	// out of the loader, which a random sampler would shuffle
+	auto dataLoader = torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
+			dataset.map(torch::data::transforms::Stack<>()), options);
 
 	ann::regression::TestReturn ret;
 
@@ -616,6 +714,18 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		std::unique_ptr<EisDistanceLoss> lossEis(new EisDistanceLoss(dataset.targetName(), omega, net->getOutputScalars(),
 				net->getOutputBiases(), net->getOutputLogMask()));
 		ret = ann::regression::test(net, *dataLoader, *lossEis, dataset.size().value());
+	}
+	else if(config.loss == LOSS_PERMUTATION)
+	{
+		if(!dataset.frequencies().has_value())
+		{
+			Log(Log::ERROR)<<"Dataset must provide a omega range for LOSS_PERMUTATION";
+			return 1;
+		}
+		torch::Tensor omega = dataset.frequencies().value();
+		std::unique_ptr<PermutationMseLoss> lossPermutation(new PermutationMseLoss(dataset.targetName(), omega, net->getOutputScalars(),
+				net->getOutputBiases(), net->getOutputLogMask()));
+		ret = ann::regression::test(net, *dataLoader, *lossPermutation, dataset.size().value());
 	}
 	else
 	{
@@ -667,6 +777,9 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	Log(Log::INFO)<<"Mean R2: "<<(ret.r2.sum()/ret.r2.numel()).item<float>();
 
 	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false)<<"\nR2:\n"<<tensorToString(ret.r2, false);
+
+	if(config.outputMoreImages)
+		predictedSpectraPlots<T>(dataset, config, predictions);
 
 	if(config.inputImportance)
 	{

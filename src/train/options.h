@@ -28,7 +28,7 @@
 #include "commonoptions.h"
 
 #define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder, vae, vae_simple"
-#define LOSS_LIST "mse, spectra"
+#define LOSS_LIST "mse, spectra, permutation"
 
 inline const char *argp_program_version = "TorchKissAnnTrain";
 inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
