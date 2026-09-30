@@ -730,7 +730,12 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		torch::Tensor omega = dataset.frequencies().value();
 		std::unique_ptr<PermutationMseLoss> lossPermutation(new PermutationMseLoss(dataset.targetName(), omega, net->getOutputScalars(),
 				net->getOutputBiases(), net->getOutputLogMask()));
-		ret = ann::regression::test(net, *dataLoader, *lossPermutation, dataset.size().value());
+		std::function<torch::Tensor(torch::Tensor, torch::Tensor)> perParameter =
+			[&](torch::Tensor output, torch::Tensor targets)
+		{
+			return lossPermutation->forwardPerParameter(output, targets);
+		};
+		ret = ann::regression::test(net, *dataLoader, *lossPermutation, dataset.size().value(), 0, nullptr, &perParameter);
 	}
 	else if(config.loss == LOSS_COMPOSITE)
 	{
@@ -793,7 +798,10 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 	Log(Log::INFO)<<"Mean MSE: "<<(ret.mse.sum()/ret.mse.numel()).item<float>();
 	Log(Log::INFO)<<"Mean R2: "<<(ret.r2.sum()/ret.r2.numel()).item<float>();
 
-	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false)<<"\nR2:\n"<<tensorToString(ret.r2, false);
+	Log(Log::INFO)<<"\nMSE:\n"<<tensorToString(ret.mse, false);
+	if(ret.permutationMse.numel() != 0)
+		Log(Log::INFO)<<"Permutation adjusted MSE:\n"<<tensorToString(ret.permutationMse, false);
+	Log(Log::INFO)<<"R2:\n"<<tensorToString(ret.r2, false);
 
 	if(config.outputMoreImages)
 		predictedSpectraPlots<T>(dataset, config, predictions, targets);

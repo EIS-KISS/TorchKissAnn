@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <limits>
 #include <torch/csrc/autograd/anomaly_mode.h>
 #include <torch/enum.h>
@@ -176,6 +177,9 @@ struct TestReturn
 	torch::Tensor mse;
 	torch::Tensor r2;
 	double loss;
+	// per-parameter mse of the best equivalent parameter permutation, in the order of the
+	// model's parameters; empty unless the caller provided a per-parameter loss
+	torch::Tensor permutationMse;
 };
 
 struct EpochStats
@@ -188,7 +192,8 @@ struct EpochStats
 };
 
 template <typename DataLoader, typename LossFn>
-TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size, size_t epoch = 0, TrainLog* log = nullptr)
+TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn, size_t data_size, size_t epoch = 0, TrainLog* log = nullptr,
+		std::function<torch::Tensor(torch::Tensor, torch::Tensor)>* perParameterLoss = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard noGrad;
@@ -232,6 +237,11 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 
 	alltargetmse = alltargetmse / index;
 
+	// still in the normalized space the network works in
+	torch::Tensor permutationMse;
+	if(perParameterLoss)
+		permutationMse = (*perParameterLoss)(allpredictions, alltargets).cpu();
+
 	torch::Tensor r2scores = r2score(allpredictions, alltargets);
 	if(log)
 		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
@@ -243,6 +253,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	ret.targets = network->denormalizeOutput(alltargets).cpu();
 	ret.mse = alltargetmse.cpu();
 	ret.r2 = r2scores.cpu();
+	ret.permutationMse = permutationMse;
 
 	return ret;
 }

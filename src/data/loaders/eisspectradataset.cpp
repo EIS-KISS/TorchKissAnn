@@ -24,6 +24,7 @@
 #include <cctype>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <eisgenerator/basicmath.h>
 
 #include "data/eistotorch.h"
@@ -265,4 +266,42 @@ std::vector<eis::DataPoint> EisSpectraDataset::resampleCanonical(const std::vect
 std::vector<eis::DataPoint> EisSpectraDataset::rawSpectraAtIndex(size_t index)
 {
 	return resampleCanonical(loadSpectraAtIndex(index).data, SpectraNorm::None);
+}
+
+std::array<double, 4> EisSpectraDataset::frequencyRangeStats(size_t count)
+{
+	double minMin = std::numeric_limits<double>::max();
+	double maxMax = std::numeric_limits<double>::lowest();
+	double sumMin = 0;
+	double sumMax = 0;
+	size_t n = 0;
+
+	for(size_t i = 0; i < count; ++i)
+	{
+		eis::Spectra spectra = loadSpectraAtIndex(i);
+		if(spectra.data.empty())
+			continue;
+
+		double lo = spectra.data[0].omega;
+		double hi = spectra.data[0].omega;
+		for(const eis::DataPoint& point : spectra.data)
+		{
+			if(point.omega < lo)
+				lo = point.omega;
+			if(point.omega > hi)
+				hi = point.omega;
+		}
+
+		if(lo < minMin)
+			minMin = lo;
+		if(hi > maxMax)
+			maxMax = hi;
+		sumMin += lo;
+		sumMax += hi;
+		++n;
+	}
+
+	if(n == 0)
+		return {0, 0, 0, 0};
+	return {minMin, maxMax, sumMin/static_cast<double>(n), sumMax/static_cast<double>(n)};
 }

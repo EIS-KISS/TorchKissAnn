@@ -41,6 +41,7 @@ static struct argp_option options[] =
   {"report",		'r', "[FILENAME]",	0,	"filename for the report"},
   {"images",		'i', "[DIRECTORY]",	0,	"directory to save class images into"},
   {"print-example",	'p', "[NUMBER]",	0,	"print number of examples from the dataset"},
+  {"frequency-stats",'F', 0,			0,	"compute the per-spectra frequency range statistics; loads every spectra of the dataset"},
   { 0 }
 };
 
@@ -53,6 +54,7 @@ struct Config
 	std::filesystem::path imageOutput;
 	size_t datasetSize = 2e6;
 	size_t printExamples = 0;
+	bool frequencyStats = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -91,6 +93,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'p':
 			config->printExamples = std::stoul(std::string(arg));
+			break;
+		case 'F':
+			config->frequencyStats = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

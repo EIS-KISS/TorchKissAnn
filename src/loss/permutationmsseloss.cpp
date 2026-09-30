@@ -91,12 +91,9 @@ const std::vector<std::vector<double>>& PermutationMseLoss::candidatesFor(const 
 	return cache.emplace(parameters, std::move(candidates)).first->second;
 }
 
-torch::Tensor PermutationMseLoss::forward(torch::Tensor output, torch::Tensor targets)
+torch::Tensor PermutationMseLoss::prepareDifference(torch::Tensor output, torch::Tensor targets)
 {
 	assert(targets.sizes() == output.sizes());
-
-	const torch::Device computeDevice = output.device();
-	const torch::ScalarType computeType = output.scalar_type();
 
 	torch::Tensor predictions = output.to(torch::kCPU).to(torch::kFloat64);
 	if(predictions.dim() > 1 && predictions.size(1) != parameterCount && predictions.size(0) == parameterCount)
@@ -148,9 +145,34 @@ torch::Tensor PermutationMseLoss::forward(torch::Tensor output, torch::Tensor ta
 	if(parameterScalar.numel() != 0)
 		candidates = physicalToAffine(candidates, parameterScalar, parameterBias, parameterLog);
 
-	torch::Tensor difference = predictions.unsqueeze(0) - candidates;
+	return predictions.unsqueeze(0) - candidates;
+}
+
+torch::Tensor PermutationMseLoss::forward(torch::Tensor output, torch::Tensor targets)
+{
+	const torch::Device computeDevice = output.device();
+	const torch::ScalarType computeType = output.scalar_type();
+
+	torch::Tensor difference = prepareDifference(output, targets);
 	torch::Tensor msePerCandidate = torch::mean(difference*difference, -1);
 	torch::Tensor best = std::get<0>(torch::min(msePerCandidate, 0));
 
 	return torch::mean(best).to(computeDevice).to(computeType);
+}
+
+torch::Tensor PermutationMseLoss::forwardPerParameter(torch::Tensor output, torch::Tensor targets)
+{
+	const torch::Device computeDevice = output.device();
+	const torch::ScalarType computeType = output.scalar_type();
+
+	torch::Tensor difference = prepareDifference(output, targets);
+	torch::Tensor msePerCandidate = torch::mean(difference*difference, -1);
+	torch::Tensor bestIndex = std::get<1>(torch::min(msePerCandidate, 0));
+
+	const int64_t batch = difference.size(1);
+	torch::Tensor rows = torch::arange(batch, torch::TensorOptions().dtype(torch::kInt64).device(difference.device()));
+	torch::Tensor bestCandidates = difference.index({bestIndex, rows, torch::indexing::Slice()});
+
+	torch::Tensor perParameter = torch::mean(bestCandidates*bestCandidates, 0);
+	return perParameter.to(computeDevice).to(computeType);
 }

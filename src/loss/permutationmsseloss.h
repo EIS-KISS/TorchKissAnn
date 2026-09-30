@@ -45,6 +45,9 @@ class PermutationMseLoss : public torch::nn::Module
 	std::map<std::vector<double>, std::vector<std::vector<double>>> cache;
 
 	const std::vector<std::vector<double>>& candidatesFor(const std::vector<double>& parameters);
+	// {candidateCount, batch, parameterCount} difference between the predictions and every
+	// candidate permutation, in the space the network works in
+	torch::Tensor prepareDifference(torch::Tensor output, torch::Tensor targets);
 
 	public:
 		PermutationMseLoss(std::string modelString, torch::Tensor omegas, torch::Tensor parameterScalar = torch::Tensor(),
@@ -52,6 +55,9 @@ class PermutationMseLoss : public torch::nn::Module
 				double tolerance = DEFAULT_TOLERANCE, size_t limit = DEFAULT_LIMIT);
 
 		torch::Tensor forward(torch::Tensor output, torch::Tensor targets);
+		// Like forward, but instead of collapsing to a single scalar, returns the mse of the
+		// best permutation per parameter, in the order of the model's parameters
+		torch::Tensor forwardPerParameter(torch::Tensor output, torch::Tensor targets);
 		inline torch::Tensor operator()(torch::Tensor output, torch::Tensor targets)
 		{
 			return forward(output, targets);

@@ -19,6 +19,7 @@
  */
 
 #pragma once
+#include <array>
 #include <string>
 #include <vector>
 #include <kisstype/spectra.h>
@@ -108,6 +109,13 @@ public:
 	 * the data the prediction was made from.
 	 */
 	std::vector<eis::DataPoint> rawSpectraAtIndex(size_t index);
+
+	/**
+	 * The frequency range statistics over the first count spectra: the lowest and highest frequency
+	 * measured in any spectra, and the mean of the per-spectra lowest and highest frequencies.
+	 * Returns {min, max, meanMin, meanMax} in rad/s. All zeros when no spectra carry data points.
+	 */
+	std::array<double, 4> frequencyRangeStats(size_t count);
 
 protected:
 	static std::pair<std::vector<std::string>, std::vector<std::string>> getExtraInputsAndLabelNames(const eis::Spectra& spectra);
