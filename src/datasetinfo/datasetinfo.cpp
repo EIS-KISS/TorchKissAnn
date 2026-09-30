@@ -26,9 +26,15 @@
 #include <sstream>
 #include <fstream>
 
+#include <algorithm>
+#include <array>
+#include <cxxabi.h>
+#include <iomanip>
 #include <string>
 #include <torch/types.h>
+#include <cstdlib>
 #include <limits>
+#include <vector>
 
 #ifdef ENABLE_PLOTTING
 #include <sciplot/Canvas.hpp>
@@ -51,34 +57,120 @@
 #include "tensoroperators.h"
 #include "indicators.hpp"
 
+// Demangle a C++ type name, falling back to the mangled name when demangling fails.
+static std::string demangle(const char* mangled)
+{
+	int status = 0;
+	char* demangled = abi::__cxa_demangle(mangled, nullptr, nullptr, &status);
+	std::string out = (status == 0 && demangled != nullptr) ? demangled : mangled;
+	free(demangled);
+	return out;
+}
+
+// Format a double in scientific notation with a fixed number of significant digits.
+static std::string formatSci(double value)
+{
+	std::stringstream ss;
+	ss<<std::scientific<<std::setprecision(4)<<value;
+	return ss.str();
+}
+
+// Format a list of key-value pairs with the values aligned in a single column.
+static std::string formatKeyValue(const std::vector<std::pair<std::string, std::string>>& pairs, const std::string& indent)
+{
+	size_t keyWidth = 0;
+	for(const auto& p : pairs)
+		keyWidth = std::max(keyWidth, p.first.size());
+
+	std::stringstream ss;
+	for(const auto& p : pairs)
+	{
+		ss<<indent<<p.first;
+		ss<<std::string(keyWidth - p.first.size() + 2, ' ');
+		ss<<p.second<<'\n';
+	}
+	return ss.str();
+}
+
+// Format rows as an aligned table. The first row is the header and is followed by a separator line.
+// alignRight marks the columns that are right aligned (the rest are left aligned).
+static std::string formatTable(const std::vector<std::vector<std::string>>& rows, const std::vector<bool>& alignRight)
+{
+	if(rows.empty())
+		return "";
+
+	size_t nCols = rows[0].size();
+	std::vector<size_t> widths(nCols, 0);
+	for(const auto& row : rows)
+		for(size_t c = 0; c < nCols; ++c)
+			widths[c] = std::max(widths[c], row[c].size());
+
+	std::stringstream ss;
+	for(size_t r = 0; r < rows.size(); ++r)
+	{
+		for(size_t c = 0; c < nCols; ++c)
+		{
+			if(alignRight[c])
+				ss<<std::right<<std::setw(static_cast<int>(widths[c]))<<rows[r][c];
+			else
+				ss<<std::left<<std::setw(static_cast<int>(widths[c]))<<rows[r][c];
+			if(c+1 < nCols)
+				ss<<"  ";
+		}
+		ss<<'\n';
+		if(r == 0)
+		{
+			for(size_t c = 0; c < nCols; ++c)
+			{
+				ss<<std::string(widths[c], '-');
+				if(c+1 < nCols)
+					ss<<"  ";
+			}
+			ss<<'\n';
+		}
+	}
+	return ss.str();
+}
+
 template <typename DataSetType>
-std::string generateReport(EisDataset<DataSetType>* dataset, size_t nExamples)
+std::string generateReport(DataSetType* dataset, size_t nExamples, bool frequencyStats)
 {
 	std::stringstream ss;
 
-	ss<<"Name,\tSize,\tClass Count,\tMulitclass,\tInput Size,\tExtra input count\n";
-	ss<<typeid(DataSetType).name()<<",\t"<<dataset->size().value()
-	  <<",\t"<<dataset->outputSize()<<",\t"<<dataset->isMulticlass()<<",\t"<<dataset->inputSize()<<",\t"<<dataset->extraInputs().size()<<'\n';
+	std::vector<std::pair<std::string, std::string>> summary;
+	summary.push_back({"Name", demangle(typeid(DataSetType).name())});
+	summary.push_back({"Size", std::to_string(dataset->size().value())});
+	summary.push_back({"Class Count", std::to_string(dataset->outputSize())});
+	summary.push_back({"Multiclass", std::to_string(dataset->isMulticlass())});
+	summary.push_back({"Input Size", std::to_string(dataset->inputSize())});
+	summary.push_back({"Extra Input Count", std::to_string(dataset->extraInputs().size())});
+	ss<<formatKeyValue(summary, "");
+	ss<<'\n';
 
-	for(size_t i = 0; i < dataset->outputSize(); ++i)
+	if(frequencyStats)
 	{
-		ss<<i;
-		if(i+1 < dataset->outputSize())
-			ss<<",\t";
+		std::array<double, 4> freq = dataset->frequencyRangeStats(dataset->size().value());
+		std::vector<std::pair<std::string, std::string>> freqStats;
+		freqStats.push_back({"min", formatSci(freq[0])});
+		freqStats.push_back({"max", formatSci(freq[1])});
+		freqStats.push_back({"mean(min)", formatSci(freq[2])});
+		freqStats.push_back({"mean(max)", formatSci(freq[3])});
+		ss<<"Frequency Range (rad/s):\n";
+		ss<<formatKeyValue(freqStats, "  ");
+		ss<<'\n';
 	}
-	ss<<'\n';
+
+	torch::Tensor counts = dataset->classCounts().to(torch::kInt64);
+	auto countsAcc = counts.accessor<int64_t, 1>();
+	std::vector<std::vector<std::string>> rows;
+	rows.push_back({"Index", "Name", "Count"});
 	for(size_t i = 0; i < dataset->outputSize(); ++i)
-	{
-		ss<<dataset->outputName(i);
-		if(i+1 < dataset->outputSize())
-			ss<<",\t";
-	}
-	ss<<'\n';
-	ss<<tensorToString(dataset->classCounts())<<'\n';
+		rows.push_back({std::to_string(i), dataset->outputName(i), std::to_string(countsAcc[i])});
+	ss<<formatTable(rows, {true, false, true});
 
 	if(nExamples > 0)
 	{
-		ss<<"Examples:\n";
+		ss<<'\n'<<"Examples:\n";
 		for(size_t i = 0; i < nExamples && i < dataset->size().value(); ++i)
 		{
 			ss<<"Input:\n";
@@ -224,7 +316,7 @@ int main(int argc, char** argv)
 		case DATASET_DIR:
 		{
 			EisDirDataset dataset(config.fileName);
-			report = generateReport<EisDirDataset>(&dataset, config.printExamples);
+			report = generateReport<EisDirDataset>(&dataset, config.printExamples, config.frequencyStats);
 			if(!config.imageOutput.empty())
 				saveImages<EisDirDataset>(&dataset, config.imageOutput);
 			break;
@@ -232,7 +324,7 @@ int main(int argc, char** argv)
 		case DATASET_TAR:
 		{
 			EisTarDataset dataset(config.fileName);
-			report = generateReport<EisTarDataset>(&dataset, config.printExamples);
+			report = generateReport<EisTarDataset>(&dataset, config.printExamples, config.frequencyStats);
 			if(!config.imageOutput.empty())
 				saveImages<EisTarDataset>(&dataset, config.imageOutput);
 			break;
@@ -240,7 +332,7 @@ int main(int argc, char** argv)
 		case DATASET_TAR_REGRESSION:
 		{
 			RegressionLoaderTar dataset(config.fileName);
-			report = generateReport<RegressionLoaderTar>(&dataset, config.printExamples);
+			report = generateReport<RegressionLoaderTar>(&dataset, config.printExamples, config.frequencyStats);
 			if(!config.imageOutput.empty())
 				saveImages<RegressionLoaderTar>(&dataset, config.imageOutput);
 			break;
@@ -248,7 +340,7 @@ int main(int argc, char** argv)
 		case DATASET_DIR_REGRESSION:
 		{
 			RegressionLoaderDir dataset(config.fileName);
-			report = generateReport<RegressionLoaderDir>(&dataset, config.printExamples);
+			report = generateReport<RegressionLoaderDir>(&dataset, config.printExamples, config.frequencyStats);
 			if(!config.imageOutput.empty())
 				saveImages<RegressionLoaderDir>(&dataset, config.imageOutput);
 			break;
