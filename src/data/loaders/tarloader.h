@@ -27,20 +27,37 @@
 
 #include "data/loaders/tardataset.h"
 #include "data/eisdataset.h"
+#include "loss/circuitsimplicity.h"
 
 class EisTarDataset : public TarDataset, public EisDataset<EisTarDataset>
 {
 private:
 	std::vector<std::string> modelStrs;
 	std::vector<size_t> classIndexes;
+	/// The circuit of each spectra exactly as its header spells it, parameters included. See
+	/// EisDirDataset::generatingModels.
+	std::vector<std::string> generatingModels;
+	/// See EisDirDataset::labelWeights.
+	std::vector<std::vector<float>> labelWeights;
 
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) override;
 	virtual torch::Tensor getTargetImpl(size_t index) override;
+
+	torch::Tensor buildTarget(size_t index) const;
 
 public:
 	explicit EisTarDataset(const std::filesystem::path& path);
 	EisTarDataset(const EisTarDataset& in) = default;
 	virtual ~EisTarDataset() = default;
+
+	/// See EisDirDataset::enableSimplicityLabels().
+	void enableSimplicityLabels(const std::vector<double>& omegas, double simplicityPreference,
+			double contributionThreshold) override;
+
+	bool hasSimplicityLabels() const override
+	{
+		return !labelWeights.empty();
+	}
 
 	torch::Tensor modelWeights();
 

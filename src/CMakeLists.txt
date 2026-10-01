@@ -31,6 +31,8 @@ set(SRC_FILES
 	loss/eisdistanceloss.cpp
 	loss/permutationmsseloss.cpp
 	loss/eiscompositeloss.cpp
+	loss/circuitsimplicity.cpp
+	loss/simplicitytolerantloss.cpp
 	fit/fit.cpp
 	globals.cpp
 	net.cpp

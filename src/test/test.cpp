@@ -57,6 +57,8 @@
 #include "data/eistotorch.h"
 #include "data/loaders/eisspectradataset.h"
 #include "fit/fit.h"
+#include "loss/circuitsimplicity.h"
+#include "loss/simplicitytolerantloss.h"
 
 // Rebuild the canonical grid recorded in the network onto a test dataset so the test spectra are
 // resampled onto the same grid the network was trained on. No-op when the network has no grid.
@@ -96,6 +98,37 @@ static void applySpectraNormFromNet(const std::shared_ptr<ann::Net>& net, T& dat
 	}
 	spectra->setSpectraNorm(spectraNormFromString(net->getSpectraNorm()));
 	Log(Log::INFO)<<"Scaling every spectra by its "<<net->getSpectraNorm()<<" |Z| as recorded in the network";
+}
+
+// Turn on the set valued labels of -s simplicity. The band over which an element has to stay out of
+// the impedance is the one the network is shown, so this needs the dataset after its canonical grid
+// has been rebuilt from the network, and it has to happen before the data loader copies the dataset.
+// Returns false, leaving the plain labels in place, when the dataset cannot describe them.
+template <typename T>
+static bool enableSimplicityLabels(T& dataset, const Config& config)
+{
+	if(dataset.isMulticlass())
+	{
+		Log(Log::WARN)<<"-s simplicity needs one circuit per class, a multiclass dataset can not carry a set of acceptable circuits, scoring with the plain labels";
+		return false;
+	}
+
+	std::vector<double> omegas = circuit::uniqueOmegas(dataset.frequencies().value_or(torch::Tensor()));
+	if(omegas.empty())
+	{
+		Log(Log::WARN)<<"Dataset does not report a frequency axis, testing element contributions on a fallback grid from 0.01 to 100000 rad/s";
+		omegas.resize(32);
+		for(size_t i = 0; i < omegas.size(); ++i)
+			omegas[i] = std::pow(10.0, -2.0 + 6.0*static_cast<double>(i)/static_cast<double>(omegas.size()-1));
+	}
+
+	dataset.enableSimplicityLabels(omegas, config.simplicityPreference, config.simplicityThreshold);
+	if(not dataset.hasSimplicityLabels())
+	{
+		Log(Log::WARN)<<"-s simplicity needs the generating circuit of every spectra, which this dataset does not carry, scoring with the plain labels";
+		return false;
+	}
+	return true;
 }
 
 /// Column header for output index i. Results are reported in the network's index space, so the
@@ -375,6 +408,7 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	applyCanonicalFromNet(net, dataset);
 	applySpectraNormFromNet(net, dataset);
+	bool simplicity = (config.loss == LOSS_SIMPLICITY) and enableSimplicityLabels(dataset, config);
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
@@ -435,11 +469,18 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 			dataset.map(torch::data::transforms::Stack<>()), options);
 
 	// the weights are computed on the cpu, the loss has to see them on the device the network runs on
+	torch::Tensor evalWeights = dataset.mapPerClassToNetOrder(dataset.classWeights(), evalOutputSize).to(*offload_device);
+	std::unique_ptr<SimplicityTolerantLoss> simplicityLoss;
+	if(simplicity)
+		simplicityLoss.reset(new SimplicityTolerantLoss(evalWeights));
+
 	ann::classification::TestReturn testRet = ann::classification::test(net, *dataLoader, dataset.size().value(), evalOutputSize,
-		dataset.mapPerClassToNetOrder(dataset.classWeights(), evalOutputSize).to(*offload_device), dataset.isMulticlass());
+		evalWeights, dataset.isMulticlass(), 0, nullptr, simplicityLoss.get());
 
 	Log(Log::INFO)<<"Test loss: "<<testRet.loss;
 	Log(Log::INFO)<<"Global Acc: "<<testRet.accOverall;
+	if(simplicity)
+		Log(Log::INFO)<<"Acceptable Acc: "<<testRet.simplicityAccOverall<<" (predicted circuit is one the spectra can not rule out)";
 	Log(Log::INFO)<<"Class Acc:";
 
 	for(int64_t i = 0; i < evalOutputSize; ++i)
@@ -748,6 +789,11 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		std::unique_ptr<EisCompositeLoss> lossComposite(new EisCompositeLoss(dataset.targetName(), omega, net->getOutputScalars(),
 				net->getOutputBiases(), net->getOutputLogMask()));
 		ret = ann::regression::test(net, *dataLoader, *lossComposite, dataset.size().value());
+	}
+	else if(config.loss == LOSS_SIMPLICITY)
+	{
+		Log(Log::ERROR)<<"the simplicity loss scores circuit labels, it is only available for the classification datasets ("<<DATASET_LIST<<")";
+		return 1;
 	}
 	else
 	{

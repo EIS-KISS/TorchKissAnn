@@ -71,6 +71,7 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 		if(i % 100 == 0)
 			bar.tick();
 		eis::Spectra spectra = loadSpectraHeaderAtIndex(i);
+		generatingModels.push_back(spectra.model);
 		purgeEisParamBrackets(spectra.model);
 
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
@@ -129,16 +130,38 @@ torch::Tensor EisTarDataset::modelWeights()
 	return output;
 }
 
+torch::Tensor EisTarDataset::buildTarget(size_t index) const
+{
+	if(labelWeights.empty())
+	{
+		torch::TensorOptions options;
+		options = options.layout(torch::kStrided);
+		options = options.device(torch::kCPU);
+		options = options.dtype(torch::kInt64);
+		torch::Tensor output = torch::zeros({1}, options);
+		output[0] = static_cast<float>(classIndexes[index]);
+		return output;
+	}
+
+	std::vector<float> row;
+	row.reserve(labelWeights[index].size()+1);
+	row.push_back(static_cast<float>(classIndexes[index]));
+	row.insert(row.end(), labelWeights[index].begin(), labelWeights[index].end());
+	return torch::tensor(row);
+}
+
 torch::Tensor EisTarDataset::getTargetImpl(size_t index)
 {
-	torch::TensorOptions options;
-	options = options.layout(torch::kStrided);
-	options = options.device(torch::kCPU);
-	options = options.dtype(torch::kInt64);
-	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(classIndexes[index]);
+	return buildTarget(index);
+}
 
-	return output;
+void EisTarDataset::enableSimplicityLabels(const std::vector<double>& omegas, double simplicityPreference,
+		double contributionThreshold)
+{
+	circuit::SimplicityOptions options;
+	options.contributionThreshold = contributionThreshold;
+	labelWeights = circuit::computeLabelWeights(modelStrs, generatingModels, classIndexes, omegas,
+			simplicityPreference, options);
 }
 
 std::string EisTarDataset::outputName(size_t output)

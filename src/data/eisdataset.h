@@ -50,6 +50,8 @@ protected:
 	virtual torch::data::Example<torch::Tensor, torch::Tensor> getImpl(size_t index) = 0;
 	virtual torch::Tensor getTargetImpl(size_t index);
 
+	torch::Tensor remapTarget(torch::Tensor target);
+
 public:
 	torch::data::Example<torch::Tensor, torch::Tensor> get(size_t index) override;
 	torch::Tensor getTarget(size_t index);
@@ -71,6 +73,13 @@ public:
 	virtual std::string dataLabel() const;
 	virtual std::vector<std::pair<std::string, int64_t>> extraInputs();
 	virtual std::pair<torch::Tensor, torch::Tensor> inputRanges();
+	virtual bool hasSimplicityLabels() const { return false; }
+	virtual void enableSimplicityLabels(const std::vector<double>& omegas, double simplicityPreference, double contributionThreshold)
+	{
+		(void)omegas;
+		(void)simplicityPreference;
+		(void)contributionThreshold;
+	}
 
 	virtual ~EisDataset() = default;
 };
@@ -94,16 +103,36 @@ bool EisDataset<DataSelf>::isMulticlass()
 }
 
 template <typename DataSelf>
-torch::Tensor EisDataset<DataSelf>::getTarget(size_t index)
+torch::Tensor EisDataset<DataSelf>::remapTarget(torch::Tensor target)
 {
-	torch::Tensor target = getTargetImpl(index);
-	if(!isMulticlass())
+	if(labelMap.empty() || isMulticlass())
+		return target;
+
+	std::map<int64_t, int64_t>::const_iterator search = labelMap.find(target[0].item().to<int64_t>());
+
+	if(target.numel() <= 1)
 	{
-		auto search = labelMap.find(target[0].item().to<int64_t>());
 		if(search != labelMap.end())
 			target[0] = search->second;
+		return target;
 	}
-	return target;
+
+	const int64_t classes = target.numel()-1;
+	torch::Tensor remapped = target.clone();
+	if(search != labelMap.end())
+		remapped[0] = search->second;
+	remapped.narrow(0, 1, classes).zero_();
+	for(const std::pair<const int64_t, int64_t>& entry : labelMap)
+		if(entry.first >= 0 && entry.first < classes && entry.second >= 0 && entry.second < classes)
+			remapped[entry.second+1] = target[entry.first+1];
+
+	return remapped;
+}
+
+template <typename DataSelf>
+torch::Tensor EisDataset<DataSelf>::getTarget(size_t index)
+{
+	return remapTarget(getTargetImpl(index));
 }
 
 template <typename DataSelf>
@@ -118,12 +147,6 @@ bool EisDataset<DataSelf>::createLabelMap(const ann::Net& net)
 	return createLabelMapFromLabels(net.getOutputLabels());
 }
 
-/// Build the remap that turns this dataset's target indices into the index space described by
-/// labels. Loaders intern classes in the order they happen to encounter them, so the same classes
-/// come out in a different order depending on whether they were read from a directory or from a
-/// tar, and a subset of a dataset interns into a prefix that has nothing to do with the original
-/// numbering. Returns false, leaving the map empty, when some class of this dataset has no entry
-/// in labels; that is a genuine mismatch rather than a reordering and must not be papered over.
 template <typename DataSelf>
 bool EisDataset<DataSelf>::createLabelMapFromLabels(const std::vector<std::string>& labels)
 {
@@ -154,8 +177,6 @@ bool EisDataset<DataSelf>::createLabelMapFromLabels(const std::vector<std::strin
 	return true;
 }
 
-/// True when every class of this dataset already sits at the index labels puts it at, in which
-/// case no remap is needed and the identity path stays completely free.
 template <typename DataSelf>
 bool EisDataset<DataSelf>::labelsInSameOrderAs(const std::vector<std::string>& labels)
 {
@@ -196,12 +217,7 @@ template <typename DataSelf>
 torch::data::Example<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::get(size_t index)
 {
 	torch::data::Example<torch::Tensor, torch::Tensor> data = getImpl(index);
-	if(!isMulticlass())
-	{
-		auto search = labelMap.find(data.target[0].item().to<int64_t>());
-		if(search != labelMap.end())
-			data.target[0] = search->second;
-	}
+	data.target = remapTarget(data.target);
 
 	if(!dropouts.empty())
 	{

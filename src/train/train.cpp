@@ -50,6 +50,7 @@
 #include "data/loaders/eisspectradataset.h"
 #include "data/canonicalgrid.h"
 #include "options.h"
+#include "loss/circuitsimplicity.h"
 #include "trainlog.h"
 #include "tokenize.h"
 
@@ -125,6 +126,29 @@ static void applySpectraNorm(const Config& config, EisDataset<DataSetType>* data
 	if(spectra == nullptr)
 		return;
 	spectra->setSpectraNorm(mode);
+}
+
+// Build the set valued labels of -s simplicity on a dataset and report whether it produced them.
+// Must run after the canonical grid is configured: the band over which an element has to stay out of
+// the impedance is the band the network is shown, not the one the file happens to carry. Training and
+// test dataset are given the same arguments so both score the same kind of label.
+template <typename DataSetType>
+static bool applySimplicityLabels(const Config& config, EisDataset<DataSetType>* dataset)
+{
+	if(dataset == nullptr || config.loss != LOSS_SIMPLICITY)
+		return false;
+
+	std::vector<double> omegas = circuit::uniqueOmegas(dataset->frequencies().value_or(torch::Tensor()));
+	if(omegas.empty())
+	{
+		Log(Log::WARN)<<"Dataset does not report a frequency axis, judging element contributions on a fallback grid from 0.01 to 100000 rad/s";
+		omegas.resize(32);
+		for(size_t i = 0; i < omegas.size(); ++i)
+			omegas[i] = std::pow(10.0, -2.0 + 6.0*static_cast<double>(i)/static_cast<double>(omegas.size()-1));
+	}
+
+	dataset->enableSimplicityLabels(omegas, config.simplicityPreference, config.simplicityThreshold);
+	return dataset->hasSimplicityLabels();
 }
 
 template <typename DataSetType>
@@ -229,6 +253,16 @@ int train(const Config& config)
 			Log(Log::INFO)<<"Canonical grid active: "<<resolved.fMin<<" .. "<<resolved.fMax<<" rad/s, "
 				<<resolved.points<<" points ("<<(resolved.log ? "log" : "linear")<<"), augmentation: "<<aug;
 		}
+	}
+
+	bool simplicityLabels = applySimplicityLabels(config, &dataset);
+	applySimplicityLabels(config, testDataset);
+	if(config.loss == LOSS_SIMPLICITY && not simplicityLabels)
+	{
+		Log(Log::ERROR)<<"the simplicity loss needs the generating circuit of every spectra, which "<<config.fileName<<" does not carry";
+		if(testDataset)
+			delete testDataset;
+		return 1;
 	}
 
 	trainSwitch<DataSetType, DataSetType>(config, &dataset, testDataset);
@@ -482,9 +516,29 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if(config.loss != LOSS_MSE && config.mode != MODE_REGRESSION && config.mode != MODE_REGRESSION_SCRIPT)
+	if(lossIsRegressionOnly(config.loss) && !modeIsRegression(config.mode))
 	{
 		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used in regression mode";
+		return false;
+	}
+
+	if(config.loss == LOSS_SIMPLICITY && !modeIsClassification(config.mode))
+	{
+		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used in "<<
+			trainModeToStr(MODE_ANN)<<", "<<trainModeToStr(MODE_ANN_CONV)<<" and "<<
+			trainModeToStr(MODE_ANN_SCRIPT)<<" mode";
+		return false;
+	}
+
+	if(config.loss == LOSS_SIMPLICITY && config.simplicityThreshold < 0)
+	{
+		Log(Log::ERROR)<<"--simplicity-threshold must be >= 0";
+		return false;
+	}
+
+	if(config.loss == LOSS_SIMPLICITY && !(config.simplicityPreference >= 0))
+	{
+		Log(Log::ERROR)<<"--simplicity-preference must be >= 0, 0 makes the loss indifferent between the accepted circuits";
 		return false;
 	}
 

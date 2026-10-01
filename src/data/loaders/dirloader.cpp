@@ -69,6 +69,7 @@ EisDirDataset::EisDirDataset(const std::filesystem::path& path)
 	for(size_t i = 0; i < files->size(); ++i)
 	{
 		eis::Spectra spectra = loadSpectraHeaderAtIndex(i);
+		generatingModels.push_back(spectra.model);
 		purgeEisParamBrackets(spectra.model);
 
 		if(spectra.model.length() < 2 && spectra.model != "r" && spectra.model != "c" && spectra.model != "w" && spectra.model != "p" && spectra.model != "l")
@@ -97,19 +98,46 @@ std::vector<std::pair<std::string, int64_t>> EisDirDataset::extraInputs()
 	return DirDataset::extraInputs();
 }
 
+torch::Tensor EisDirDataset::buildTarget(size_t index) const
+{
+	if(labelWeights.empty())
+	{
+		torch::TensorOptions options;
+		options = options.layout(torch::kStrided);
+		options = options.device(torch::kCPU);
+		options = options.dtype(torch::kInt64);
+		torch::Tensor output = torch::zeros({1}, options);
+		output[0] = static_cast<float>(classIndexes[index]);
+		return output;
+	}
+
+	std::vector<float> row;
+	row.reserve(labelWeights[index].size()+1);
+	row.push_back(static_cast<float>(classIndexes[index]));
+	row.insert(row.end(), labelWeights[index].begin(), labelWeights[index].end());
+	return torch::tensor(row);
+}
+
+torch::Tensor EisDirDataset::getTargetImpl(size_t index)
+{
+	return buildTarget(index);
+}
+
 torch::data::Example<torch::Tensor, torch::Tensor> EisDirDataset::getImpl(size_t index)
 {
 	eis::Spectra data = loadSpectraAtIndex(index);
 
-	torch::TensorOptions options;
-	options = options.layout(torch::kStrided);
-	options = options.device(torch::kCPU);
-	options = options.dtype(torch::kInt64);
-	torch::Tensor output = torch::zeros({1}, options);
-	output[0] = static_cast<float>(classIndexes[index]);
-
 	torch::Tensor input = eisToTorch(resampleCanonical(data.data));
-	return torch::data::Example<torch::Tensor, torch::Tensor>(input, output);
+	return torch::data::Example<torch::Tensor, torch::Tensor>(input, buildTarget(index));
+}
+
+void EisDirDataset::enableSimplicityLabels(const std::vector<double>& omegas, double simplicityPreference,
+		double contributionThreshold)
+{
+	circuit::SimplicityOptions options;
+	options.contributionThreshold = contributionThreshold;
+	labelWeights = circuit::computeLabelWeights(modelStrs, generatingModels, classIndexes, omegas,
+			simplicityPreference, options);
 }
 
 size_t EisDirDataset::outputSize() const

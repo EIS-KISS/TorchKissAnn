@@ -54,6 +54,8 @@ enum TuneArgpKey
 	OPT_CANONICAL_LINEAR,
 	OPT_CANONICAL_AUGMENT_SHIFT,
 	OPT_CANONICAL_AUGMENT_WINDOW,
+	OPT_SIMPLICITY_THRESHOLD,
+	OPT_SIMPLICITY_PREFERENCE,
 };
 
 static struct argp_option options[] =
@@ -68,7 +70,7 @@ static struct argp_option options[] =
   {"epochs",		'i', "[NUMBER]",	0,	"number of epochs to train per configuration, default: 30"},
   {"learning-rate",	'r', "[NUMBER]",	0,	"single learning rate to use, default: 0.005"},
   {"weight-decay",	'w', "[NUMBER]",	0,	"single adamw weight decay to use, default: 0.001"},
-  {"loss",			's', "[STRING]",	0,	"loss function to use for regression: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to use: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where the tuning results and the best model will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
@@ -90,6 +92,8 @@ static struct argp_option options[] =
   {"canonical-linear",	OPT_CANONICAL_LINEAR,	0, 0,	"Space the canonical grid linearly in omega instead of logarithmically"},
   {"canonical-augment-shift",	OPT_CANONICAL_AUGMENT_SHIFT,	"[NUMBER,NUMBER,...]", 0,	"comma separated list of maximum frequency shift augmentations in decades to try, 0 disables it. Only meaningful with a canonical grid, classification only. Default: 0"},
   {"canonical-augment-window",	OPT_CANONICAL_AUGMENT_WINDOW,	"[NUMBER,NUMBER,...]", 0,	"comma separated list of minimum kept fractions of the measured points for the window (crop) augmentation to try, 1 disables it. Only meaningful with a canonical grid. Default: 1"},
+  {"simplicity-threshold",	OPT_SIMPLICITY_THRESHOLD, "[FRACTION]", 0,	"With -s simplicity: relative change of the impedance below which removing an element of the generating circuit counts as invisible, so that the simpler circuit left behind is an equally correct answer. Default 0.01. Fixed for the whole search, not swept: it defines which labels the trials are scored against, so two thresholds are two different tasks whose losses can not be ranked against each other"},
+  {"simplicity-preference",	OPT_SIMPLICITY_PREFERENCE, "[NUMBER]", 0,	"With -s simplicity: extra weight on the simplest accepted class, default 1. 0 leaves the network indifferent between the generating circuit and the simpler ones that describe the same spectra, larger values push harder towards always naming the simplest circuit that still fits. Fixed for the whole search like the threshold"},
   { 0 }
 };
 
@@ -185,6 +189,10 @@ struct Config
 	std::vector<size_t> latentSizes; // swept latent widths, defaults to the single latentSize above
 	double klBeta = 1.0;     // weight of the KL term in the vae modes
 	LossType loss = LOSS_MSE;
+	// -s simplicity: fixed for the whole search, see the two option help texts below. The best model
+	// has to be retested with the same threshold, it is not stored in the checkpoint.
+	double simplicityThreshold = 0.01;
+	double simplicityPreference = 1.0;
 	TuneMetric metric = METRIC_LAST;
 	bool noGpu = false;
 	bool noWeights = false;
@@ -373,6 +381,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_CANONICAL_AUGMENT_WINDOW:
 			config->canonicalAugmentWindows = parseDoubleList(arg);
+			break;
+		case OPT_SIMPLICITY_THRESHOLD:
+			config->simplicityThreshold = std::stod(std::string(arg));
+			break;
+		case OPT_SIMPLICITY_PREFERENCE:
+			config->simplicityPreference = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

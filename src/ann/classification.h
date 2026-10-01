@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 #include <torch/optim.h>
 #include <string>
@@ -32,6 +33,7 @@
 #include "globals.h"
 #include "../data/eisdataset.h"
 #include "../data/loaders/eisspectradataset.h"
+#include "loss/simplicitytolerantloss.h"
 #include "log.h"
 #include "tensoroptions.h"
 #include "trainlog.h"
@@ -53,9 +55,26 @@ void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets
 						 const torch::Tensor& hits, const std::filesystem::path& outDir,
 						 bool outputProb);
 
+inline std::pair<torch::Tensor, torch::Tensor> splitTarget(torch::Tensor targets, bool isMulticlass)
+{
+	if(isMulticlass || targets.dim() < 2 || targets.size(1) < 2)
+		return {targets, torch::Tensor()};
+	return {targets.select(1, 0).to(torch::kInt64), targets.narrow(1, 1, targets.size(1)-1)};
+}
+
+inline torch::Tensor alignLabelWeights(torch::Tensor weights, int64_t outputSize)
+{
+	if(weights.size(1) == outputSize)
+		return weights;
+	if(weights.size(1) > outputSize)
+		return weights.narrow(1, 0, outputSize);
+	return torch::constant_pad_nd(weights, {0, outputSize - weights.size(1)});
+}
+
 template <typename DataLoader>
 float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
-		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, TrainLog* log = nullptr)
+		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, TrainLog* log = nullptr,
+		   const SimplicityTolerantLoss* simplicityLoss = nullptr)
 {
 	size_t index = 0;
 	network->train();
@@ -72,16 +91,24 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 	for(auto& batch : loader)
 	{
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
-		torch::Tensor targets = batch.target.to(*offload_device);
+
+		std::pair<torch::Tensor, torch::Tensor> label = splitTarget(batch.target.to(*offload_device), isMulticlass);
+		torch::Tensor targets = label.first;
+		torch::Tensor labelWeights = label.second;
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss;
 
 		torch::Tensor acc;
 
-		if(!isMulticlass)
+		if(simplicityLoss && labelWeights.defined())
 		{
-			targets = targets.view({-1});
+			loss = (*simplicityLoss)(prediction, alignLabelWeights(labelWeights, prediction.size(1)));
+			acc = prediction.argmax(1).eq(targets.reshape({-1})).sum().to(torch::kCPU);
+		}
+		else if(!isMulticlass)
+		{
+			targets = targets.reshape({-1});
 			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
 			acc = prediction.argmax(1).eq(targets).sum().to(torch::kCPU);
 		}
@@ -118,13 +145,10 @@ torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
 	for(const auto& batch : loader)
 	{
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
-		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
+		torch::Tensor targets = splitTarget(batch.target.to(*offload_device), false).first.reshape({-1});
 
 		torch::Tensor output = network->forward(data);
 
-		// The accumulator below is scalar bookkeeping that gains nothing from living on the gpu, so
-		// bring both one hot matrices back in one transfer per batch and count on the cpu, where the
-		// result is wanted anyway. Mixing the two is what used to abort the run on gpu builds.
 		targets = unargmax(targets.to(torch::kInt64), network->getOutputSize()).to(torch::kCPU);
 		output = unargmax(output.argmax(1), network->getOutputSize()).to(torch::kCPU);
 
@@ -144,6 +168,7 @@ struct TestReturn
 	torch::Tensor acc;
 	double loss;
 	double accOverall;
+	double simplicityAccOverall = 0;
 };
 
 struct EpochStats
@@ -158,11 +183,12 @@ struct EpochStats
 template <typename DataLoader>
 TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_size,
 				   int64_t outputSize, torch::Tensor classWeights, bool isMulticlass, size_t epoch = 0,
-				   TrainLog* log = nullptr)
+				   TrainLog* log = nullptr, const SimplicityTolerantLoss* simplicityLoss = nullptr)
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
 	float Loss = 0, Acc = 0;
+	double Acceptable = 0;
 
 	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
 	torch::Tensor classCount = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
@@ -187,27 +213,47 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	{
 		bar.tick();
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
-		torch::Tensor targets = batch.target.to(*offload_device).view({-1});
+
+		std::pair<torch::Tensor, torch::Tensor> label = splitTarget(batch.target.to(*offload_device), isMulticlass);
+		torch::Tensor targets = label.first;
+		torch::Tensor labelWeights = label.second;
 
 		torch::Tensor output = network->forward(data);
 		torch::Tensor loss;
 
 		allpredictions = safeConcat({allpredictions, output}, 0);
-		alltargets = safeConcat({alltargets, targets}, 0);
+		alltargets = safeConcat({alltargets, targets.reshape({-1})}, 0);
 
-		if(!isMulticlass)
-		{
-			loss = lossNll->forward(output, targets.to(torch::kInt64));
-			targets = unargmax(targets.to(torch::kInt64), outputSize);
-			output = unargmax(output.argmax(1), outputSize);
-		}
+		// the winner has to be read off before the branches below turn output into something else
+		torch::Tensor predicted = output.argmax(1);
+
+		if(simplicityLoss && labelWeights.defined())
+			loss = (*simplicityLoss)(output, alignLabelWeights(labelWeights, outputSize));
+		else if(!isMulticlass)
+			loss = lossNll->forward(output, targets.reshape({-1}).to(torch::kInt64));
 		else
 		{
 			targets = targets.reshape({output.size(0), output.size(1)});
 			loss = lossBCE->forward(output, targets.to(torch::kFloat32));
-			output = torch::sigmoid(output);
 		}
 		assert(!std::isnan(loss.template item<float>()));
+
+		if(labelWeights.defined())
+		{
+			torch::Tensor aligned = alignLabelWeights(labelWeights, outputSize);
+			Acceptable += (aligned.gather(1, predicted.unsqueeze(1)) > 0).sum().to(torch::kFloat64).template item<double>();
+		}
+
+		if(!isMulticlass)
+		{
+			targets = unargmax(targets.reshape({-1}).to(torch::kInt64), outputSize);
+			output = unargmax(predicted, outputSize);
+		}
+		else
+		{
+			targets = targets.reshape({output.size(0), output.size(1)});
+			output = torch::sigmoid(output);
+		}
 
 		torch::Tensor hits = multiClassHits(output, targets, 0.25);
 		torch::Tensor acc = hits.sum();
@@ -242,6 +288,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	ret.acc = classAcc.cpu();
 	ret.loss = (Loss / data_size)*100;
 	ret.accOverall = Acc/data_size;
+	ret.simplicityAccOverall = data_size > 0 ? Acceptable/static_cast<double>(data_size) : 0;
 
 	return ret;
 }
@@ -263,9 +310,6 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	net->setPurpose("Classifier");
 	net->setExtraInputs(trainDataset->extraInputs());
 
-	// Record the input preparation the loaders applied (canonical frequency grid, per spectra |Z|
-	// scaling) so the checkpoint and the ONNX export carry everything a client needs to turn a raw
-	// spectra into the vector this graph expects.
 	if(auto* es = dynamic_cast<EisSpectraDataset*>(trainDataset))
 	{
 		CanonicalGrid cg;
@@ -275,11 +319,6 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		net->setSpectraNorm(mode == SpectraNorm::None ? std::string() : spectraNormToString(mode));
 	}
 
-	// The raw spectra span many decades of impedance, so the network sees signed log compressed values.
-	// No affine rescaling onto [-1,1] follows it, unlike regression: a classifier does not have to
-	// reproduce a physical quantity, and with the per spectra |Z| scaling active every sample already
-	// arrives on the same scale, so a range derived affine transform would add nothing. The
-	// classification loaders never append extra inputs, so every feature here is spectral.
 	net->setInputLogCompression(trainDataset->inputSize());
 	Log(Log::INFO)<<"Compressing the leading "<<trainDataset->inputSize()<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
 
@@ -306,6 +345,14 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		classWeights = torch::ones({static_cast<int64_t>(trainDataset->outputSize())}).to(*offload_device);
 	else
 		classWeights = trainDataset->classWeights().to(*offload_device);
+
+	bool simplicityTolerant = trainDataset->hasSimplicityLabels();
+	if(simplicityTolerant)
+		Log(Log::INFO)<<"Scoring with the simplicity tolerant loss: a spectra is explained by any circuit its label accepts, not only by the one that generated it";
+
+	std::unique_ptr<SimplicityTolerantLoss> simplicityLoss;
+	if(simplicityTolerant)
+		simplicityLoss.reset(new SimplicityTolerantLoss(classWeights));
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(JOBS);
@@ -336,12 +383,12 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		float trainLoss = trainImpl(net, *trainDataLoader, optimizer, i, trainDataset->size().value(),
-			classWeights, trainDataset->isMulticlass(), trainLog);
+			classWeights, trainDataset->isMulticlass(), trainLog, simplicityLoss.get());
 		bool newBest = false;
 		if(testDataset)
 		{
 			TestReturn ret = test(net, *testDataLoader, testDataset->size().value(), trainDataset->outputSize(),
-				classWeights, trainDataset->isMulticlass(), i, trainLog);
+				classWeights, trainDataset->isMulticlass(), i, trainLog, simplicityLoss.get());
 			if(finalTestLoss)
 				*finalTestLoss = ret.loss;
 			if(history)

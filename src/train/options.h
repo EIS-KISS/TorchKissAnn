@@ -28,7 +28,6 @@
 #include "commonoptions.h"
 
 #define MODE_LIST "ann, conv, script, gan, regression, regression_script, autoencoder, vae, vae_simple"
-#define LOSS_LIST "mse, spectra, permutation, composite"
 
 inline const char *argp_program_version = "TorchKissAnnTrain";
 inline const char *argp_program_bug_address = "<carl@uvos.xyz>";
@@ -43,7 +42,9 @@ enum
 	OPT_CANONICAL_LINEAR,
 	OPT_CANONICAL_AUGMENT_SHIFT,
 	OPT_CANONICAL_AUGMENT_WINDOW,
-	OPT_SPECTRA_NORM
+	OPT_SPECTRA_NORM,
+	OPT_SIMPLICITY_THRESHOLD,
+	OPT_SIMPLICITY_PREFERENCE
 };
 
 static struct argp_option options[] =
@@ -58,7 +59,7 @@ static struct argp_option options[] =
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
-  {"loss",			's', "[STRING]",	0,	"loss function to use for regression: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to use: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
@@ -72,6 +73,8 @@ static struct argp_option options[] =
   {"canonical-augment-shift",	OPT_CANONICAL_AUGMENT_SHIFT, "[NUMBER]", 0, "Classification only: randomly shift each training spectra along the log frequency axis by up to this many decades (default when canonical is on: 1, set 0 to disable)"},
   {"canonical-augment-window",	OPT_CANONICAL_AUGMENT_WINDOW, "[NUMBER]", 0, "Crop each training spectra to a random contiguous sub-range keeping at least this fraction of the points, then resample (valid for regression too; default 1 = disabled, e.g. 0.5 crops down to half)"},
   {"spectra-norm",	OPT_SPECTRA_NORM,	"[STRING]", 0,	"Classification only: divide each spectra by a reference impedance so only the shape of the Nyquist plot reaches the network: none, zmean (mean |Z|), zgeom (geometric mean |Z|), zmax (largest |Z|). Default none. Recorded in the checkpoint so _test and libkissinference apply the same scaling"},
+  {"simplicity-threshold",	OPT_SIMPLICITY_THRESHOLD, "[FRACTION]", 0,	"With -s simplicity: relative change of the impedance below which removing an element of the generating circuit counts as invisible, so that the simpler circuit left behind is an equally correct answer. Default 0.01, the threshold eisgenerator itself uses to decide whether an element contributes. Set it lower to excuse only reductions that are truly unmeasurable"},
+  {"simplicity-preference",	OPT_SIMPLICITY_PREFERENCE, "[NUMBER]", 0,	"With -s simplicity: extra weight on the simplest accepted class, default 1. 0 leaves the network indifferent between the generating circuit and the simpler ones that describe the same spectra, larger values push harder towards always naming the simplest circuit that still fits"},
   { 0 }
 };
 
@@ -106,6 +109,10 @@ struct Config
 	// Per spectra |Z| scaling for classification: name of the reference impedance each spectra is
 	// divided by (see SpectraNorm). "none" leaves the raw impedances alone.
 	std::string spectraNorm = "none";
+	// -s simplicity: how far an element has to drop out of the impedance for a circuit missing it to
+	// be an acceptable answer, and how much the simplest accepted class is preferred over the others.
+	double simplicityThreshold = 0.01;
+	double simplicityPreference = 1.0;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -203,6 +210,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_SPECTRA_NORM:
 			config->spectraNorm = arg;
+			break;
+		case OPT_SIMPLICITY_THRESHOLD:
+			config->simplicityThreshold = std::stod(std::string(arg));
+			break;
+		case OPT_SIMPLICITY_PREFERENCE:
+			config->simplicityPreference = std::stod(std::string(arg));
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

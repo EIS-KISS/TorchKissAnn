@@ -42,6 +42,8 @@ enum TestArgpKey
 	OPT_FIT_EVALUATIONS,
 	OPT_FIT_LIMIT,
 	OPT_FIT_POINTS,
+	OPT_SIMPLICITY_THRESHOLD,
+	OPT_SIMPLICITY_PREFERENCE,
 };
 
 static struct argp_option options[] =
@@ -55,7 +57,7 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where testing logs will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
-  {"loss",			's', "[STRING]",	0,	"loss function to use for regression: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to score with: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"no-confustion",	-1, 0,				0,	"dont compute or output the confustion matrix"},
   {"network",		'n', "[PATH]",		0,	"path to the network to test"},
   {"ignore-missmatch",	'i', 0,			0,	"Ignore missmatches in label names"},
@@ -65,6 +67,8 @@ static struct argp_option options[] =
   {"fit-evaluations",	OPT_FIT_EVALUATIONS, "[NUMBER]", 0, "maximum number of spectrum simulations per restart and batch, default: 400"},
   {"fit-limit",		OPT_FIT_LIMIT, "[FRACTION]", 0, "rms deviation below which the predicted circuit counts as plausible, default: 0.01, raised to three times the noise of the spectra when that is larger"},
   {"fit-points",	OPT_FIT_POINTS, "[NUMBER]", 0, "thin each mismatch to this many evenly spaced points for the search, default: 25, 0 fits every point. The jacobian costs one backward per point so this is the cheapest way to buy restarts: the verdict (rms against the noise floor) is still scored on the whole spectra, only the minima the optimiser explores change"},
+  {"simplicity-threshold",	OPT_SIMPLICITY_THRESHOLD, "[FRACTION]", 0,	"With -s simplicity: relative change of the impedance below which removing an element of the generating circuit counts as invisible. Must be the value the network was trained with, it is not stored in the checkpoint. Default 0.01"},
+  {"simplicity-preference",	OPT_SIMPLICITY_PREFERENCE, "[NUMBER]", 0,	"With -s simplicity: extra weight on the simplest accepted class when rebuilding the labels, default 1. Only changes the reported loss, the acceptable set is the same for any value"},
   { 0 }
 };
 
@@ -87,6 +91,10 @@ struct Config
 	double fitLimit = 0.01;
 	int64_t fitPoints = 25;
 	LossType loss = LOSS_MSE;
+	// -s simplicity: has to be the threshold the network was trained with, the checkpoint stores no
+	// label semantics, only the class names
+	double simplicityThreshold = 0.01;
+	double simplicityPreference = 1.0;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -161,6 +169,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_FIT_POINTS:
 			config->fitPoints = std::stoll(arg);
+			break;
+		case OPT_SIMPLICITY_THRESHOLD:
+			config->simplicityThreshold = std::stod(arg);
+			break;
+		case OPT_SIMPLICITY_PREFERENCE:
+			config->simplicityPreference = std::stod(arg);
 			break;
 		case -1:
 			config->confustionMatrix = false;

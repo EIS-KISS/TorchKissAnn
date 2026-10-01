@@ -21,7 +21,7 @@
 #pragma once
 
 #define DATASET_LIST "dir, tar, dirreg, tarreg"
-#define LOSS_LIST "mse, spectra, permutation, composite"
+#define LOSS_LIST "mse, spectra, permutation, composite, simplicity"
 
 typedef enum
 {
@@ -76,7 +76,8 @@ typedef enum
 	LOSS_MSE = 0,
 	LOSS_SPECTRA,
 	LOSS_PERMUTATION,
-	LOSS_COMPOSITE
+	LOSS_COMPOSITE,
+	LOSS_SIMPLICITY
 } LossType;
 
 static inline std::string lossTypeToStr(const LossType loss)
@@ -91,6 +92,8 @@ static inline std::string lossTypeToStr(const LossType loss)
 			return "permutation";
 		case LOSS_COMPOSITE:
 			return "composite";
+		case LOSS_SIMPLICITY:
+			return "simplicity";
 		default:
 			return "Invalid";
 	}
@@ -106,9 +109,15 @@ static inline LossType parseLossType(const std::string& in)
 		return LOSS_PERMUTATION;
 	else if(in == lossTypeToStr(LOSS_COMPOSITE))
 		return LOSS_COMPOSITE;
+	else if(in == lossTypeToStr(LOSS_SIMPLICITY))
+		return LOSS_SIMPLICITY;
 	return LOSS_INVALID;
 }
 
+static inline constexpr bool lossIsRegressionOnly(const LossType loss)
+{
+	return loss == LOSS_SPECTRA || loss == LOSS_PERMUTATION || loss == LOSS_COMPOSITE;
+}
 
 typedef enum
 {
