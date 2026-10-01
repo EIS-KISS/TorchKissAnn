@@ -222,7 +222,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 		torch::Tensor loss = lossFn(output, targets);
 		torch::Tensor mse = torch::nn::functional::mse_loss(output, targets, torch::nn::functional::MSELossFuncOptions(torch::kNone));
 		mse = torch::mean(mse, 0);
-		// weighted, so the partially filled last batch does not count as a full one
 		double batchCount = targets.size(0);
 		alltargetmse = alltargetmse + mse*batchCount;
 

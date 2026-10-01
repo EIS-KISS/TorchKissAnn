@@ -204,7 +204,6 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 		torch::Tensor loss = lossFn(output, data);
 		torch::Tensor mse = torch::nn::functional::mse_loss(output, data, torch::nn::functional::MSELossFuncOptions(torch::kNone));
 		mse = torch::mean(mse, 0);
-		// weighted, so the partially filled last batch does not count as a full one
 		alltargetmse = alltargetmse + mse*data.size(0);
 
 		lossAcc.add(loss.template item<float>(), data.size(0));

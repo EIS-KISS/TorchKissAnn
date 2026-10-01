@@ -52,6 +52,8 @@ torch::Tensor use(torch::Tensor input, std::shared_ptr<Net> net);
 
 torch::Tensor multiClassHits(const torch::Tensor& prediction, torch::Tensor targets, double thresh = 0.5);
 
+torch::Tensor simplicityAdjustedConfusion(torch::Tensor confusionMatrix, torch::Tensor acceptableHits);
+
 void exportRandomSamples(const torch::Tensor& data, const torch::Tensor& targets,
 						 const torch::Tensor& hits, const std::filesystem::path& outDir,
 						 bool outputProb);
@@ -72,11 +74,6 @@ inline torch::Tensor alignLabelWeights(torch::Tensor weights, int64_t outputSize
 	return torch::constant_pad_nd(weights, {0, outputSize - weights.size(1)});
 }
 
-/**
- * What NLLLoss divides by with reduction=mean: the sum of the class weights of the targets of this
- * batch, not its number of samples. Weighting a batch by it makes the epoch loss the weighted mean
- * over the whole dataset instead of a mean over batches.
- */
 inline double weightedNllBatchWeight(torch::Tensor classWeights, const torch::Tensor& targets)
 {
 	if(!classWeights.defined() || classWeights.numel() == 0)
@@ -113,8 +110,6 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 		torch::Tensor loss;
 
 		torch::Tensor acc;
-		// what this batch counts for in the epoch mean: its samples, or, for a loss that divides by
-		// something else than the sample count, exactly what that loss divided by
 		double batchWeight = prediction.size(0);
 
 		if(simplicityLoss && labelWeights.defined())
@@ -158,22 +153,34 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 }
 
 template <typename DataLoader>
-torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader)
+torch::Tensor confusion(std::shared_ptr<Net> network, DataLoader& loader, torch::Tensor* acceptableHits = nullptr)
 {
-	torch::Tensor confusionMatrix = torch::zeros({network->getOutputSize(), network->getOutputSize()}, tensorOptCpu<long>(false));
+	int64_t outputSize = network->getOutputSize();
+	torch::Tensor confusionMatrix = torch::zeros({outputSize, outputSize}, tensorOptCpu<long>(false));
+	if(acceptableHits)
+		*acceptableHits = torch::zeros({outputSize, outputSize}, tensorOptCpu<long>(false));
+
 	for(const auto& batch : loader)
 	{
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
-		torch::Tensor targets = splitTarget(batch.target.to(*offload_device), false).first.reshape({-1});
+		std::pair<torch::Tensor, torch::Tensor> label = splitTarget(batch.target.to(*offload_device), false);
+		torch::Tensor targets = label.first.reshape({-1});
 
 		torch::Tensor output = network->forward(data);
+		torch::Tensor predicted = output.argmax(1);
 
-		targets = unargmax(targets.to(torch::kInt64), network->getOutputSize()).to(torch::kCPU);
-		output = unargmax(output.argmax(1), network->getOutputSize()).to(torch::kCPU);
+		targets = unargmax(targets.to(torch::kInt64), outputSize).to(torch::kCPU);
+		output = unargmax(predicted, outputSize).to(torch::kCPU);
+
+		torch::Tensor acceptable;
+		if(acceptableHits && label.second.defined())
+			acceptable = alignLabelWeights(label.second, outputSize).gather(1, predicted.unsqueeze(1)).squeeze(1).to(torch::kCPU).gt(0);
 
 		for(long i = 0; i < output.size(0); ++i)
 		{
 			confusionMatrix[targets.select(0, i).argmax()] = confusionMatrix[targets.select(0, i).argmax()] + output.select(0, i);
+			if(acceptable.defined() && acceptable[i].template item<bool>())
+				(*acceptableHits)[targets.select(0, i).argmax()] = (*acceptableHits)[targets.select(0, i).argmax()] + output.select(0, i);
 		}
 	}
 	return confusionMatrix;
@@ -245,8 +252,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		if(labelWeights.defined())
 			aligned = alignLabelWeights(labelWeights, outputSize);
 
-		// what this batch counts for in the mean: its samples, or, for a loss that divides by
-		// something else than the sample count, exactly what that loss divided by
 		double batchWeight = output.size(0);
 
 		if(simplicityLoss && aligned.defined())
@@ -299,7 +304,6 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	bar.markAsCompleted();
 
 	classAcc = classAcc/classCount;
-	// the same percent style the per batch train log uses, on the mean over all samples
 	double lossMean = lossAcc.value()*100;
 	if(log)
 	{

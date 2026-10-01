@@ -489,8 +489,15 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	if(config.confustionMatrix)
 	{
-		torch::Tensor confustionMatrix = ann::classification::confusion(net, *dataLoader);
-		Log(Log::INFO)<<"Confusion matrix:";
+		torch::Tensor acceptableHits;
+		torch::Tensor confustionMatrix = ann::classification::confusion(net, *dataLoader, simplicity ? &acceptableHits : nullptr);
+		if(simplicity)
+		{
+			confustionMatrix = ann::classification::simplicityAdjustedConfusion(confustionMatrix, acceptableHits);
+			Log(Log::INFO)<<"Confusion matrix, adjusted for simplicity: a predicted circuit the spectra can not rule out counts on the identity line";
+		}
+		else
+			Log(Log::INFO)<<"Confusion matrix:";
 		for(int64_t i = 0; i < evalOutputSize; ++i)
 			Log(Log::INFO, false)<<labelName(netOutputs, dataset, i)<<", ";
 		Log(Log::INFO)<<'\n'<<tensorToString(confustionMatrix)<<'\n';

@@ -21,6 +21,8 @@
 
 #include "classification.h"
 
+#include <cassert>
+
 #include <kisstype/spectra.h>
 
 #include "log.h"
@@ -46,6 +48,16 @@ torch::Tensor ann::classification::multiClassHits(const torch::Tensor& predictio
 	}
 
 	return hits;
+}
+
+torch::Tensor ann::classification::simplicityAdjustedConfusion(torch::Tensor confusionMatrix, torch::Tensor acceptableHits)
+{
+	assert(confusionMatrix.dim() == 2 && confusionMatrix.size(0) == confusionMatrix.size(1));
+	assert(acceptableHits.sizes() == confusionMatrix.sizes());
+
+	torch::Tensor moved = acceptableHits * (1 - torch::eye(confusionMatrix.size(0), acceptableHits.options()));
+
+	return confusionMatrix - moved + torch::diag_embed(moved.sum(1));
 }
 
 torch::Tensor ann::classification::use(torch::Tensor input, std::shared_ptr<Net> net)
