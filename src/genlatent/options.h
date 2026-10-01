@@ -40,6 +40,7 @@ static struct argp_option options[] =
   {"output",		'o', "[PATH]",		0,	"Path where to save the latent csv"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"path to the network to test"},
+  {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
 
@@ -50,6 +51,7 @@ struct Config
 	std::filesystem::path outputFilename = "./latent.csv";
 	std::filesystem::path netpath;
 	bool noGpu = false;
+	bool noProgress = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -85,6 +87,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'n':
 			config->netpath = arg;
+			break;
+		case OPT_NO_PROGRESS:
+			config->noProgress = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

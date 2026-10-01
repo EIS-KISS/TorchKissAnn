@@ -358,6 +358,8 @@ int main(int argc, char** argv)
 	Log::level = Log::INFO;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	progress_bars = !config.noProgress;
+
 	choose_device(true);
 
 	std::shared_ptr<ann::Net> net;

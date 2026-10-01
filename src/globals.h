@@ -27,6 +27,9 @@ static constexpr int JOBS = 64;
 extern torch::DeviceType offload_type;
 extern torch::Device* offload_device;
 extern int batch_size;
+// Draw progress bars. Tools clear it with --no-progress; the Progress wrapper in
+// utils/progressbar.h is what consults it.
+extern bool progress_bars;
 
 typedef enum
 {

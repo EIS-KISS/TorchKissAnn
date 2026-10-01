@@ -31,9 +31,10 @@
 #include "globals.h"
 #include "../data/eisdataset.h"
 #include "log.h"
+#include "lossaccumulator.h"
 #include "tensoroptions.h"
 #include "trainlog.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 #include "r2score.h"
 
 namespace ann
@@ -54,18 +55,12 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
-	float lossAccumulator = 0;
+	LossAccumulator lossAcc;
 	network->train();
 
 	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Runing Eval: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size))
-	);
+	Progress bar("Runing Eval: ", data_size/(batch_size));
 
 	for(auto& batch : loader)
 	{
@@ -89,7 +84,7 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 		loss.backward();
 		optimizer.step();
 
-		lossAccumulator += loss.template item<float>();
+		lossAcc.add(loss.template item<float>(), data.size(0));
 
 		if(log && index % loginterval == 0)
 		{
@@ -101,7 +96,7 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 	}
 
 	if(meanTrainLoss)
-		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<double>::quiet_NaN();
+		*meanTrainLoss = lossAcc.value();
 
 	return 0;
 }
@@ -111,7 +106,7 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
-	float lossAccumulator = 0;
+	LossAccumulator lossAcc;
 	network->train();
 
 	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
@@ -120,13 +115,7 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 	torch::Tensor alltargets = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Runing Eval: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size))
-	);
+	Progress bar("Runing Eval: ", data_size/(batch_size));
 
 	torch::Tensor loss;
 
@@ -147,7 +136,7 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 		loss.backward();
 		optimizer.step();
 
-		lossAccumulator += loss.template item<float>();
+		lossAcc.add(loss.template item<float>(), data.size(0));
 
 		if(log && index % loginterval == 0)
 		{
@@ -159,7 +148,7 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 	}
 
 	if(meanTrainLoss)
-		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<double>::quiet_NaN();
+		*meanTrainLoss = lossAcc.value();
 
 	return 0;
 }
@@ -189,7 +178,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	network->eval();
 	torch::NoGradGuard noGrad;
 
-	float lossAccumulator = 0;
+	LossAccumulator lossAcc;
 
 	torch::Tensor alllatets = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alldatasettargets = torch::empty({0}, tensorOptDevice<float>(false));
@@ -197,15 +186,8 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	torch::Tensor allinputs = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Runing Eval: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size))
-	);
+	Progress bar("Runing Eval: ", data_size/(batch_size));
 
-	size_t index = 0;
 	for(const auto& batch : loader)
 	{
 		bar.tick();
@@ -222,18 +204,18 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 		torch::Tensor loss = lossFn(output, data);
 		torch::Tensor mse = torch::nn::functional::mse_loss(output, data, torch::nn::functional::MSELossFuncOptions(torch::kNone));
 		mse = torch::mean(mse, 0);
-		alltargetmse = alltargetmse + mse;
+		// weighted, so the partially filled last batch does not count as a full one
+		alltargetmse = alltargetmse + mse*data.size(0);
 
-		lossAccumulator += loss.template item<float>();
-		index++;
+		lossAcc.add(loss.template item<float>(), data.size(0));
 	}
 
-	bar.mark_as_completed();
+	bar.markAsCompleted();
 
-	alltargetmse = alltargetmse / index;
+	alltargetmse = alltargetmse / lossAcc.count();
 
 	TestReturn ret;
-	ret.loss = (lossAccumulator / index);
+	ret.loss = lossAcc.value();
 	ret.latents = alllatets.cpu();
 	ret.mse = alltargetmse.cpu();
 	ret.datasetTargets = alldatasettargets.cpu();

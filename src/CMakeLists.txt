@@ -16,6 +16,7 @@ set(SRC_FILES
 	utils/tensoroperators.cpp
 	utils/microtar.cpp
 	utils/modelscript.cpp
+	utils/progressbar.cpp
 	utils/ploting.cpp
 	utils/r2score.cpp
 	utils/save.cpp

@@ -30,7 +30,7 @@
 
 #include "log.h"
 #include "../eistotorch.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 
 using namespace eis;
 
@@ -56,15 +56,7 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 {
 	loadTar(path);
 
-	indicators::show_console_cursor(false);
-
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Loading classes: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(files->size()/100)
-	);
+	Progress bar("Loading classes: ", files->size()/100);
 
 	for(size_t i = 0; i < files->size(); ++i)
 	{
@@ -91,8 +83,7 @@ EisTarDataset::EisTarDataset(const std::filesystem::path& path)
 		classIndexes.push_back(index);
 	}
 
-	bar.mark_as_completed();
-	indicators::show_console_cursor(true);
+	bar.markAsCompleted();
 }
 
 torch::data::Example<torch::Tensor, torch::Tensor> EisTarDataset::getImpl(size_t index)

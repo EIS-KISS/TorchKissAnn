@@ -42,6 +42,7 @@ static struct argp_option options[] =
   {"images",		'i', "[DIRECTORY]",	0,	"directory to save class images into"},
   {"print-example",	'p', "[NUMBER]",	0,	"print number of examples from the dataset"},
   {"frequency-stats",'F', 0,			0,	"compute the per-spectra frequency range statistics; loads every spectra of the dataset"},
+  {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
 
@@ -55,6 +56,7 @@ struct Config
 	size_t datasetSize = 2e6;
 	size_t printExamples = 0;
 	bool frequencyStats = false;
+	bool noProgress = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -96,6 +98,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'F':
 			config->frequencyStats = true;
+			break;
+		case OPT_NO_PROGRESS:
+			config->noProgress = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

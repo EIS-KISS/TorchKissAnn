@@ -23,6 +23,13 @@
 #define DATASET_LIST "dir, tar, dirreg, tarreg"
 #define LOSS_LIST "mse, spectra, permutation, composite, simplicity"
 
+// argp key for the options shared by every tool. The per tool enums use 0x81 and 0x100 as their
+// bases, so this one starts above them.
+enum CommonArgpKey
+{
+	OPT_NO_PROGRESS = 0x200,
+};
+
 typedef enum
 {
 	DATASET_INVALID = -1,

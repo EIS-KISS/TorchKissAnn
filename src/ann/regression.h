@@ -40,6 +40,8 @@
 #include "net.h"
 #include "globals.h"
 #include "log.h"
+#include "lossaccumulator.h"
+#include "progressbar.h"
 #include "trainlog.h"
 #include "loss/eisdistanceloss.h"
 #include "loss/permutationmsseloss.h"
@@ -79,7 +81,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	size_t index = 0;
 	network->train();
 
-	float lossAccumulator = 0;
+	LossAccumulator lossAcc;
 	torch::Tensor distanceAccumulator = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kFloat32).device(*offload_device));
 
 	int64_t loginterval = data_size/10000 ?: (data_size/batch_size-1)/10 ?: 1;
@@ -142,7 +144,7 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 		loss.backward();
 		optimizer.step();
 
-		lossAccumulator += loss.template item<float>();
+		lossAcc.add(loss.template item<float>(), targets.size(0));
 
 		if(log && index % loginterval == 0)
 		{
@@ -158,13 +160,13 @@ int trainImpl(std::shared_ptr<Net> network, DataLoader& loader,
 	}
 
 	if(log)
-		log->logTrainLoss(epoch, data_size, lossAccumulator/index, 0, data_size);
+		log->logTrainLoss(epoch, data_size, lossAcc.value(), 0, data_size);
 
 	if(finalLoss)
-		*finalLoss = loss.item().toDouble();
+		*finalLoss = lossAcc.value();
 
 	if(meanTrainLoss)
-		*meanTrainLoss = index ? (lossAccumulator/index) : std::numeric_limits<float>::quiet_NaN();
+		*meanTrainLoss = lossAcc.value();
 
 	return 0;
 }
@@ -198,21 +200,14 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 	network->eval();
 	torch::NoGradGuard noGrad;
 
-	float lossAccumulator = 0;
+	LossAccumulator lossAcc;
 
 	torch::Tensor allpredictions = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargets = torch::empty({0}, tensorOptDevice<float>(false));
 	torch::Tensor alltargetmse = torch::zeros({network->getOutputSize()}, tensorOptDevice<float>(false));
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Runing Eval: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size))
-	);
+	Progress bar("Runing Eval: ", data_size/(batch_size));
 
-	size_t index = 0;
 	for(const auto& batch : loader)
 	{
 		bar.tick();
@@ -227,15 +222,16 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 		torch::Tensor loss = lossFn(output, targets);
 		torch::Tensor mse = torch::nn::functional::mse_loss(output, targets, torch::nn::functional::MSELossFuncOptions(torch::kNone));
 		mse = torch::mean(mse, 0);
-		alltargetmse = alltargetmse + mse;
+		// weighted, so the partially filled last batch does not count as a full one
+		double batchCount = targets.size(0);
+		alltargetmse = alltargetmse + mse*batchCount;
 
-		lossAccumulator += loss.template item<float>();
-		index++;
+		lossAcc.add(loss.template item<float>(), batchCount);
 	}
 
-	bar.mark_as_completed();
+	bar.markAsCompleted();
 
-	alltargetmse = alltargetmse / index;
+	alltargetmse = alltargetmse / lossAcc.count();
 
 	// still in the normalized space the network works in
 	torch::Tensor permutationMse;
@@ -244,10 +240,10 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, LossFn& lossFn
 
 	torch::Tensor r2scores = r2score(allpredictions, alltargets);
 	if(log)
-		log->logTestLoss(epoch, data_size, (lossAccumulator / index), 0, data_size);
+		log->logTestLoss(epoch, data_size, lossAcc.value(), 0, data_size);
 
 	TestReturn ret;
-	ret.loss = (lossAccumulator / index);
+	ret.loss = lossAcc.value();
 	// the r2 and mse above are computed in the normalized space the network works in, the predictions and targets handed out here are physical values again
 	ret.predictions = network->denormalizeOutput(allpredictions).cpu();
 	ret.targets = network->denormalizeOutput(alltargets).cpu();

@@ -23,7 +23,7 @@
 #include "data/eisdataset.h"
 #include <vector>
 
-#include "indicators.hpp"
+#include "progressbar.h"
 
 void DirDataset::loadDir(const std::filesystem::path& path)
 {
@@ -33,12 +33,7 @@ void DirDataset::loadDir(const std::filesystem::path& path)
 	if(!std::filesystem::is_directory(directoryPath))
 		throw dataset_error(directoryPath.string() + " is not a valid directory");
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Loading " + path.string() + ": "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::MaxProgress(files->size())
-	);
+	Progress bar("Loading " + path.string() + ": ", files->size());
 
 	for(const std::filesystem::directory_entry& dirent : std::filesystem::directory_iterator{directoryPath})
 	{

@@ -27,7 +27,7 @@
 #include "net.h"
 #include "tensoroptions.h"
 #include "tensoroperators.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 #include "randomgen.h"
 
 struct DropDesc
@@ -297,15 +297,7 @@ std::pair<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::inputRanges()
 	options = options.batch_size(batch_size).workers(16);
 	auto dataLoader = torch::data::make_data_loader(this->map(torch::data::transforms::Stack<>()), options);
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Computing dataset ranges: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(size().value()/batch_size)
-	);
-
-	indicators::show_console_cursor(false);
+	Progress bar("Computing dataset ranges: ", size().value()/batch_size);
 
 	for(const auto& batch : *dataLoader)
 	{
@@ -316,8 +308,7 @@ std::pair<torch::Tensor, torch::Tensor> EisDataset<DataSelf>::inputRanges()
 		min = torch::minimum(std::get<0>(inputs.min(0)), min);
 	}
 
-	bar.mark_as_completed();
-	indicators::show_console_cursor(true);
+	bar.markAsCompleted();
 	return {max, min};
 }
 

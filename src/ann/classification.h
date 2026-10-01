@@ -35,10 +35,11 @@
 #include "../data/loaders/eisspectradataset.h"
 #include "loss/simplicitytolerantloss.h"
 #include "log.h"
+#include "lossaccumulator.h"
 #include "tensoroptions.h"
 #include "trainlog.h"
 #include "tensoroperators.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 #include <ATen/autocast_mode.h>
 
 namespace ann
@@ -71,6 +72,18 @@ inline torch::Tensor alignLabelWeights(torch::Tensor weights, int64_t outputSize
 	return torch::constant_pad_nd(weights, {0, outputSize - weights.size(1)});
 }
 
+/**
+ * What NLLLoss divides by with reduction=mean: the sum of the class weights of the targets of this
+ * batch, not its number of samples. Weighting a batch by it makes the epoch loss the weighted mean
+ * over the whole dataset instead of a mean over batches.
+ */
+inline double weightedNllBatchWeight(torch::Tensor classWeights, const torch::Tensor& targets)
+{
+	if(!classWeights.defined() || classWeights.numel() == 0)
+		return targets.numel();
+	return classWeights.gather(0, targets.reshape({-1}).to(torch::kInt64)).sum().to(torch::kFloat64).template item<double>();
+}
+
 template <typename DataLoader>
 float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::Optimizer& optimizer,
 		   size_t epoch, size_t data_size, torch::Tensor classWeights, bool isMulticlass = false, TrainLog* log = nullptr,
@@ -79,7 +92,7 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 	size_t index = 0;
 	network->train();
 	float accF = 0;
-	float lossSum = 0;
+	LossAccumulator lossAcc;
 
 	torch::nn::BCEWithLogitsLoss lossBCE(torch::nn::BCEWithLogitsLossOptions().reduction(torch::kMean).pos_weight(classWeights));
 	torch::nn::NLLLoss lossNll(torch::nn::NLLLossOptions().reduction(torch::kMean).weight(classWeights));
@@ -100,17 +113,23 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 		torch::Tensor loss;
 
 		torch::Tensor acc;
+		// what this batch counts for in the epoch mean: its samples, or, for a loss that divides by
+		// something else than the sample count, exactly what that loss divided by
+		double batchWeight = prediction.size(0);
 
 		if(simplicityLoss && labelWeights.defined())
 		{
-			loss = (*simplicityLoss)(prediction, alignLabelWeights(labelWeights, prediction.size(1)));
+			torch::Tensor aligned = alignLabelWeights(labelWeights, prediction.size(1));
+			loss = (*simplicityLoss)(prediction, aligned);
 			acc = prediction.argmax(1).eq(targets.reshape({-1})).sum().to(torch::kCPU);
+			batchWeight = aligned.sum(1).gt(0).sum().to(torch::kFloat64).template item<double>();
 		}
 		else if(!isMulticlass)
 		{
 			targets = targets.reshape({-1});
 			loss = lossNll->forward(prediction, targets.to(torch::kInt64));
 			acc = prediction.argmax(1).eq(targets).sum().to(torch::kCPU);
+			batchWeight = weightedNllBatchWeight(classWeights, targets);
 		}
 		else
 		{
@@ -120,7 +139,7 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 			acc = multiClassHits(torch::sigmoid(prediction), targets, 0.25).sum().to(torch::kCPU);
 		}
 		assert(!std::isnan(loss.template item<float>()));
-		lossSum += loss.template item<float>();
+		lossAcc.add(loss.template item<float>(), batchWeight);
 
 		optimizer.zero_grad();
 		loss.backward();
@@ -135,7 +154,7 @@ float trainImpl(std::shared_ptr<Net> network, DataLoader& loader, torch::optim::
 				log->logTrainLoss(epoch, end, loss.template item<float>()*100, accF/end, data_size);
 		}
 	}
-	return index ? lossSum/static_cast<float>(index) : 0.0f;
+	return static_cast<float>(lossAcc.value());
 }
 
 template <typename DataLoader>
@@ -187,7 +206,8 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 {
 	network->eval();
 	torch::NoGradGuard no_grad;
-	float Loss = 0, Acc = 0;
+	LossAccumulator lossAcc;
+	float Acc = 0;
 	double Acceptable = 0;
 
 	torch::Tensor classAcc = torch::zeros({outputSize}, torch::TensorOptions().dtype(torch::kInt64).device(*offload_device));
@@ -202,13 +222,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 
 	std::cout<<"Starting test cycle\n";
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Runing Eval: "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true),
-		indicators::option::MaxProgress(data_size/(batch_size))
-	);
+	Progress bar("Runing Eval: ", data_size/(batch_size));
 	for(const auto& batch : loader)
 	{
 		bar.tick();
@@ -227,22 +241,34 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 		// the winner has to be read off before the branches below turn output into something else
 		torch::Tensor predicted = output.argmax(1);
 
-		if(simplicityLoss && labelWeights.defined())
-			loss = (*simplicityLoss)(output, alignLabelWeights(labelWeights, outputSize));
+		torch::Tensor aligned;
+		if(labelWeights.defined())
+			aligned = alignLabelWeights(labelWeights, outputSize);
+
+		// what this batch counts for in the mean: its samples, or, for a loss that divides by
+		// something else than the sample count, exactly what that loss divided by
+		double batchWeight = output.size(0);
+
+		if(simplicityLoss && aligned.defined())
+		{
+			loss = (*simplicityLoss)(output, aligned);
+			batchWeight = aligned.sum(1).gt(0).sum().to(torch::kFloat64).template item<double>();
+		}
 		else if(!isMulticlass)
+		{
 			loss = lossNll->forward(output, targets.reshape({-1}).to(torch::kInt64));
+			batchWeight = weightedNllBatchWeight(classWeights, targets);
+		}
 		else
 		{
 			targets = targets.reshape({output.size(0), output.size(1)});
 			loss = lossBCE->forward(output, targets.to(torch::kFloat32));
 		}
 		assert(!std::isnan(loss.template item<float>()));
+		lossAcc.add(loss.template item<float>(), batchWeight);
 
-		if(labelWeights.defined())
-		{
-			torch::Tensor aligned = alignLabelWeights(labelWeights, outputSize);
+		if(aligned.defined())
 			Acceptable += (aligned.gather(1, predicted.unsqueeze(1)) > 0).sum().to(torch::kFloat64).template item<double>();
-		}
 
 		if(!isMulticlass)
 		{
@@ -267,16 +293,17 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 			histograms[targets.select(0, i).argmax()] = histograms[targets.select(0, i).argmax()] + output.select(0, i);
 		}
 
-		Loss += loss.template item<float>();
 		Acc += acc.template item<float>();
 	}
 
-	bar.mark_as_completed();
+	bar.markAsCompleted();
 
 	classAcc = classAcc/classCount;
+	// the same percent style the per batch train log uses, on the mean over all samples
+	double lossMean = lossAcc.value()*100;
 	if(log)
 	{
-		log->logTestLoss(epoch, data_size, (Loss / data_size)*100, Acc/data_size, data_size);
+		log->logTestLoss(epoch, data_size, lossMean, Acc/data_size, data_size);
 		for(int i = 0; i < histograms.size(0); ++i)
 			log->logTensor("class_predictions", histograms.select(0, i));
 	}
@@ -286,7 +313,7 @@ TestReturn test(std::shared_ptr<Net> network, DataLoader& loader, size_t data_si
 	ret.predictions = allpredictions.cpu();
 	ret.histograms = histograms.cpu();
 	ret.acc = classAcc.cpu();
-	ret.loss = (Loss / data_size)*100;
+	ret.loss = lossMean;
 	ret.accOverall = Acc/data_size;
 	ret.simplicityAccOverall = data_size > 0 ? Acceptable/static_cast<double>(data_size) : 0;
 

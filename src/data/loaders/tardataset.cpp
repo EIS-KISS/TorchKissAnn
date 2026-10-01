@@ -21,7 +21,7 @@
 
 #include "tardataset.h"
 #include "data/eisdataset.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 #include "microtar.h"
 #include "tokenize.h"
 #include <filesystem>
@@ -70,14 +70,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 
 	mtar_header_t header;
 
-	indicators::BlockProgressBar bar(
-		indicators::option::BarWidth(50),
-		indicators::option::PrefixText("Loading " + path.string() + ": "),
-		indicators::option::ShowElapsedTime(true),
-		indicators::option::ShowRemainingTime(true)
-	);
-
-	indicators::show_console_cursor(false);
+	Progress bar("Loading " + path.string() + ": ");
 
 	double tarSize = static_cast<double>(std::filesystem::file_size(path));
 	size_t progress = 0;
@@ -87,7 +80,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 		if(static_cast<size_t>((tar.pos/tarSize)*100) > progress)
 		{
 			progress = static_cast<size_t>((tar.pos/tarSize)*100);
-			bar.set_progress(progress);
+			bar.setProgress(progress);
 		}
 		if(header.type == MTAR_TREG)
 		{
@@ -98,8 +91,7 @@ void TarDataset::loadTar(const std::filesystem::path& path)
 		mtar_next(&tar);
 	}
 
-	bar.mark_as_completed();
-	indicators::show_console_cursor(true);
+	bar.markAsCompleted();
 }
 
 eis::Spectra TarDataset::loadSpectraHeaderAtCurrentPos(size_t size)

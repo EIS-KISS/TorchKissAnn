@@ -45,6 +45,7 @@ static struct argp_option options[] =
   {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: " PREDICTION_PRED_MODE_LIST},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
+  {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
 
@@ -73,6 +74,7 @@ struct Config
 	PredictionMode mode = PRED_MODE_ANN;
 	FilterMode filterMode = FILTER_NONE;
 	FileType fileType = FILE_TYPE_CSV;
+	bool noProgress = false;
 
 };
 
@@ -198,6 +200,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'f':
 			config->filterFileName.assign(arg);
+			break;
+		case OPT_NO_PROGRESS:
+			config->noProgress = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

@@ -94,6 +94,7 @@ static struct argp_option options[] =
   {"canonical-augment-window",	OPT_CANONICAL_AUGMENT_WINDOW,	"[NUMBER,NUMBER,...]", 0,	"comma separated list of minimum kept fractions of the measured points for the window (crop) augmentation to try, 1 disables it. Only meaningful with a canonical grid. Default: 1"},
   {"simplicity-threshold",	OPT_SIMPLICITY_THRESHOLD, "[FRACTION]", 0,	"With -s simplicity: relative change of the impedance below which removing an element of the generating circuit counts as invisible, so that the simpler circuit left behind is an equally correct answer. Default 0.01. Fixed for the whole search, not swept: it defines which labels the trials are scored against, so two thresholds are two different tasks whose losses can not be ranked against each other"},
   {"simplicity-preference",	OPT_SIMPLICITY_PREFERENCE, "[NUMBER]", 0,	"With -s simplicity: extra weight on the simplest accepted class, default 1. 0 leaves the network indifferent between the generating circuit and the simpler ones that describe the same spectra, larger values push harder towards always naming the simplest circuit that still fits. Fixed for the whole search like the threshold"},
+  {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
 
@@ -196,6 +197,7 @@ struct Config
 	TuneMetric metric = METRIC_LAST;
 	bool noGpu = false;
 	bool noWeights = false;
+	bool noProgress = false;
 	// Canonical frequency grid, identical for every trial. The two augmentation lists below only
 	// have an effect when it is enabled, because both operate on the resampled points.
 	bool canonical = false;
@@ -387,6 +389,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_SIMPLICITY_PREFERENCE:
 			config->simplicityPreference = std::stod(std::string(arg));
+			break;
+		case OPT_NO_PROGRESS:
+			config->noProgress = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

@@ -50,6 +50,7 @@
 #include "data/loaders/eisspectradataset.h"
 #include "data/canonicalgrid.h"
 #include "options.h"
+#include "globals.h"
 #include "loss/circuitsimplicity.h"
 #include "trainlog.h"
 #include "tokenize.h"
@@ -609,6 +610,8 @@ int main(int argc, char** argv)
 
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	progress_bars = !config.noProgress;
 
 	// Canonical mode is on exactly when both grid edges were supplied (validated in check_options).
 	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);

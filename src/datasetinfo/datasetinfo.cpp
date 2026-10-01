@@ -53,9 +53,10 @@
 #include "data/eistotorch.h"
 #include "data/classextractordataset.h"
 #include "options.h"
+#include "globals.h"
 #include "randomgen.h"
 #include "tensoroperators.h"
-#include "indicators.hpp"
+#include "progressbar.h"
 
 // Demangle a C++ type name, falling back to the mangled name when demangling fails.
 static std::string demangle(const char* mangled)
@@ -229,13 +230,7 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		double ymin = std::numeric_limits<double>::max();
 		double ymax = std::numeric_limits<double>::min();
 
-		indicators::BlockProgressBar bar(
-			indicators::option::BarWidth(50),
-			indicators::option::PrefixText("Processing spectra: "),
-			indicators::option::ShowElapsedTime(true),
-			indicators::option::ShowRemainingTime(true),
-			indicators::option::MaxProgress(ids.size())
-		);
+		Progress bar("Processing spectra: ", ids.size());
 
 		for(auto j : ids)
 		{
@@ -273,7 +268,7 @@ bool saveImages(EisDataset<DataSetType>* dataset, const std::filesystem::path& o
 		sciplot::Canvas canvas({{fig}});
 		canvas.size(1280, 768);
 		canvas.save(outDir/(dataset->outputName(i)+ ".png"));
-		bar.mark_as_completed();
+		bar.markAsCompleted();
 	}
 	return true;
 }
@@ -297,6 +292,8 @@ int main(int argc, char** argv)
 
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
+
+	progress_bars = !config.noProgress;
 
 	if(config.datasetMode == DATASET_INVALID)
 	{
