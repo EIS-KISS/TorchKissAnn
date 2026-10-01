@@ -22,11 +22,16 @@
 #include "circuitsimplicity.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstring>
+#include <eisgenerator/componant/componant.h>
 #include <eisgenerator/componant/paralellseriel.h>
 #include <eisgenerator/log.h>
 #include <eisgenerator/model.h>
+#include <limits>
 #include <numeric>
 #include <set>
 #include <stdexcept>
@@ -44,6 +49,11 @@ struct Node
 	std::vector<Node> children;
 	uint32_t id = 0;
 	bool deletable = false;
+	/// The component this node mirrors, only set on leaves.
+	eis::Componant* componant = nullptr;
+	/// The impedance of this node at every frequency of the analysis grid, filled in by
+	/// cacheImpedance() on the full tree. A reduction reuses it for every subtree it leaves intact.
+	std::vector<std::complex<fvalue>> z;
 };
 
 std::string stripParameters(const std::string& in)
@@ -135,6 +145,7 @@ Node reduce(const Node& in, const std::set<uint32_t>& removed)
 	out.kind = in.kind;
 	out.leaf = in.leaf;
 	out.id = in.id;
+	out.componant = in.componant;
 
 	for(const Node& child : in.children)
 	{
@@ -145,36 +156,136 @@ Node reduce(const Node& in, const std::set<uint32_t>& removed)
 	return out;
 }
 
-Node buildNode(eis::Componant* componant, const std::vector<double>& omegas, double threshold, uint32_t& nextId)
+Node buildNode(eis::Componant* componant, uint32_t& nextId)
 {
 	Node node;
 	node.id = nextId++;
 
 	std::vector<eis::Componant*>* kids = childrenOf(componant);
-	eis::ParallelSerial* combiner = dynamic_cast<eis::ParallelSerial*>(componant);
-	if(kids == nullptr || combiner == nullptr)
+	if(kids == nullptr || dynamic_cast<eis::ParallelSerial*>(componant) == nullptr)
 	{
 		node.leaf = componant->getComponantString(true);
+		node.componant = componant;
 		return node;
 	}
 
 	node.kind = dynamic_cast<eis::Serial*>(componant) != nullptr ? 'S' : 'P';
 
-	std::vector<double> worst(kids->size(), 0.0);
-	for(double omega : omegas)
+	for(eis::Componant* kid : *kids)
 	{
-		std::vector<fvalue> ratio = combiner->contributionRatio(omega);
-		for(size_t i = 0; i < ratio.size() && i < worst.size(); ++i)
-			worst[i] = std::max(worst[i], static_cast<double>(ratio[i]));
-	}
-
-	for(size_t i = 0; i < kids->size(); ++i)
-	{
-		Node child = buildNode((*kids)[i], omegas, threshold, nextId);
-		child.deletable = kids->size() > 1 && i < worst.size() && worst[i] < threshold;
+		Node child = buildNode(kid, nextId);
+		// a group of one is that element, so only a group with siblings can lose a child and stay a
+		// circuit; whether losing it is allowed is the impedance test below, not a per element gate
+		child.deletable = kids->size() > 1;
 		node.children.push_back(std::move(child));
 	}
 	return node;
+}
+
+std::complex<fvalue> reciprocal(std::complex<fvalue> z)
+{
+	fvalue magnitude2 = std::norm(z);
+	if(magnitude2 == 0)
+		return std::complex<fvalue>(std::numeric_limits<fvalue>::infinity(), 0);
+	return std::complex<fvalue>(z.real()/magnitude2, -z.imag()/magnitude2);
+}
+
+/**
+ * The impedance of node at every grid frequency, bottom up.
+ *
+ * Every node is evaluated exactly once, so this costs the same as a single sweep of the whole
+ * circuit and gives the reductions below their untouched subtrees for free.
+ */
+void cacheImpedance(Node& node, const std::vector<double>& omegas)
+{
+	node.z.assign(omegas.size(), std::complex<fvalue>(0, 0));
+
+	if(node.kind == 0)
+	{
+		for(size_t i = 0; i < omegas.size(); ++i)
+			node.z[i] = node.componant->execute(omegas[i]);
+		return;
+	}
+
+	for(Node& child : node.children)
+		cacheImpedance(child, omegas);
+
+	for(size_t i = 0; i < omegas.size(); ++i)
+	{
+		std::complex<fvalue> acc(0, 0);
+		for(const Node& child : node.children)
+			acc += (node.kind == 'S') ? child.z[i] : reciprocal(child.z[i]);
+		node.z[i] = (node.kind == 'S') ? acc : reciprocal(acc);
+	}
+}
+
+/// True when node or anything below it is in removed; every group on the way is marked dirty.
+bool markDirty(const Node& node, const std::set<uint32_t>& removed, std::set<uint32_t>& dirty)
+{
+	if(node.kind == 0)
+		return removed.count(node.id) != 0;
+
+	bool affected = false;
+	for(const Node& child : node.children)
+		if(markDirty(child, removed, dirty))
+			affected = true;
+
+	if(affected)
+		dirty.insert(node.id);
+	return affected || removed.count(node.id) != 0;
+}
+
+/// The impedance of the tree with removed taken out at grid index i, or false when node itself is
+/// gone. Groups the removal did not touch come straight out of the cache.
+bool reducedImpedance(const Node& node, const std::set<uint32_t>& removed, const std::set<uint32_t>& dirty,
+		size_t i, std::complex<fvalue>& out)
+{
+	if(removed.count(node.id) != 0)
+		return false;
+	if(node.kind == 0 || dirty.count(node.id) == 0)
+	{
+		out = node.z[i];
+		return true;
+	}
+
+	std::complex<fvalue> acc(0, 0);
+	bool any = false;
+	for(const Node& child : node.children)
+	{
+		std::complex<fvalue> kid(0, 0);
+		if(not reducedImpedance(child, removed, dirty, i, kid))
+			continue;
+		any = true;
+		acc += (node.kind == 'S') ? kid : reciprocal(kid);
+	}
+
+	out = (node.kind == 'S') ? acc : reciprocal(acc);
+	return any;
+}
+
+/**
+ * The worst relative change of |Z| the removal causes anywhere on the grid.
+ *
+ * This is the whole criterion: a reduction whose impedance stays within the threshold of the
+ * generating circuit is one the spectra can not tell apart from it, however many elements it dropped.
+ */
+fvalue relativeDeviation(const Node& root, const std::set<uint32_t>& removed, const std::set<uint32_t>& dirty,
+		const std::vector<double>& omegas)
+{
+	fvalue worst = 0;
+	for(size_t i = 0; i < omegas.size(); ++i)
+	{
+		std::complex<fvalue> reduced(0, 0);
+		if(not reducedImpedance(root, removed, dirty, i, reduced))
+			return std::numeric_limits<fvalue>::infinity();
+
+		fvalue full = std::abs(root.z[i]);
+		if(not std::isfinite(full) || full == 0)
+			continue;
+
+		worst = std::max(worst, std::abs(reduced - root.z[i])/full);
+	}
+	return worst;
 }
 
 void collectDeletable(const Node& node, std::vector<uint32_t>& ids)
@@ -231,7 +342,7 @@ std::string circuit::canonicalKey(const std::string& modelStr)
 		if(!model.isReady())
 			return std::string();
 		uint32_t nextId = 0;
-		return keyOf(buildNode(model.getModelRoot(), std::vector<double>(), 0.0, nextId));
+		return keyOf(buildNode(model.getModelRoot(), nextId));
 	}
 	catch(const std::exception& ex)
 	{
@@ -240,11 +351,44 @@ std::string circuit::canonicalKey(const std::string& modelStr)
 	}
 }
 
+bool circuit::modelCarriesParameterValues(const std::string& modelStr)
+{
+	int depth = 0;
+
+	for(size_t i = 0; i < modelStr.size(); ++i)
+	{
+		char c = modelStr[i];
+		if(c == '{' || c == '[' || c == '<')
+		{
+			++depth;
+			continue;
+		}
+		if(c == '}' || c == ']' || c == '>')
+		{
+			--depth;
+			continue;
+		}
+		if(depth > 0 || !eis::Componant::isValidComponantChar(c))
+			continue;
+
+		size_t next = i+1;
+		while(next < modelStr.size() && std::isspace(static_cast<unsigned char>(modelStr[next])))
+			++next;
+		if(next >= modelStr.size() || modelStr[next] != '{')
+			return false;
+	}
+	return true;
+}
+
 std::vector<std::string> circuit::reducibleCircuitKeys(const std::string& generatingModel, const std::vector<double>& omegas,
 		const SimplicityOptions& options)
 {
 	std::vector<std::string> out;
 	if(generatingModel.empty() || omegas.empty())
+		return out;
+	// without the values there is nothing to compare impedances against, and the sweep range
+	// eisgenerator substitutes would rate the circuit by numbers nobody measured
+	if(!circuit::modelCarriesParameterValues(generatingModel))
 		return out;
 
 	EisLogMute mute;
@@ -257,7 +401,8 @@ std::vector<std::string> circuit::reducibleCircuitKeys(const std::string& genera
 		model.resolveSteps(0);
 
 		uint32_t nextId = 0;
-		Node root = buildNode(model.getModelRoot(), omegas, options.contributionThreshold, nextId);
+		Node root = buildNode(model.getModelRoot(), nextId);
+		cacheImpedance(root, omegas);
 
 		const std::string baseKey = keyOf(root);
 		const size_t baseElements = leafCount(root);
@@ -286,11 +431,19 @@ std::vector<std::string> circuit::reducibleCircuitKeys(const std::string& genera
 				for(size_t pick : combination)
 					removed.insert(deletable[pick]);
 
+				// the key is cheap and the impedance sweep is not, so a topology that is no simpler
+				// than the original never reaches the deviation test
 				Node reduced = reduce(root, removed);
 				const std::string key = keyOf(reduced);
 				const size_t elements = leafCount(reduced);
 				if(key.empty() || key == baseKey || elements >= baseElements || seen.count(key) != 0)
 					continue;
+
+				std::set<uint32_t> dirty;
+				markDirty(root, removed, dirty);
+				if(relativeDeviation(root, removed, dirty, omegas) >= options.contributionThreshold)
+					continue;
+
 				seen.insert(key);
 				found.emplace_back(key, elements);
 			} while(nextCombination(combination, deletable.size()));
@@ -423,6 +576,18 @@ std::vector<std::vector<float>> circuit::computeLabelWeights(const std::vector<s
 	if(omegas.empty())
 		Log(Log::WARN)<<"No frequency axis for the simplicity analysis, every sample keeps its generating circuit as its only label";
 
+	// The criterion compares impedances, so a header that spells the circuit without its values can
+	// not be judged at all: eisgenerator substitutes the start of its default sweep range for every
+	// bare element, and every spectra of a class would then be scored against the same made up
+	// circuit, giving a number that has nothing to do with the measurement.
+	for(const std::string& model : generatingModels)
+	{
+		if(model.empty() || modelCarriesParameterValues(model) || circuit::canonicalKey(model).empty())
+			continue;
+		Log(Log::ERROR)<<"the simplicity loss compares the impedance of the generating circuit with that of its reductions, which needs the parameter values, but a spectra carries the bare topology "<<model<<" in its header";
+		return out;
+	}
+
 	out.reserve(generatingModels.size());
 	size_t ambiguous = 0;
 	for(size_t i = 0; i < generatingModels.size(); ++i)
@@ -434,8 +599,8 @@ std::vector<std::vector<float>> circuit::computeLabelWeights(const std::vector<s
 	}
 
 	Log(Log::INFO)<<"Simplicity labels: "<<ambiguous<<" of "<<out.size()<<" spectra are described by more than one of the "
-		<<labels.size()<<" classes, accepting an element contribution below "<<options.contributionThreshold
-		<<" over "<<omegas.size()<<" frequencies, simplest accepted class weighted +"
+		<<labels.size()<<" classes, accepting any reduction that moves |Z| by less than "<<options.contributionThreshold
+		<<" of the generating circuit everywhere on a grid of "<<omegas.size()<<" frequencies, simplest accepted class weighted +"
 		<<simplicityPreference;
 
 	return out;

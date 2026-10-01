@@ -55,19 +55,38 @@ namespace circuit
 struct SimplicityOptions
 {
 	/**
-	 * Relative change of |Z| below which removing an element counts as invisible over the measured
-	 * band. The same quantity eis::Model::allElementsContribute() gates on, and with the same
-	 * default: an element that moves the impedance by less than 1% somewhere in the spectra is one
-	 * the network can not be expected to see.
+	 * Relative change of |Z| below which a reduced circuit still describes the generating circuit's
+	 * spectra over the measured band: max over omega of |Z_reduced(omega) - Z_full(omega)| /
+	 * |Z_full(omega)|. A circuit whose worst deviation stays under this is one the spectra can not
+	 * rule out, so the network should not be blamed for naming it.
+	 *
+	 * The quantity is a ratio of two impedances of the same circuit and therefore bounded by the
+	 * circuit itself, not by the threshold: an element that dominates the spectra somewhere drives it
+	 * towards 1. Values above 1 accept every reduction the topology allows, which is not a useful
+	 * score, so keep this well inside (0,1).
 	 */
 	double contributionThreshold = 0.01;
 	/// How many elements may be missing at once. Two covers a circuit that has grown both a stray
 	/// series resistance and a stray time constant; more is combinatorics for its own sake.
 	size_t maxDeletions = 2;
-	/// Ceiling on the number of removal combinations examined per sample, so a circuit whose
-	/// elements are all marginal cannot turn the label pass into a search.
+	/// Ceiling on the number of removal combinations examined per sample, so a circuit with many
+	/// elements cannot turn the label pass into a search.
 	size_t maxCandidates = 64;
 };
+
+/**
+ * Whether every element of a model string carries an explicit {parameter} block.
+ *
+ * The contribution test below compares impedances, so it needs the values, not just the topology.
+ * eisgenerator silently substitutes a sweep range for a bare element and resolveSteps(0) then pins
+ * it to the start of that range, which turns a header spelling like "rp-p" into an arbitrary circuit
+ * whose element contributions mean nothing. Simulated datasets write the values they sampled;
+ * datasets assembled from measurements usually carry the topology alone.
+ *
+ * Returns true for the empty string, which is not a circuit at all and is the caller's "no circuit"
+ * case, and for anything that is not a parseable circuit, which the caller rejects on its own.
+ */
+bool modelCarriesParameterValues(const std::string& modelStr);
 
 /**
  * Topology of a circuit, ignoring the parameter values and the way the string happens to be
@@ -82,14 +101,15 @@ struct SimplicityOptions
 std::string canonicalKey(const std::string& modelStr);
 
 /**
- * The canonical keys of the circuits obtainable from a generating circuit by removing elements that
- * do not contribute more than options.contributionThreshold at any frequency in omegas, fewest
- * elements first.
+ * The canonical keys of the circuits obtainable from a generating circuit by removing up to
+ * options.maxDeletions elements without changing its impedance by more than
+ * options.contributionThreshold at any frequency in omegas, fewest elements first.
  *
- * The generating circuit must carry its parameter values, as the model string in an EISF header
- * does; a bare "r-rc-rc" says nothing about which element is negligible. Circuits that can not be
- * parsed, that leave nothing behind and that are not actually simpler than the original are left
- * out. So is the original itself.
+ * The generating circuit must carry its parameter values, as the model string in a simulated
+ * dataset's EISF header does; a bare "r-rc-rc" says nothing about which element is negligible and
+ * modelCarriesParameterValues() rejects it. Circuits that can not be parsed, that leave nothing
+ * behind and that are not actually simpler than the original are left out. So is the original
+ * itself.
  */
 std::vector<std::string> reducibleCircuitKeys(const std::string& generatingModel, const std::vector<double>& omegas,
 		const SimplicityOptions& options = SimplicityOptions());

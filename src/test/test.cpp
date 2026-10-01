@@ -103,13 +103,14 @@ static void applySpectraNormFromNet(const std::shared_ptr<ann::Net>& net, T& dat
 // Turn on the set valued labels of -s simplicity. The band over which an element has to stay out of
 // the impedance is the one the network is shown, so this needs the dataset after its canonical grid
 // has been rebuilt from the network, and it has to happen before the data loader copies the dataset.
-// Returns false, leaving the plain labels in place, when the dataset cannot describe them.
+// Returns false after logging why when the dataset cannot carry them; scoring with the plain labels
+// instead would report an Acceptable Acc that is just the ordinary accuracy, so the caller must stop.
 template <typename T>
 static bool enableSimplicityLabels(T& dataset, const Config& config)
 {
 	if(dataset.isMulticlass())
 	{
-		Log(Log::WARN)<<"-s simplicity needs one circuit per class, a multiclass dataset can not carry a set of acceptable circuits, scoring with the plain labels";
+		Log(Log::ERROR)<<"-s simplicity needs one circuit per class, a multiclass dataset can not carry a set of acceptable circuits";
 		return false;
 	}
 
@@ -125,7 +126,7 @@ static bool enableSimplicityLabels(T& dataset, const Config& config)
 	dataset.enableSimplicityLabels(omegas, config.simplicityPreference, config.simplicityThreshold);
 	if(not dataset.hasSimplicityLabels())
 	{
-		Log(Log::WARN)<<"-s simplicity needs the generating circuit of every spectra, which this dataset does not carry, scoring with the plain labels";
+		Log(Log::ERROR)<<"-s simplicity needs the generating circuit with its parameter values in the header of every spectra, which "<<config.fileName<<" does not carry";
 		return false;
 	}
 	return true;
@@ -408,7 +409,13 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	applyCanonicalFromNet(net, dataset);
 	applySpectraNormFromNet(net, dataset);
-	bool simplicity = (config.loss == LOSS_SIMPLICITY) and enableSimplicityLabels(dataset, config);
+	bool simplicity = false;
+	if(config.loss == LOSS_SIMPLICITY)
+	{
+		if(not enableSimplicityLabels(dataset, config))
+			return 1;
+		simplicity = true;
+	}
 
 	Log(Log::INFO)<<"Testing with"<<(dataset.isMulticlass() ? " muliclass" : "")<<
 		" dataset of size "<<dataset.size().value()<<" with an output size of "<<
