@@ -56,7 +56,7 @@
 #include "colortabel.h"
 #include "data/eistotorch.h"
 #include "data/loaders/eisspectradataset.h"
-#include "fit/fit.h"
+#include <eisfit/fit.h>
 #include "loss/circuitsimplicity.h"
 #include "loss/simplicitytolerantloss.h"
 #include "calibration.h"
@@ -452,6 +452,12 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 		return 1;
 	}
 
+	if(lossIsRegressionOnly(config.loss))
+	{
+		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used to score a regression dataset";
+		return 1;
+	}
+
 	T dataset(config.fileName);
 
 	if(dataset.size().value() == 0)
@@ -739,6 +745,12 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		return 1;
 	}
 
+	if(lossIsClassificationOnly(config.loss))
+	{
+		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss can only be used to score a classification dataset";
+		return 1;
+	}
+
 	T dataset(config.fileName);
 
 	if(dataset.size().value() == 0)
@@ -824,7 +836,7 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 
 	ann::regression::TestReturn ret;
 
-	if(config.loss == LOSS_MSE)
+	if(config.loss == LOSS_MSE || config.loss == LOSS_DEFAULT)
 	{
 		std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
 		ret = ann::regression::test(net, *dataLoader, *lossMse, dataset.size().value());
@@ -870,11 +882,6 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		std::unique_ptr<EisCompositeLoss> lossComposite(new EisCompositeLoss(dataset.targetName(), omega, net->getOutputScalars(),
 				net->getOutputBiases(), net->getOutputLogMask()));
 		ret = ann::regression::test(net, *dataLoader, *lossComposite, dataset.size().value());
-	}
-	else if(config.loss == LOSS_SIMPLICITY)
-	{
-		Log(Log::ERROR)<<"the simplicity loss scores circuit labels, it is only available for the classification datasets ("<<DATASET_LIST<<")";
-		return 1;
 	}
 	else
 	{

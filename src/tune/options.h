@@ -70,7 +70,7 @@ static struct argp_option options[] =
   {"epochs",		'i', "[NUMBER]",	0,	"number of epochs to train per configuration, default: 30"},
   {"learning-rate",	'r', "[NUMBER]",	0,	"single learning rate to use, default: 0.005"},
   {"weight-decay",	'w', "[NUMBER]",	0,	"single adamw weight decay to use, default: 0.001"},
-  {"loss",			's', "[STRING]",	0,	"loss function to use: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to use: default (nll for classification, mse for regression), nll for classification, mse, spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where the tuning results and the best model will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
@@ -189,7 +189,7 @@ struct Config
 	size_t latentSize = 10;  // autoencoder and vae modes
 	std::vector<size_t> latentSizes; // swept latent widths, defaults to the single latentSize above
 	double klBeta = 1.0;     // weight of the KL term in the vae modes
-	LossType loss = LOSS_MSE;
+	LossType loss = LOSS_DEFAULT;
 	// -s simplicity: fixed for the whole search, see the two option help texts below. The best model
 	// has to be retested with the same threshold, it is not stored in the checkpoint.
 	double simplicityThreshold = 0.01;

@@ -21,7 +21,7 @@
 #pragma once
 
 #define DATASET_LIST "dir, tar, dirreg, tarreg"
-#define LOSS_LIST "mse, spectra, permutation, composite, simplicity"
+#define LOSS_LIST "default, nll, mse, spectra, permutation, composite, simplicity"
 
 // argp key for the options shared by every tool. The per tool enums use 0x81 and 0x100 as their
 // bases, so this one starts above them.
@@ -84,7 +84,9 @@ typedef enum
 	LOSS_SPECTRA,
 	LOSS_PERMUTATION,
 	LOSS_COMPOSITE,
-	LOSS_SIMPLICITY
+	LOSS_SIMPLICITY,
+	LOSS_NLL,
+	LOSS_DEFAULT
 } LossType;
 
 static inline std::string lossTypeToStr(const LossType loss)
@@ -101,6 +103,10 @@ static inline std::string lossTypeToStr(const LossType loss)
 			return "composite";
 		case LOSS_SIMPLICITY:
 			return "simplicity";
+		case LOSS_NLL:
+			return "nll";
+		case LOSS_DEFAULT:
+			return "default";
 		default:
 			return "Invalid";
 	}
@@ -108,7 +114,11 @@ static inline std::string lossTypeToStr(const LossType loss)
 
 static inline LossType parseLossType(const std::string& in)
 {
-	if(in.empty() || in == lossTypeToStr(LOSS_MSE))
+	if(in.empty() || in == lossTypeToStr(LOSS_DEFAULT))
+		return LOSS_DEFAULT;
+	else if(in == lossTypeToStr(LOSS_NLL))
+		return LOSS_NLL;
+	else if(in == lossTypeToStr(LOSS_MSE))
 		return LOSS_MSE;
 	else if(in == lossTypeToStr(LOSS_SPECTRA))
 		return LOSS_SPECTRA;
@@ -123,7 +133,12 @@ static inline LossType parseLossType(const std::string& in)
 
 static inline constexpr bool lossIsRegressionOnly(const LossType loss)
 {
-	return loss == LOSS_SPECTRA || loss == LOSS_PERMUTATION || loss == LOSS_COMPOSITE;
+	return loss == LOSS_MSE || loss == LOSS_SPECTRA || loss == LOSS_PERMUTATION || loss == LOSS_COMPOSITE;
+}
+
+static inline constexpr bool lossIsClassificationOnly(const LossType loss)
+{
+	return loss == LOSS_NLL || loss == LOSS_SIMPLICITY;
 }
 
 typedef enum

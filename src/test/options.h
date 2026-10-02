@@ -58,7 +58,7 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"size of the testing batch"},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where testing logs will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
-  {"loss",			's', "[STRING]",	0,	"loss function to score with: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to score with: default (nll for classification, mse for regression), nll for classification, mse, spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"no-confustion",	-1, 0,				0,	"dont compute or output the confustion matrix"},
   {"network",		'n', "[PATH]",		0,	"path to the network to test"},
   {"ignore-missmatch",	'i', 0,			0,	"Ignore missmatches in label names"},
@@ -93,7 +93,7 @@ struct Config
 	int64_t fitEvaluations = 400;
 	double fitLimit = 0.01;
 	int64_t fitPoints = 25;
-	LossType loss = LOSS_MSE;
+	LossType loss = LOSS_DEFAULT;
 	// -s simplicity: has to be the threshold the network was trained with, the checkpoint stores no
 	// label semantics, only the class names
 	double simplicityThreshold = 0.01;

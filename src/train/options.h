@@ -59,7 +59,7 @@ static struct argp_option options[] =
   {"epochs",		'i', "[NUMBER]",	0,	"maximum number of epochs to train, may exit earlier due to lack of progress"},
   {"extra-layers",	'l', "[NUMBER]",	0,	"extra hidden layers to use in ann and gan, default: 3"},
   {"learing-rate",	'r', "[NUMBER]",	0,	"sgd/adam lering rate, default: 0.005"},
-  {"loss",			's', "[STRING]",	0,	"loss function to use: spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
+  {"loss",			's', "[STRING]",	0,	"loss function to use: default (nll for classification, mse for regression), nll for classification, mse, spectra, permutation and composite for regression, simplicity for classification: " LOSS_LIST},
   {"output-dir",	'o', "[DIRECTORY]", 0,	"directory where training logs and models will be saved"},
   {"cpu",			'c', 0,				0,	"don't use gpu even if one is available"},
   {"network",		'n', "[PATH]",		0,	"torchScript network to train"},
@@ -93,7 +93,7 @@ struct Config
 	size_t extraLayers = 3;
 	size_t latentSize = 10;
 	double klBeta = 1.0;
-	LossType loss = LOSS_MSE;
+	LossType loss = LOSS_DEFAULT;
 	bool noGpu = false;
 	bool noWeights = false;
 	// Canonical frequency grid: resample every spectra onto a fixed grid so the same

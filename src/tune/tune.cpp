@@ -282,7 +282,7 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if(config.loss == LOSS_SIMPLICITY && !modeIsClassification(config.mode))
+	if(lossIsClassificationOnly(config.loss) && !modeIsClassification(config.mode))
 	{
 		Log(Log::ERROR)<<"the "<<lossTypeToStr(config.loss)<<" loss scores circuit labels, it can only be tuned in the "<<
 			trainModeToStr(MODE_ANN)<<", "<<trainModeToStr(MODE_ANN_CONV)<<" and "<<
