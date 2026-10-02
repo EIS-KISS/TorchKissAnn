@@ -34,7 +34,6 @@ set(SRC_FILES
 	loss/eiscompositeloss.cpp
 	loss/circuitsimplicity.cpp
 	loss/simplicitytolerantloss.cpp
-	fit/fit.cpp
 	globals.cpp
 	calibration.cpp
 	net.cpp
@@ -66,5 +65,4 @@ add_subdirectory(test)
 add_subdirectory(datasetinfo)
 add_subdirectory(tune)
 add_subdirectory(genlatent)
-add_subdirectory(fittool)
 add_subdirectory(bench)

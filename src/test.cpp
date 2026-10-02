@@ -38,7 +38,7 @@
 #include "tensoroptions.h"
 #include "loss/eisdistanceloss.h"
 #include "modelscript.h"
-#include "fit/fit.h"
+#include <eisfit/fit.h>
 #include "tokenize.h"
 
 template<typename Dataset>

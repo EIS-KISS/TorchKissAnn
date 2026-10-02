@@ -27,7 +27,7 @@
 #include <stdexcept>
 #include <tuple>
 
-#include "fit/fit.h"
+#include <eisfit/fit.h>
 #include "log.h"
 #include "tensoroperators.h"
 
