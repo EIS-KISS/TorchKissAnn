@@ -44,6 +44,7 @@ enum TestArgpKey
 	OPT_FIT_POINTS,
 	OPT_SIMPLICITY_THRESHOLD,
 	OPT_SIMPLICITY_PREFERENCE,
+	OPT_CALIBRATION,
 };
 
 static struct argp_option options[] =
@@ -69,6 +70,7 @@ static struct argp_option options[] =
   {"fit-points",	OPT_FIT_POINTS, "[NUMBER]", 0, "thin each mismatch to this many evenly spaced points for the search, default: 25, 0 fits every point. The jacobian costs one backward per point so this is the cheapest way to buy restarts: the verdict (rms against the noise floor) is still scored on the whole spectra, only the minima the optimiser explores change"},
   {"simplicity-threshold",	OPT_SIMPLICITY_THRESHOLD, "[FRACTION]", 0,	"With -s simplicity: relative change of the impedance below which removing an element of the generating circuit counts as invisible. Must be the value the network was trained with, it is not stored in the checkpoint. Default 0.01"},
   {"simplicity-preference",	OPT_SIMPLICITY_PREFERENCE, "[NUMBER]", 0,	"With -s simplicity: extra weight on the simplest accepted class when rebuilding the labels, default 1. Only changes the reported loss, the acceptable set is the same for any value"},
+  {"calibration",	OPT_CALIBRATION, "[PATH]", 0,	"regression only: reference spectra with known labels used to recalibrate the networks output before testing. Give it once to correct the level only (the reference sits at the top of the range, the network output is shifted onto its label), twice to correct scale and level from the two points. A directory of EISF csv files or a tar, either flavour regardless of -d"},
   {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
@@ -96,6 +98,8 @@ struct Config
 	// label semantics, only the class names
 	double simplicityThreshold = 0.01;
 	double simplicityPreference = 1.0;
+	// reference spectra for the output calibration, one or two paths, empty disables it
+	std::vector<std::filesystem::path> calibrationFiles;
 	bool noProgress = false;
 };
 
@@ -177,6 +181,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_SIMPLICITY_PREFERENCE:
 			config->simplicityPreference = std::stod(arg);
+			break;
+		case OPT_CALIBRATION:
+			config->calibrationFiles.push_back(arg);
 			break;
 		case OPT_NO_PROGRESS:
 			config->noProgress = true;

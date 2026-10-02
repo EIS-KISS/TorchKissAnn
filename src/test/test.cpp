@@ -59,6 +59,7 @@
 #include "fit/fit.h"
 #include "loss/circuitsimplicity.h"
 #include "loss/simplicitytolerantloss.h"
+#include "calibration.h"
 
 // Rebuild the canonical grid recorded in the network onto a test dataset so the test spectra are
 // resampled onto the same grid the network was trained on. No-op when the network has no grid.
@@ -98,6 +99,58 @@ static void applySpectraNormFromNet(const std::shared_ptr<ann::Net>& net, T& dat
 	}
 	spectra->setSpectraNorm(spectraNormFromString(net->getSpectraNorm()));
 	Log(Log::INFO)<<"Scaling every spectra by its "<<net->getSpectraNorm()<<" |Z| as recorded in the network";
+}
+
+// Run the network over one calibration reference and accumulate what the output calibration needs.
+// The reference goes through the same canonical grid and level scaling as the test set, so the
+// calibration measures the network on exactly the inputs the run itself will see.
+template <typename T>
+static bool collectCalibrationAs(const std::shared_ptr<ann::Net>& net,
+		const std::filesystem::path& path, calibration::Accumulator& acc)
+{
+	T dataset(path);
+
+	if(dataset.size().value_or(0) == 0)
+	{
+		Log(Log::ERROR)<<"No calibration spectra found in "<<path;
+		return false;
+	}
+	if(dataset.outputSize() != static_cast<size_t>(net->getOutputSize()))
+	{
+		Log(Log::ERROR)<<"The calibration reference "<<path<<" carries "<<dataset.outputSize()
+			<<" labels but the network has "<<net->getOutputSize()<<" outputs";
+		return false;
+	}
+
+	applyCanonicalFromNet(net, dataset);
+	applySpectraNormFromNet(net, dataset);
+
+	torch::data::DataLoaderOptions options;
+	options = options.batch_size(batch_size).workers(4);
+	auto dataLoader = torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
+			dataset.map(torch::data::transforms::Stack<>()), options);
+
+	for(const auto& batch : *dataLoader)
+		acc.add(batch.data, batch.target);
+
+	torch::Tensor meanPrediction = net->denormalizeOutput(
+			acc.meanOutput().to(torch::kFloat32).unsqueeze(0)).squeeze(0).to(torch::kCPU);
+	torch::Tensor meanLabel = net->denormalizeOutput(
+			acc.meanTarget().to(torch::kFloat32).unsqueeze(0)).squeeze(0).to(torch::kCPU);
+	Log(Log::INFO)<<"Calibration reference "<<path<<" ("<<dataset.size().value()<<" spectra): "
+		<<"network mean "<<tensorToString(meanPrediction, false)
+		<<" should be "<<tensorToString(meanLabel, false);
+	return true;
+}
+
+// A calibration reference picks its own loader: a directory is read as loose EISF csv files,
+// anything else as a tar. It does not have to be the flavour the test set is given as.
+static bool collectCalibration(const std::shared_ptr<ann::Net>& net,
+		const std::filesystem::path& path, calibration::Accumulator& acc)
+{
+	if(std::filesystem::is_directory(path))
+		return collectCalibrationAs<RegressionLoaderDir>(net, path, acc);
+	return collectCalibrationAs<RegressionLoaderTar>(net, path, acc);
 }
 
 // Turn on the set valued labels of -s simplicity. The band over which an element has to stay out of
@@ -748,6 +801,20 @@ int testRegression(std::shared_ptr<ann::Net> net, const Config& config)
 		}
 	}
 
+	if(!config.calibrationFiles.empty())
+	{
+		std::vector<calibration::Accumulator> points;
+		for(const std::filesystem::path& calibrationPath : config.calibrationFiles)
+		{
+			calibration::Accumulator acc(net);
+			if(!collectCalibration(net, calibrationPath, acc))
+				return 1;
+			points.push_back(acc);
+		}
+		if(!calibration::apply(net, points))
+			return 1;
+	}
+
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
 	// sequential, predictedSpectraPlots() below indexes the dataset by the position a sample came
@@ -1032,6 +1099,10 @@ int main(int argc, char** argv)
 		return 1;
 	}
 	std::shared_ptr<ann::AutoEncoder> autoencoder = std::dynamic_pointer_cast<ann::AutoEncoder>(net);
+
+	if(!config.calibrationFiles.empty() && (autoencoder
+			|| (config.datasetMode != DATASET_DIR_REGRESSION && config.datasetMode != DATASET_TAR_REGRESSION)))
+		Log(Log::WARN)<<"--calibration is only implemented for regression networks scored against a regression dataset, ignoring it";
 
 
 	if(autoencoder)

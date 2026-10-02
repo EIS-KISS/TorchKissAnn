@@ -36,6 +36,7 @@ set(SRC_FILES
 	loss/simplicitytolerantloss.cpp
 	fit/fit.cpp
 	globals.cpp
+	calibration.cpp
 	net.cpp
 )
 

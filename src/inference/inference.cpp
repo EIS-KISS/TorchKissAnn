@@ -43,7 +43,9 @@
 #include "gan/gan.h"
 #include "data/print.h"
 #include "globals.h"
+#include "calibration.h"
 #include <fstream>
+#include <filesystem>
 
 static bool yesNoPrompt(std::string msg)
 {
@@ -258,6 +260,92 @@ static int classifyPipeline(const Config& config, std::shared_ptr<ann::Net> net)
 	return 0;
 }
 
+// Load one calibration reference: a single EISF csv or a directory of them. The spectra go through
+// the same canonical resampling and level scaling the prediction path applies below, so the
+// calibration measures the network on exactly the inputs it is about to be handed.
+static bool collectCalibration(const std::shared_ptr<ann::Net>& net, const std::string& path,
+		calibration::Accumulator& acc)
+{
+	std::vector<std::filesystem::path> files;
+	if(std::filesystem::is_directory(path))
+	{
+		for(const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator{path})
+			if(entry.is_regular_file() && entry.path().extension() == ".csv")
+				files.push_back(entry.path());
+		std::sort(files.begin(), files.end());
+	}
+	else
+		files.push_back(path);
+
+	if(files.empty())
+	{
+		Log(Log::ERROR)<<"No calibration spectra found in "<<path;
+		return false;
+	}
+
+	const std::vector<std::string> labels = net->getOutputLabels();
+	if(labels.empty())
+	{
+		Log(Log::ERROR)<<"The network stores no output labels, so the labels of a calibration reference can not be matched to its outputs";
+		return false;
+	}
+
+	std::vector<torch::Tensor> inputs;
+	std::vector<float> targetValues;
+
+	for(const std::filesystem::path& file : files)
+	{
+		eis::Spectra spectra;
+		try
+		{
+			spectra = eis::Spectra::loadFromDisk(file.string());
+		}
+		catch(const eis::file_error& ex)
+		{
+			Log(Log::ERROR)<<"Could not load the calibration file "<<file<<": "<<ex.what();
+			return false;
+		}
+
+		std::vector<eis::DataPoint> data = spectra.data;
+		if(net->hasCanonicalGrid())
+		{
+			eis::Range range(net->getCanonicalFMin(), net->getCanonicalFMax(), net->getCanonicalPoints(), net->getCanonicalLog());
+			std::sort(data.begin(), data.end());
+			data = eis::fitToFrequencies(range.getRangeVector(), data, false);
+		}
+		if(!net->getSpectraNorm().empty())
+			applySpectraNorm(data, spectraNormFromString(net->getSpectraNorm()));
+
+		if(static_cast<int64_t>(data.size()*2) != net->getInputSize())
+		{
+			Log(Log::ERROR)<<"The calibration spectra "<<file<<" has "<<data.size()<<" points after resampling, the network expects "<<net->getInputSize()/2;
+			return false;
+		}
+
+		for(const std::string& label : labels)
+		{
+			auto search = std::find(spectra.labelNames.begin(), spectra.labelNames.end(), label);
+			if(search == spectra.labelNames.end())
+			{
+				Log(Log::ERROR)<<"The calibration file "<<file<<" dose not carry the label \""<<label<<"\" the network predicts";
+				return false;
+			}
+			targetValues.push_back(static_cast<float>(spectra.labels[search - spectra.labelNames.begin()]));
+		}
+
+		inputs.push_back(eisToTorch(data).unsqueeze(0));
+	}
+
+	torch::Tensor inputBatch = torch::cat(inputs, 0).to(torch::kFloat32);
+	torch::Tensor targetBatch = torch::from_blob(targetValues.data(),
+			{static_cast<int64_t>(inputs.size()), static_cast<int64_t>(labels.size())},
+			torch::TensorOptions().dtype(torch::kFloat32)).clone();
+
+	acc.add(inputBatch, targetBatch);
+	Log(Log::INFO)<<"Calibration reference "<<path<<" loaded with "<<inputs.size()<<" spectra";
+	return true;
+}
+
 static int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 {
 	std::pair<std::vector<eis::DataPoint>, std::vector<fvalue>> data = grabData(config.spectraFileName, config.fileType, net->getExtraInputs());
@@ -277,6 +365,25 @@ static int regressionPipe(const Config& config, std::shared_ptr<ann::Net> net)
 		targetModelStr = purposeTokens[1];
 
 	Log(Log::INFO)<<"Running parameter regression for "<<targetModelStr;
+
+	if(!config.calibrationFiles.empty())
+	{
+		if(!net->getExtraInputs().empty())
+		{
+			Log(Log::ERROR)<<"Output calibration from EISF references is not available for networks that take extra inputs";
+			return 1;
+		}
+		std::vector<calibration::Accumulator> points;
+		for(const std::string& calibrationPath : config.calibrationFiles)
+		{
+			calibration::Accumulator acc(net);
+			if(!collectCalibration(net, calibrationPath, acc))
+				return 1;
+			points.push_back(acc);
+		}
+		if(!calibration::apply(net, points))
+			return 1;
+	}
 
 	Log(Log::DEBUG)<<"data size: "<<data.first.size();
 
@@ -395,6 +502,9 @@ int main(int argc, char** argv)
 
 		net->eval();
 	}
+
+	if(!config.calibrationFiles.empty() && config.mode != PRED_MODE_REGRESSION)
+		Log(Log::WARN)<<"--calibration only applies to -m regression, ignoring it";
 
 	switch(config.mode)
 	{

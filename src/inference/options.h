@@ -20,6 +20,7 @@
 
 #pragma once
 #include <string>
+#include <vector>
 #include <argp.h>
 #include <iostream>
 #include "globals.h"
@@ -34,6 +35,11 @@ static char args_doc[] = "";
 #define PREDICTION_PRED_MODE_LIST "ann, regression, show, reexport"
 #define FILE_TYPE_LIST "csv, gan, gen"
 
+enum InferenceArgpKey
+{
+	OPT_CALIBRATION = 0x80,
+};
+
 static struct argp_option options[] =
 {
   {"verbose",		'v', 0,				0,	"Show debug messages" },
@@ -45,6 +51,7 @@ static struct argp_option options[] =
   {"mode",			'm', "[MODE]",		0,	"select a mode. Valid options are: " PREDICTION_PRED_MODE_LIST},
   {"pre",			'p', "[METHOD]",	0,	"choose input filter method. Valid options are: none, gan"},
   {"pre-network",	'f', "[FILE]",		0,	"choose input filter network file."},
+  {"calibration",	OPT_CALIBRATION, "[PATH]", 0,	"regression only: reference spectra with known labels used to recalibrate the networks output before predicting. Give it once to correct the level only (the reference sits at the top of the range, the network output is shifted onto its label), twice to correct scale and level from the two points. A single EISF csv or a directory of them"},
   {"no-progress",	OPT_NO_PROGRESS, 0,			0,	"don't draw progress bars"},
   { 0 }
 };
@@ -74,6 +81,8 @@ struct Config
 	PredictionMode mode = PRED_MODE_ANN;
 	FilterMode filterMode = FILTER_NONE;
 	FileType fileType = FILE_TYPE_CSV;
+	// reference spectra for the output calibration, one or two paths, empty disables it
+	std::vector<std::string> calibrationFiles;
 	bool noProgress = false;
 
 };
@@ -200,6 +209,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'f':
 			config->filterFileName.assign(arg);
+			break;
+		case OPT_CALIBRATION:
+			config->calibrationFiles.push_back(arg);
 			break;
 		case OPT_NO_PROGRESS:
 			config->noProgress = true;
