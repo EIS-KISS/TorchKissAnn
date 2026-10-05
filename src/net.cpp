@@ -290,7 +290,8 @@ torch::Tensor ann::Net::normalizeInput(torch::Tensor input) const
 	input = signedLog10Leading(input, inputLogCount, inputLogFloor);
 	if(inputScalars.numel() == 0)
 		return input;
-	return input*inputScalars.to(input.device()) + inputBiases.to(input.device());
+	input = input*inputScalars.to(input.device()) + inputBiases.to(input.device());
+	return torch::clamp(input, -INPUT_FEATURE_CLAMP, INPUT_FEATURE_CLAMP);
 }
 
 torch::Tensor ann::Net::normalizeTarget(torch::Tensor target) const

@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -184,6 +185,23 @@ int tuneDataset(const Config& config)
 		Log(Log::INFO)<<"Resampling every spectra onto the canonical grid of "<<config.canonicalPoints
 			<<(config.canonicalLog ? " log spaced" : " linearly spaced")<<" points from "
 			<<config.canonicalFMin<<" to "<<config.canonicalFMax<<" rad/s";
+
+	// Validate the augmentation model once before the search spends hours on it: the setter reports an
+	// unusable string as false, and every trial would silently train without the augmentation.
+	if(!config.augmentationModel.empty())
+	{
+		EisSpectraDataset* trainSpectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+		if(trainSpectra == nullptr || !trainSpectra->setAugmentationModel(config.augmentationModel))
+		{
+			Log(Log::ERROR)<<"--augmentation-model \""<<config.augmentationModel
+				<<"\" can not be used on this dataset, see the message above";
+			delete testDataset;
+			return 1;
+		}
+		Log(Log::INFO)<<"Augmentation model \""<<config.augmentationModel
+			<<"\" active on the training dataset of every trial, leaving "
+			<<std::format("{:.0f}", EisSpectraDataset::AUGMENTATION_CLEAN_FRACTION*100)<<"% of the spectra clean";
+	}
 
 	bool simplicityLabels = applySimplicityLabels(config, &dataset);
 	applySimplicityLabels(config, testDataset);

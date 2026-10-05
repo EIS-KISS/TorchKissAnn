@@ -102,6 +102,12 @@ public:
 	void setSpectraNorm(SpectraNorm mode);
 	SpectraNorm spectraNormMode() const;
 
+
+	bool setAugmentationModel(const std::string& modelStr);
+
+	/// Fraction of training spectra left un-augmented when an augmentation model is set
+	static constexpr double AUGMENTATION_CLEAN_FRACTION = 0.25;
+
 	/**
 	 * The measured points of one spectra on the frequency axis the network is shown, but without the
 	 * per spectra |Z| scaling: a fit has to be carried out against physical impedances, so it can not
@@ -141,4 +147,12 @@ protected:
 
 private:
 	bool canonicalTraining = false;
+
+	// Artifact augmentation from an eisgenerator model string with an embedded parameter range, see
+	// setAugmentationModel(). Enabled per dataset (training only), so it does not reuse
+	// canonicalTraining and works with or without a canonical grid. augmentationSteps is the size of
+	// the sweep the string resolves to, drawn into at random per augmented spectra.
+	bool augmentationEnabled = false;
+	std::string augmentationModelStr;
+	size_t augmentationSteps = 0;
 };

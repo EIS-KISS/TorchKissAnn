@@ -594,12 +594,14 @@ inline void applyTrialInputPrep(const Config& config, const TrialConfig& trial,
 	train->setCanonicalGrid(grid);
 	train->setCanonicalTraining(true);
 	train->setSpectraNorm(mode);
+	train->setAugmentationModel(config.augmentationModel);
 
 	if(EisSpectraDataset* test = dynamic_cast<EisSpectraDataset*>(testDataset))
 	{
 		test->setCanonicalGrid(grid);
 		test->setCanonicalTraining(false);
 		test->setSpectraNorm(mode);
+		test->setAugmentationModel("");
 	}
 }
 

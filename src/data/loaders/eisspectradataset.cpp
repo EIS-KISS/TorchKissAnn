@@ -25,9 +25,12 @@
 #include <cmath>
 #include <complex>
 #include <limits>
+#include <memory>
 #include <eisgenerator/basicmath.h>
+#include <eisgenerator/model.h>
 
 #include "data/eistotorch.h"
+#include "log.h"
 #include "randomgen.h"
 
 std::pair<std::vector<std::string>, std::vector<std::string>> EisSpectraDataset::getExtraInputsAndLabelNames(const eis::Spectra& spectra)
@@ -112,6 +115,36 @@ void EisSpectraDataset::setSpectraNorm(SpectraNorm mode)
 SpectraNorm EisSpectraDataset::spectraNormMode() const
 {
 	return spectraNorm;
+}
+
+bool EisSpectraDataset::setAugmentationModel(const std::string& modelStr)
+{
+	augmentationModelStr = modelStr;
+	augmentationSteps = 0;
+	augmentationEnabled = false;
+	if(modelStr.empty())
+		return false;
+
+	try
+	{
+		eis::Model probe(modelStr, 100, false);
+		if(!probe.compile())
+			Log(Log::WARN)<<"Augmentation model \""<<modelStr<<"\" could not be compiled, falling back to the slower graph evaluation";
+		augmentationSteps = probe.getRequiredStepsForSweeps();
+		if(augmentationSteps == 0)
+		{
+			Log(Log::ERROR)<<"Augmentation model \""<<modelStr<<"\" resolves to an empty parameter sweep, disabling the augmentation";
+			return false;
+		}
+		augmentationEnabled = true;
+	}
+	catch(const std::exception& ex)
+	{
+		Log(Log::ERROR)<<"Augmentation model string \""<<modelStr<<"\" is not valid ("<<ex.what()
+			<<"), disabling the augmentation";
+		augmentationEnabled = false;
+	}
+	return augmentationEnabled;
 }
 
 SpectraNorm spectraNormFromString(const std::string& in)
@@ -254,6 +287,30 @@ std::vector<eis::DataPoint> EisSpectraDataset::resampleCanonical(const std::vect
 		}
 
 		sorted = eis::fitToFrequencies(grid, sorted, false);
+	}
+	if(augmentationEnabled && !sorted.empty() && rd::rand() >= AUGMENTATION_CLEAN_FRACTION)
+	{
+		thread_local std::unique_ptr<eis::Model> augModel;
+		thread_local std::string augModelKey;
+		if(!augModel || augModelKey != augmentationModelStr)
+		{
+			augModel = std::make_unique<eis::Model>(augmentationModelStr, 100, false);
+			augModel->compile();
+			augModelKey = augmentationModelStr;
+		}
+
+		size_t index = static_cast<size_t>(rd::rand() * static_cast<double>(augmentationSteps));
+		if(index >= augmentationSteps)
+			index = augmentationSteps - 1;
+
+		std::vector<fvalue> omegas;
+		omegas.reserve(sorted.size());
+		for(const eis::DataPoint& point : sorted)
+			omegas.push_back(point.omega);
+
+		const std::vector<eis::DataPoint> aug = augModel->executeSweep(omegas, index);
+		for(size_t i = 0; i < sorted.size() && i < aug.size(); ++i)
+			sorted[i].im += aug[i].im;
 	}
 
 	// Last, so the reference is computed from the points the network actually sees. A client

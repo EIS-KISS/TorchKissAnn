@@ -24,6 +24,7 @@
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <ios>
 #include <iostream>
 #include <kisstype/spectra.h>
@@ -127,6 +128,22 @@ static void applySpectraNorm(const Config& config, EisDataset<DataSetType>* data
 	if(spectra == nullptr)
 		return;
 	spectra->setSpectraNorm(mode);
+}
+
+// Configure the eisgenerator artifact augmentation on a dataset. Training only, like the shift
+// augmentation: the test dataset must see clean spectra so it measures real performance, while the
+// widened training range (the augmentation runs through getNormalization too) is what stops a
+// measured artifact from blowing up the input normalization at inference. Must run before any call to
+// inputSize() and before the dataset is copied into a data loader.
+template <typename DataSetType>
+static bool applyAugmentationModel(const Config& config, EisDataset<DataSetType>* dataset)
+{
+	if(dataset == nullptr || config.augmentationModel.empty())
+		return false;
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(dataset);
+	if(spectra == nullptr)
+		return false;
+	return spectra->setAugmentationModel(config.augmentationModel);
 }
 
 // Build the set valued labels of -s simplicity on a dataset and report whether it produced them.
@@ -254,6 +271,14 @@ int train(const Config& config)
 			Log(Log::INFO)<<"Canonical grid active: "<<resolved.fMin<<" .. "<<resolved.fMax<<" rad/s, "
 				<<resolved.points<<" points ("<<(resolved.log ? "log" : "linear")<<"), augmentation: "<<aug;
 		}
+	}
+
+	if(!config.augmentationModel.empty())
+	{
+		if(applyAugmentationModel(config, &dataset))
+			Log(Log::INFO)<<"Augmentation model active on the training data: \""<<config.augmentationModel
+				<<"\" (a random sweep index added per spectra, "
+				<<std::format("{:.0f}", EisSpectraDataset::AUGMENTATION_CLEAN_FRACTION*100)<<"% left clean)";
 	}
 
 	bool simplicityLabels = applySimplicityLabels(config, &dataset);

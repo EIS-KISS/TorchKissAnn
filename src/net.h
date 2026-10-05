@@ -38,6 +38,8 @@ public:
 	 // amplified into the same range as the signal.
 	static constexpr double DEFAULT_INPUT_LOG_FLOOR = 1e-9;
 
+	static constexpr double INPUT_FEATURE_CLAMP = 2.0;
+
 protected:
 	int64_t inputSize;
 	int64_t outputSize;
