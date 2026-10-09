@@ -29,6 +29,7 @@ from nets.grunet import BiGRUNet
 from nets.transformer1d import Transformer1D
 from nets.seresnet1d import SEResNet1D
 from nets.resnetv2_1d import ResNetV21D
+from nets.decoder1d import DecoderNet
 import json
 import argparse
 
@@ -60,15 +61,6 @@ def save(model, input_size, output_size, name: str):
 
 
 def build_resnet(output_size: int, base_filters: int = None):
-	"""
-	Build the resnet. base_filters None means the original 100.
-
-	The parameter count of this architecture grows with the square of the base filter count and
-	does not depend on the input length at all, because every convolution pads to its input and
-	the head pools over the frequency axis. Only the output size enters the count besides the
-	width: at 8 outputs, 24 filters are about 150k parameters, 34 about 300k and the default 100
-	about 2.6M.
-	"""
 	filters = 100 if base_filters is None else base_filters
 	module = ResNet1D(in_channels=1,
 		base_filters=filters,
@@ -85,8 +77,6 @@ def build_resnet(output_size: int, base_filters: int = None):
 	print(f"ResNet1D output size: {data.size()}")
 
 	script = torch.jit.script(module)
-	# the shootout scripts pick the resnet up by its plain name, so only a run that asked for a
-	# width carries it, which lets several widths live in one directory
 	name = "resnet" if base_filters is None else f"resnet_f{filters}"
 	save(script, None, output_size, name)
 
@@ -188,11 +178,6 @@ def build_seresnet(input_size: int, output_size: int, channels: int):
 
 
 def build_resnetv2(input_size: int, output_size: int, channels: int):
-	"""
-	Same shape as the seresnet without the squeeze-and-excitation units, the
-	control for the attention ablation: build both with the same -i/-o/-c and the
-	parameter difference is only the excitation layers.
-	"""
 	module = ResNetV21D(input_size, output_size, channels)
 
 	data = torch.randn((16, input_size))
@@ -204,8 +189,20 @@ def build_resnetv2(input_size: int, output_size: int, channels: int):
 	save(script, input_size, output_size, "resnetv2")
 
 
+def build_decoder(input_size: int, output_size: int, channels: int):
+	module = DecoderNet(input_size, output_size, channels)
+
+	data = torch.randn((16, input_size))
+	data = module.forward(data)
+	print(f"DecoderNet output size: {data.size()}")
+
+	script = torch.jit.script(module)
+
+	save(script, input_size, output_size, "decoder")
+
+
 if __name__ == "__main__":
-	valid_network_types = "simple, conv, resnet, upsamplenet, inception, tcn, gru, transformer, seresnet, resnetv2"
+	valid_network_types = "simple, conv, resnet, upsamplenet, inception, tcn, gru, transformer, seresnet, resnetv2, decoder"
 	parser = argparse.ArgumentParser("TorchScript network generation script")
 	parser.add_argument('--type', '-t', required=True, help=f"Type of network to create: {valid_network_types}")
 	parser.add_argument('--output_size', '-o', type=int, required=True, help="Number of output classes")
@@ -241,6 +238,10 @@ if __name__ == "__main__":
 		build_seresnet(args.input_size, args.output_size, args.channels)
 	elif args.type == "resnetv2":
 		build_resnetv2(args.input_size, args.output_size, args.channels)
+	elif args.type == "decoder":
+		# a single feature map is too narrow to rebuild a spectra from a latent; default the
+		# convolution width to 32 unless the caller asked for something explicit
+		build_decoder(args.input_size, args.output_size, args.channels if args.channels > 1 else 32)
 	else:
 		print(f"{args.type} is not a valid network type valid types are: {valid_network_types}")
 		exit(1)
