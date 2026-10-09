@@ -451,13 +451,6 @@ bool check_options(const Config& config)
 		return false;
 	}
 
-	if(config.canonical && modeIsAutoEncoder(config.mode))
-	{
-		Log(Log::ERROR)<<"the canonical grid is not available in the "<<trainModeToStr(config.mode)
-			<<" mode, it is supported in the classification and regression modes only";
-		return false;
-	}
-
 	bool augmentationRequested = false;
 	for(double augmentShift : config.canonicalAugmentShifts)
 		augmentationRequested |= (augmentShift > 0);

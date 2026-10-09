@@ -30,6 +30,7 @@
 #include "autoencoder.h"
 #include "globals.h"
 #include "../data/eisdataset.h"
+#include "data/loaders/eisspectradataset.h"
 #include "log.h"
 #include "lossaccumulator.h"
 #include "tensoroptions.h"
@@ -64,7 +65,10 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(*offload_device);
+		// Same signed-log compression the classification path applies: the spectra span many
+		// decades of impedance, so the network sees the compressed shape and reconstructs that
+		// compressed representation (input and target are the same tensor here).
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor latent;
 		torch::Tensor mu;
@@ -121,7 +125,9 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 
 	for(auto& batch : loader)
 	{
-		torch::Tensor data = batch.data.to(*offload_device);
+		// Signed-log compression of the input, matching the classification path; the network
+		// reconstructs the compressed spectra (input and target are the same tensor here).
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss = lossFn(prediction, data);
@@ -191,7 +197,9 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	for(const auto& batch : loader)
 	{
 		bar.tick();
-		torch::Tensor data = batch.data.to(*offload_device);
+		// Compress the input exactly as in training so the reconstruction is compared in the
+		// same space and the exported latents match what the encoder was trained on.
+		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor latent;
 		torch::Tensor output = network->forward(data, latent);
@@ -242,6 +250,21 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 	else
 		net->setPurpose("Autoencoder");
 	net->setExtraInputs(dataset->extraInputs());
+
+	// Record the canonical frequency grid (if any) so the checkpoint carries everything a client
+	// needs to resample a raw spectra onto the fixed graph before encoding it.
+	if(auto* es = dynamic_cast<EisSpectraDataset*>(dataset))
+	{
+		CanonicalGrid cg;
+		if(es->canonicalGridInfo(cg))
+			net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
+	}
+
+	// Compress every spectral feature with a signed log, exactly like the classification path, so
+	// the encoder sees a bounded representation instead of raw impedances spanning many decades.
+	net->setInputLogCompression(dataset->inputSize());
+	Log(Log::INFO)<<"Compressing the leading "<<dataset->inputSize()<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
+
 	net->to(*offload_device);
 
 	torch::data::DataLoaderOptions options;

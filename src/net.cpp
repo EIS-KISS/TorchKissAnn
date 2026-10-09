@@ -97,7 +97,7 @@ ann::Net::Net(const Json::Value& node)
 		else
 		{
 			for(Json::ArrayIndex i = 0; i < inputs.size(); ++i)
-				extraInputs.push_back({inputs.asString(), lengths[i].asInt64()});
+				extraInputs.push_back({inputs[i].asString(), lengths[i].asInt64()});
 		}
 	}
 

@@ -60,6 +60,7 @@
 #include "loss/circuitsimplicity.h"
 #include "loss/simplicitytolerantloss.h"
 #include "calibration.h"
+#include "r2score.h"
 
 // Rebuild the canonical grid recorded in the network onto a test dataset so the test spectra are
 // resampled onto the same grid the network was trained on. No-op when the network has no grid.
@@ -431,7 +432,7 @@ int inputImportance(std::shared_ptr<ann::Net> net, T* dataset, int64_t window, c
 	for(size_t i = 0; i < dataset->inputSize(); ++i)
 		indecies[i] = i;
 
-	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), losses, "loss importance");
+	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".csv"), losses, "loss importance");
 
 	PlotOptions options;
 	options.type = PLOT_TYPE_SCATTER;
@@ -571,6 +572,7 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 
 	if(config.inputImportance)
 	{
+		std::filesystem::create_directories(config.outputDir);
 		inputImportance<T>(net, &dataset, 1, config);
 		inputImportance<T>(net, &dataset, 4, config);
 		inputImportance<T>(net, &dataset, 16, config);
@@ -634,7 +636,7 @@ int inputImportanceRegression(std::shared_ptr<ann::Net> net, T* dataset, int64_t
 
 		save2dPlot(config.outputDir/("r2_"+std::to_string(i)+"_importance_"+std::to_string(window)+".svg"), indecies, r2, options);
 	}
-	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), loss, "loss importance");
+	csv::save(config.outputDir/("loss_importance"+std::to_string(window)+".csv"), loss, "loss importance");
 	options.yLabel = "Loss";
 	save2dPlot(config.outputDir/("loss_importance"+std::to_string(window)+".svg"), indecies, loss, options);
 
@@ -961,6 +963,11 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		return 2;
 	}
 
+	// The autoencoder is trained on canonically resampled, signed-log compressed spectra, so the
+	// test spectra have to go through the same grid and level scaling before they are encoded.
+	applyCanonicalFromNet(net, dataset);
+	applySpectraNormFromNet(net, dataset);
+
 	std::string type = tokenize(net->getPurpose(), ',')[0];
 	if(type != "Autoencoder")
 	{
@@ -968,30 +975,125 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		return 1;
 	}
 
-	Log(Log::INFO)<<"Network was trained to be "<<net->getPurpose()<<'\n';
+	const bool variational = net->isVariational();
+	Log(Log::INFO)<<"Testing a "<<(variational ? "variational " : "")<<"autoencoder with a latent size of "
+		<<net->getLatentSize()<<" against a dataset of size "<<dataset.size().value()
+		<<" (input width "<<dataset.inputSize()<<")";
 
 	torch::data::DataLoaderOptions options;
 	options = options.batch_size(batch_size).workers(16);
-	auto dataLoader = torch::data::make_data_loader(dataset.map(torch::data::transforms::Stack<>()), options);
-	std::unique_ptr<torch::nn::MSELoss> lossMse(new torch::nn::MSELoss(torch::nn::MSELossOptions().reduction(torch::kMean)));
-	ann::autoencode::TestReturn ret = ann::autoencode::test(net, *dataLoader,  *lossMse, dataset.size().value());
+	// sequential so the per spectra plots below line up with the dataset order
+	auto dataLoader = torch::data::make_data_loader<torch::data::samplers::SequentialSampler>(
+			dataset.map(torch::data::transforms::Stack<>()), options);
 
-	Log(Log::INFO)<<"Mse: "<<ret.mse.mean().item()<<'\n';
+	net->eval();
+	torch::NoGradGuard noGrad;
 
-	assert(ret.latents.dim() == 2);
+	torch::Tensor alllatents = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alldatasettargets = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor alloutputs = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor allinputs = torch::empty({0}, tensorOptDevice<float>(false));
+	torch::Tensor perFeatureMse = torch::zeros({net->getOutputSize()}, tensorOptDevice<float>(false));
+	// running sums for the latent and (for a vae) posterior diagnostics
+	torch::Tensor latentSum = torch::zeros({net->getLatentSize()}, tensorOptDevice<float>(false));
+	torch::Tensor latentSqSum = torch::zeros({net->getLatentSize()}, tensorOptDevice<float>(false));
+	torch::Tensor logvarSum = torch::zeros({net->getLatentSize()}, tensorOptDevice<float>(false));
+	double reconSum = 0;   // squared error summed over every element
+	int64_t elementCount = 0;
+	double klSum = 0;      // per sample KL summed over the dataset
+	int64_t sampleCount = 0;
 
-	auto latentAccesor = ret.latents.accessor<float, 2>();
-	std::valarray<double> x(ret.latents.size(0));
-	std::valarray<double> y(ret.latents.size(0));
-	std::valarray<double> z(ret.latents.size(0));
-
-	std::filesystem::create_directory(config.outputDir);
-
-	std::cout<<"target sizes: \n"<<ret.datasetTargets.sizes()<<std::endl;
-
-	for(int64_t i = 0; i < ret.latents.size(0); ++i)
+	Progress bar("Testing autoencoder: ", dataset.size().value()/batch_size + 1);
+	for(const auto& batch : *dataLoader)
 	{
-		switch(ret.latents.size(1))
+		bar.tick();
+		// compress exactly as in training: the reconstruction is scored in the compressed space
+		torch::Tensor data = net->normalizeInput(batch.data.to(*offload_device));
+
+		torch::Tensor latent, mu, logvar;
+		// eval draws the latent as mu (sample = false), matching the training time test pass
+		torch::Tensor output = net->forward(data, latent, mu, logvar, false);
+
+		torch::Tensor squaredError = torch::square(output - data);
+		reconSum += squaredError.sum().item<double>();
+		elementCount += squaredError.numel();
+		perFeatureMse += squaredError.mean(0);
+
+		if(variational)
+		{
+			torch::Tensor kl = -0.5 * torch::sum(1 + logvar - mu.pow(2) - logvar.exp(), 1);
+			klSum += kl.sum().item<double>();
+			logvarSum += logvar.sum(0);
+		}
+
+		latentSum += latent.sum(0);
+		latentSqSum += latent.pow(2).sum(0);
+		sampleCount += latent.size(0);
+
+		alllatents = safeConcat({alllatents, latent}, 0);
+		alldatasettargets = safeConcat({alldatasettargets, batch.target}, 0);
+		alloutputs = safeConcat({alloutputs, output}, 0);
+		allinputs = safeConcat({allinputs, data}, 0);
+	}
+	bar.markAsCompleted();
+
+	const double reconMse = reconSum / double(elementCount);
+	perFeatureMse = perFeatureMse / double(sampleCount);
+	const double kl = variational ? klSum / double(sampleCount) : 0.0;
+	// R2 of the reconstruction in the compressed space the network is trained on
+	torch::Tensor r2 = r2score(alloutputs, allinputs);
+	torch::Tensor latentMean = latentSum / double(sampleCount);
+	torch::Tensor latentVar = (latentSqSum / double(sampleCount) - latentMean.pow(2)).clamp_min(0);
+	const double meanR2 = r2.mean().item<double>();
+
+	Log(Log::INFO)<<"\nAutoencoder test results ("<<sampleCount<<" spectra, latent size "<<net->getLatentSize()<<")";
+	Log(Log::INFO)<<"  Reconstruction MSE (compressed): "<<reconMse;
+	Log(Log::INFO)<<"  Reconstruction R2  (compressed): "<<meanR2
+		<<"  (per feature min "<<r2.min().item<double>()<<", max "<<r2.max().item<double>()<<")";
+	if(variational)
+		Log(Log::INFO)<<"  KL divergence:                   "<<kl<<" nats";
+	// A variational encoder that collapsed has mu pinned at 0 and a posterior variance of 1: the KL
+	// term won and the latent carries no information, so the reconstruction is a constant decoder.
+	Log(Log::INFO)<<"  Latent mean abs:                 "<<latentMean.abs().mean().item<double>();
+	Log(Log::INFO)<<"  Latent std:                      "<<latentVar.sqrt().mean().item<double>();
+	if(variational)
+		Log(Log::INFO)<<"  Mean posterior variance:         "<<logvarSum.div(double(sampleCount)).exp().mean().item<double>();
+
+	Log(Log::INFO)<<"\nPer feature reconstruction MSE:\n"<<tensorToString(perFeatureMse.cpu(), false);
+
+	std::filesystem::create_directories(config.outputDir);
+
+	{
+		std::ofstream metrics(config.outputDir/"autoencoder_metrics.csv");
+		if(metrics)
+		{
+			metrics<<"metric,value\n";
+			metrics<<"variational,"<<(variational ? 1 : 0)<<'\n';
+			metrics<<"latentSize,"<<net->getLatentSize()<<'\n';
+			metrics<<"samples,"<<sampleCount<<'\n';
+			metrics<<"reconMse,"<<std::setprecision(8)<<reconMse<<'\n';
+			metrics<<"reconR2mean,"<<std::setprecision(8)<<meanR2<<'\n';
+			if(variational)
+				metrics<<"klNats,"<<std::setprecision(8)<<kl<<'\n';
+			metrics<<"latentMeanAbs,"<<latentMean.abs().mean().item<double>()<<'\n';
+			metrics<<"latentStd,"<<latentVar.sqrt().mean().item<double>()<<'\n';
+		}
+		else
+			Log(Log::WARN)<<"could not write "<<config.outputDir/"autoencoder_metrics.csv";
+		csv::save(config.outputDir/"recon_mse_per_feature.csv", perFeatureMse.cpu(), "mse");
+		csv::save(config.outputDir/"recon_r2_per_feature.csv", r2.cpu(), "r2");
+	}
+
+	assert(alllatents.dim() == 2);
+
+	auto latentAccesor = alllatents.accessor<float, 2>();
+	std::valarray<double> x(alllatents.size(0));
+	std::valarray<double> y(alllatents.size(0));
+	std::valarray<double> z(alllatents.size(0));
+
+	for(int64_t i = 0; i < alllatents.size(0); ++i)
+	{
+		switch(alllatents.size(1))
 		{
 			default:
 			case 3:
@@ -1006,16 +1108,16 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		}
 	}
 
-	csv::save(config.outputDir/"latents.csv", ret.latents, "x ,y, z");
+	csv::save(config.outputDir/"latents.csv", alllatents, "x ,y, z");
 
 	if(config.outputMoreImages)
 	{
 		std::filesystem::path imgDir = config.outputDir/"images";
-		std::filesystem::create_directory(imgDir);
-		for(int64_t i = 0; i < ret.outputs.size(0); ++i)
+		std::filesystem::create_directories(imgDir);
+		for(int64_t i = 0; i < alloutputs.size(0); ++i)
 		{
-			std::pair<std::valarray<double>, std::valarray<double>> output = torchToValarray<double>(ret.outputs[i].to(torch::kFloat64));
-			std::pair<std::valarray<double>, std::valarray<double>> referance = torchToValarray<double>(ret.inputs[i].to(torch::kFloat64));
+			std::pair<std::valarray<double>, std::valarray<double>> output = torchToValarray<double>(alloutputs[i].to(torch::kFloat64));
+			std::pair<std::valarray<double>, std::valarray<double>> referance = torchToValarray<double>(allinputs[i].to(torch::kFloat64));
 
 			PlotOptions options;
 			options.type = PLOT_TYPE_LINE;
@@ -1028,20 +1130,20 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		}
 	}
 
-	if(ret.latents.size(0) == ret.datasetTargets.size(0) && ret.datasetTargets.size(1) == 1)
+	if(alllatents.size(0) == alldatasettargets.size(0) && alldatasettargets.size(1) == 1)
 	{
-		torch::Tensor metadata = torch::zeros({ret.latents.size(0), 4}, tensorOptCpu<float>(false));
+		torch::Tensor metadata = torch::zeros({alllatents.size(0), 4}, tensorOptCpu<float>(false));
 		auto metadataAcesssor = metadata.accessor<float, 2>();
-		for(int64_t i = 0; i < ret.latents.size(0); ++i)
+		for(int64_t i = 0; i < alllatents.size(0); ++i)
 		{
-			std::array<int, 3> rgb = color::getColor(static_cast<color::color>(ret.datasetTargets[i].item().toInt()+1));
-			metadataAcesssor[i][0] = ret.datasetTargets[i].item().toFloat();
+			std::array<int, 3> rgb = color::getColor(static_cast<color::color>(alldatasettargets[i].item().toInt()+1));
+			metadataAcesssor[i][0] = alldatasettargets[i].item().toFloat();
 			metadataAcesssor[i][1] = rgb[0];
 			metadataAcesssor[i][2] = rgb[1];
 			metadataAcesssor[i][3] = rgb[2];
 		}
 
-		csv::save(config.outputDir/"latents-with-meta.csv", torch::cat({ret.latents, metadata}, 1), "x ,y, z, class, r, g, b");
+		csv::save(config.outputDir/"latents-with-meta.csv", torch::cat({alllatents, metadata}, 1), "x ,y, z, class, r, g, b");
 	}
 
 	PlotOptions pltoptions;
@@ -1050,7 +1152,7 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 	pltoptions.zLabel = "z";
 	pltoptions.type = PLOT_TYPE_SCATTER;
 
-	switch(ret.latents.size(1))
+	switch(alllatents.size(1))
 	{
 		default:
 		case 3:
@@ -1064,7 +1166,7 @@ int testAutoencoder(std::shared_ptr<ann::AutoEncoder> net, const Config& config)
 		}
 		case 1:
 		{
-			for(int64_t i = 0; i < ret.latents.size(0); ++i)
+			for(int64_t i = 0; i < alllatents.size(0); ++i)
 				y[i] = i;
 			pltoptions.xLabel = "n";
 			pltoptions.yLabel = "x";

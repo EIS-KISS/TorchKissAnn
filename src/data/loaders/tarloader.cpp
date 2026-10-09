@@ -90,7 +90,22 @@ torch::data::Example<torch::Tensor, torch::Tensor> EisTarDataset::getImpl(size_t
 {
 	eis::Spectra data = loadSpectraAtIndex(index);
 
-	torch::Tensor input = eisToTorch(resampleCanonical(data.data));
+	std::vector<eis::DataPoint> resampled = resampleCanonical(data.data);
+	std::vector<std::string> extraInputNames = getExtraInputsAndLabelNames(data).first;
+
+	torch::Tensor input;
+	if(extraInputNames.empty())
+	{
+		input = eisToTorch(resampled);
+	}
+	else
+	{
+		std::vector<fvalue> extraInputs;
+		for(const std::string& name : extraInputNames)
+			extraInputs.push_back(data.getLabel(name));
+		input = eisToTorchExtra(resampled, extraInputs);
+	}
+
 	return torch::data::Example<torch::Tensor, torch::Tensor>(input, EisTarDataset::getTargetImpl(index));
 }
 

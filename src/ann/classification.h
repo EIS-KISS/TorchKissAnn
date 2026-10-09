@@ -350,8 +350,12 @@ void train(TrainLog* trainLog, std::shared_ptr<Net> net, EisDataset<DatasetType>
 		net->setSpectraNorm(mode == SpectraNorm::None ? std::string() : spectraNormToString(mode));
 	}
 
-	net->setInputLogCompression(trainDataset->inputSize());
-	Log(Log::INFO)<<"Compressing the leading "<<trainDataset->inputSize()<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
+	// Extra scalar inputs (temperature, ocv, ...) are appended behind the spectral features and are
+	// already small linear numbers, so only the spectra part gets the signed log compression.
+	int64_t spectralFeatures = static_cast<int64_t>(trainDataset->inputSize())
+			- static_cast<int64_t>(trainDataset->extraInputs().size());
+	net->setInputLogCompression(spectralFeatures);
+	Log(Log::INFO)<<"Compressing the leading "<<spectralFeatures<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
 
 	net->to(*offload_device);
 

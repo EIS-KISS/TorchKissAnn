@@ -572,10 +572,11 @@ bool check_options(const Config& config)
 	if(canonicalRequested)
 	{
 		bool supportedMode = (config.mode == MODE_ANN || config.mode == MODE_ANN_CONV || config.mode == MODE_ANN_SCRIPT ||
-			config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT);
+			config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT ||
+			modeIsAutoEncoder(config.mode));
 		if(!supportedMode)
 		{
-			Log(Log::ERROR)<<"the canonical grid is only supported in ann, conv, script, regression and regression_script modes";
+			Log(Log::ERROR)<<"the canonical grid is only supported in ann, conv, script, regression, regression_script, autoencoder and vae modes";
 			return false;
 		}
 		if(!(config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin))
