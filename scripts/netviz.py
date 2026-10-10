@@ -160,6 +160,9 @@ NOTABLE_OPS = {
 	"aten::flatten": "Flatten",
 	"aten::reshape": "Reshape",
 	"aten::view": "Reshape",
+	# The two-path helper that splits the trailing scalar inputs (temperature, ocv, ...) off the
+	# flat vector so they can go through their own branch instead of the conv trunk.
+	"aten::extra_inputs_slice": "Extra Inputs",
 	"aten::softmax": "Softmax",
 	"aten::sigmoid": "Sigmoid",
 	# Functional activations, as torch.nn.TransformerEncoderLayer and the
@@ -314,6 +317,24 @@ def flatten_tensors(value) -> list:
 	return []
 
 
+def is_data(value) -> bool:
+	"""Whether a graph value carries tensors: a tensor, or a list/tuple of tensors.
+
+	The cat node is handed a List[Tensor] rather than a bare tensor, so a data
+	input is not always a TensorType; the list a concat consumes has to count as
+	data too, otherwise its two operands would be invisible to the wiring.
+	"""
+	kind = value.type().kind()
+	if kind == "TensorType":
+		return True
+	if kind in ("ListType", "TupleType", "OptionalType"):
+		try:
+			return value.type().getElementType().kind() == "TensorType"
+		except Exception:
+			return False
+	return False
+
+
 def human_count(value: int) -> str:
 	if value >= 1_000_000:
 		return f"{value / 1_000_000:.2f}M"
@@ -416,6 +437,13 @@ class Block:
 	children: list = field(default_factory=list)
 	repeat: int = 1
 	key: str = ""
+	# The graph values this block reads and writes, so the renderer can wire an
+	# edge from the block that actually produced a value rather than from the
+	# one that merely ran before it. A two-path network needs this: the extra
+	# input branch reads the network input, not the block above it, and the
+	# concat joins two branches that are not neighbours in execution order.
+	consumes: list = field(default_factory=list)
+	produces: list = field(default_factory=list)
 
 	@property
 	def label(self) -> str:
@@ -725,7 +753,7 @@ class Capturer:
 				except Exception:
 					result = UNKNOWN
 		self.store(outputs, result, env)
-		return self.record_op(effective_kind, args, result)
+		return self.record_op(effective_kind, args, result, node, skip_first=True)
 
 	@staticmethod
 	def store(outputs, result, env):
@@ -790,6 +818,9 @@ class Capturer:
 			return None
 		block, result = self.run_child(sub, args, names.get(inputs[0]))
 		self.store(outputs, result, env)
+		if block is not None:
+			block.consumes = [value for value in inputs[1:] if is_data(value)]
+			block.produces = [outputs[0]] if outputs else []
 		return block
 
 	def run_child(self, sub, args, name=None) -> tuple:
@@ -875,7 +906,7 @@ class Capturer:
 			except Exception:
 				result = UNKNOWN
 		self.store(outputs, result, env)
-		return self.record_op(kind, args, result)
+		return self.record_op(kind, args, result, node)
 
 	def run_scalar(self, node, env, kind):
 		"""Evaluate shape arithmetic such as prim::max, it never gets a box."""
@@ -890,8 +921,14 @@ class Capturer:
 		self.store(outputs, result, env)
 		return None
 
-	def record_op(self, kind, args, result):
+	def record_op(self, kind, args, result, node=None, skip_first: bool = False):
 		"""Decide whether an executed op deserves a box of its own."""
+		consumes, produces = [], []
+		if node is not None:
+			inputs = list(node.inputs())[1:] if skip_first else list(node.inputs())
+			consumes = [value for value in inputs if is_data(value)]
+			outputs = list(node.outputs())
+			produces = [outputs[0]] if outputs else []
 		tensors = [item for arg in args for item in flatten_tensors(arg)]
 		if kind in SKIP_OPS and tensors:
 			# The result, not the last input: adding a broadcast positional
@@ -900,7 +937,7 @@ class Capturer:
 			if tensor_out is None:
 				tensor_out = tensors[-1]
 			return Block(title="Add", in_shape=tuple(t.shape for t in tensors),
-				out_shape=tuple(tensor_out.shape))
+				out_shape=tuple(tensor_out.shape), consumes=consumes, produces=produces)
 		if kind in HIDDEN_OPS or not tensors:
 			return None
 		name = NOTABLE_OPS.get(kind)
@@ -909,7 +946,8 @@ class Capturer:
 		tensor_out = result if torch.is_tensor(result) else None
 		if tensor_out is None:
 			return None
-		return Block(title=name, in_shape=tuple(tensors[0].shape), out_shape=tuple(tensor_out.shape))
+		return Block(title=name, in_shape=tuple(tensors[0].shape), out_shape=tuple(tensor_out.shape),
+			consumes=consumes, produces=produces)
 
 
 def detect_skip(module):
@@ -1040,7 +1078,16 @@ def expand_containers(blocks: list) -> list:
 	out = []
 	for block in blocks:
 		if block.title in CONTAINERS and not block.residual:
-			out.extend(expand_containers(block.children))
+			kids = expand_containers(block.children)
+			# The container is invisible, so its place in the data flow moves to
+			# the ends of its child run: whatever fed the container feeds its
+			# first child, and whatever it produced is produced by its last one.
+			if kids:
+				if block.consumes:
+					kids[0].consumes = list(block.consumes) + kids[0].consumes
+				if block.produces:
+					kids[-1].produces = list(kids[-1].produces) + list(block.produces)
+			out.extend(kids)
 		else:
 			out.append(block)
 	return out
@@ -1096,17 +1143,30 @@ def fold_decor(blocks: list, force_pre: bool = False) -> list:
 		box.decor = titles
 		box.params = sum(item.params for item in run)
 		box.out_shape = run[-1].out_shape
+		# The run reads what its first layer read and hands on what its last
+		# layer wrote, so the merged box has to claim both ends of the value
+		# chain or the wiring loses the block's place in the data flow.
+		box.consumes = list(box.consumes) + list(run[0].consumes)
+		box.produces = list(run[-1].produces) + list(box.produces)
 		merged.append(box)
 
 	def forward(target):
 		target.pre_decor.extend(item.title for item in pending)
 		target.params += sum(item.params for item in pending)
+		# The run sits before the layer, so the layer now reads the run's input.
+		if pending:
+			target.consumes = list(pending[0].consumes) + list(target.consumes)
 		pending.clear()
 
 	def backward(target):
 		target.decor.extend(item.title for item in pending)
 		target.params += sum(item.params for item in pending)
 		target.out_shape = pending[-1].out_shape or target.out_shape
+		# The run sits after the layer, so the layer now hands on the run's
+		# output: without this the folded-away activation's value is lost and
+		# the consumers of the layer resolve past it to whatever fed the group.
+		if pending:
+			target.produces = list(pending[-1].produces) + list(target.produces)
 		pending.clear()
 
 	for block in blocks:
@@ -1186,10 +1246,44 @@ def flatten_single(blocks: list) -> list:
 				# it, so unwrapping would rename the layer to one of its parts.
 				break
 			inner.in_shape = block.in_shape or inner.in_shape
+			inner.consumes = list(block.consumes) + inner.consumes
+			inner.produces = list(inner.produces) + list(block.produces)
 			block = inner
 			block.children = flatten_single(block.children)
 		out.append(block)
 	return out
+
+
+def resolve_sources(value, producers: dict, seen: set = None) -> list:
+	"""The nodes whose output feeds this graph value, in operand order.
+
+	Edges have to follow the data, not the order the blocks happen to run in, so
+	a value is traced back to the block that produced it. The trace passes
+	through the ops that get no box of their own: the list a concat is handed,
+	and the bypass ops (padding, an identity placeholder, a module call whose
+	receiver is not a tensor). A value no block claims stays unresolved, and the
+	caller falls back to the previous block, which is what a plain chain needs.
+	"""
+	if seen is None:
+		seen = set()
+	if value in producers:
+		return [producers[value]]
+	if id(value) in seen:
+		return []
+	seen.add(id(value))
+	producer = value.node()
+	if producer is None:
+		return []
+	kind = producer.kind()
+	if kind in ("prim::ListConstruct", "prim::TupleConstruct") or kind in BYPASS_OPS:
+		found = []
+		for item in producer.inputs():
+			if kind in ("prim::ListConstruct", "prim::TupleConstruct") or is_data(item):
+				for source in resolve_sources(item, producers, seen):
+					if source not in found:
+						found.append(source)
+		return found
+	return []
 
 
 class Renderer:
@@ -1329,16 +1423,32 @@ class Renderer:
 			fontname="Helvetica-Bold", fontsize="12", fontcolor="black")
 		return identifier
 
-	def chain(self, blocks: list, input_shape: str, output_shape: str):
+	def chain(self, blocks: list, input_shape: str, output_shape: str, input_value=None):
 		start = self.new_id("in")
 		self.digraph.node(start, label=f"Input\n{input_shape}", shape="oval", style="bold",
 			color="black", penwidth="1.4", fontname="Helvetica-Bold", fontsize="11")
+		# Maps a graph value to the node that emits it, so a consumer can be wired
+		# to the block that produced its input rather than to the one before it.
+		producers = {}
+		if input_value is not None:
+			producers[input_value] = start
 		previous = start
 		for block in blocks:
 			entry, exit_node = self.draw(self.digraph, block)
+			for value in block.produces:
+				producers[value] = exit_node
+			sources = []
+			for value in block.consumes:
+				for source in resolve_sources(value, producers):
+					if source not in sources:
+						sources.append(source)
+			if not sources:
+				sources = [previous]
 			shape = human_shape(block.in_shape) if block.in_shape else ""
-			self.digraph.edge(previous, entry, label=shape, color="black", penwidth="1.1",
-				arrowsize="0.7", fontsize="9", fontname="Helvetica", fontcolor="black")
+			for index, source in enumerate(sources):
+				self.digraph.edge(source, entry, label=shape if index == 0 else "", color="black",
+					penwidth="1.1", arrowsize="0.7", fontsize="9", fontname="Helvetica",
+					fontcolor="black")
 			previous = exit_node
 		end = self.new_id("out")
 		self.digraph.node(end, label=f"Output\n{output_shape}", shape="oval", style="bold",
@@ -1382,7 +1492,7 @@ def load_torchscript(path: str):
 
 
 def build_source(kind: str, input_size: int, output_size: int, channels: int = 1,
-				 base_filters: int = 100):
+				 base_filters: int = 100, extra_count: int = 0):
 	"""Instantiate one of the networks in scripts/nets, as buildnet.py does."""
 	if kind == "simple":
 		from nets.simplenet import SimpleNet
@@ -1411,7 +1521,7 @@ def build_source(kind: str, input_size: int, output_size: int, channels: int = 1
 		module = Transformer1D(input_size, output_size, channels)
 	elif kind == "seresnet":
 		from nets.seresnet1d import SEResNet1D
-		module = SEResNet1D(input_size, output_size, channels)
+		module = SEResNet1D(input_size, output_size, channels, extra_count=extra_count)
 	elif kind == "resnetv2":
 		from nets.resnetv2_1d import ResNetV21D
 		module = ResNetV21D(input_size, output_size, channels)
@@ -1454,6 +1564,10 @@ def main():
 	parser.add_argument("--channels", "-c", type=int, default=1,
 		help="Input channels for --type of the nets that support it: 1 is the whole vector as one"
 			" channel, 2 splits it into an aligned real and imaginary channel pair")
+	parser.add_argument("--extra-inputs", "-e", type=int, default=0,
+		help="Number of trailing scalar extra inputs (temperature, ocv, ...) for --type seresnet: the"
+			" network grows a second branch (a small MLP) for them that is fused with the conv trunk"
+			" before the head. input_size must already include them. Ignored by the other types")
 	parser.add_argument("--base_filters", "-b", type=int, default=100,
 		help="Base filter count of --type resnet, the only knob of its parameter count: it grows"
 			" with the square of this number and not with the input length (24 is ~150k"
@@ -1474,12 +1588,14 @@ def main():
 		output_size = meta.get("outputSize") or args.output_size
 	else:
 		module = build_source(args.type, args.input_size, args.output_size, args.channels,
-			args.base_filters)
+			args.base_filters, args.extra_inputs)
 		# the width is the only thing that tells two resnet drawings apart, so it belongs in the
 		# title when it is not the default
 		name = args.type
 		if args.type == "resnet" and args.base_filters != 100:
 			name = f"resnet_f{args.base_filters}"
+		if args.type == "seresnet" and (args.channels != 1 or args.extra_inputs > 0):
+			name = f"seresnet_c{args.channels}e{args.extra_inputs}"
 		meta = {"name": name}
 		input_size = args.input_size
 		output_size = args.output_size
@@ -1494,6 +1610,14 @@ def main():
 		blocks, _ = capturer.walk(module, sample)
 	blocks = flatten_single(simplify(blocks))
 
+	# The graph value of the network's tensor argument, so the renderer can tell
+	# that the extra input branch reads the input directly instead of the block
+	# that ran just before it.
+	try:
+		input_value = list(forward_graph(module).inputs())[1]
+	except Exception:
+		input_value = None
+
 	for warning in capturer.warnings:
 		print(f"warning: {warning}", file=sys.stderr)
 
@@ -1506,7 +1630,8 @@ def main():
 
 	renderer = Renderer()
 	renderer.chain(blocks, human_shape((args.batch, input_size)),
-		human_shape(tuple(final.shape) if torch.is_tensor(final) else (args.batch, output_size)))
+		human_shape(tuple(final.shape) if torch.is_tensor(final) else (args.batch, output_size)),
+		input_value)
 
 	for fmt in args.format:
 		path = renderer.digraph.render(filename=out, format=fmt, cleanup=True)

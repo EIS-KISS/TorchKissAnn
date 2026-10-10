@@ -54,7 +54,7 @@ baselines):
 
 import torch
 
-from .common import SamePadConv1d, SqueezeExcitation1d, MeanPool, spectra_length, spectra_to_channels
+from .common import SamePadConv1d, SqueezeExcitation1d, MeanPool, spectra_length, spectra_to_channels, extra_inputs_slice
 
 
 class ResidualBlock(torch.nn.Module):
@@ -90,18 +90,30 @@ class ResidualBlock(torch.nn.Module):
 
 class SEResNet1D(torch.nn.Module):
 	"""
-	input_size is the length of the flat input vector (2N for a spectra with N
-	frequency points), output_size the number of classes or regression targets.
-	channels=2 splits the vector into an aligned Re(Z) and Im(Z) channel pair.
+	input_size is the length of the flat input vector, output_size the number of
+	classes or regression targets. channels=2 splits the spectra into an aligned
+	Re(Z) and Im(Z) channel pair.
+
+	extra_count is the number of trailing scalar inputs (temperature, ocv, ...)
+	the loader appended behind the spectra. When it is non zero the network
+	becomes two-path: the spectra part goes through the convolution trunk as
+	before, and the extra scalars go through a small MLP (extra_width wide); the
+	pooled conv feature and the MLP feature are concatenated before the head.
+	This keeps the scalars out of the frequency axis, so they are neither
+	convolved against a neighbouring frequency nor diluted by the global mean
+	pool the way they would be if they were left inside the conv input. With
+	extra_count=0 the network is exactly the single-path SEResNet1D.
 	"""
 
 	def __init__(self, input_size: int, output_size: int, channels: int = 1,
 				 base_filters: int = 32, blocks_per_stage: int = 2, n_stages: int = 3,
-				 reduction: int = 4, dropout: float = 0.0):
+				 reduction: int = 4, dropout: float = 0.0,
+				 extra_count: int = 0, extra_width: int = 16):
 		super(SEResNet1D, self).__init__()
 
-		self.channels = channels
-		length = spectra_length(input_size, channels)
+		self.channels: torch.jit.Final[int] = channels
+		self.extra_count: torch.jit.Final[int] = extra_count
+		length = spectra_length(input_size, channels, extra_count)
 
 		self.stem = torch.nn.Sequential(
 			SamePadConv1d(channels, base_filters, 5, bias=False),
@@ -128,12 +140,28 @@ class SEResNet1D(torch.nn.Module):
 		self.stages = stages
 		self.pool = MeanPool()
 		self.dropout = torch.nn.Dropout(p=dropout) if dropout > 0 else torch.nn.Identity()
-		self.head = torch.nn.Linear(filters, output_size)
+
+		head_in = filters
+		if extra_count > 0:
+			self.extra = torch.nn.Sequential(
+				torch.nn.Linear(extra_count, extra_width),
+				torch.nn.ReLU(inplace=True),
+				torch.nn.Linear(extra_width, extra_width))
+			head_in = filters + extra_width
+		else:
+			# TorchScript resolves self.extra even in the pruned branch, so it must exist;
+			# Identity keeps the single-path net byte-for-byte the old one (no extra params).
+			self.extra = torch.nn.Identity()
+		self.head = torch.nn.Linear(head_in, output_size)
 
 	def forward(self, x: torch.Tensor) -> torch.Tensor:
-		x = spectra_to_channels(x, self.channels)
+		flat = x
+		x = spectra_to_channels(flat, self.channels, self.extra_count)
 		x = self.stem(x)
 		x = self.stages(x)
 		x = self.pool(x)
 		x = self.dropout(x)
+		if self.extra_count > 0:
+			extra = self.extra(extra_inputs_slice(flat, self.extra_count))
+			x = torch.cat([x, extra], dim=1)
 		return self.head(x)

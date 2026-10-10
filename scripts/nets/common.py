@@ -21,10 +21,12 @@
 import torch
 
 
-def spectra_to_channels(x: torch.Tensor, channels: int) -> torch.Tensor:
+def spectra_to_channels(x: torch.Tensor, channels: int, extra_count: int = 0) -> torch.Tensor:
 	if x.dim() == 1:
 		x = x.reshape(1, -1)
 	batch = x.size(0)
+	if extra_count > 0:
+		x = x[:, :x.size(1) - extra_count]
 	if channels == 1:
 		return x.reshape(batch, 1, x.size(1))
 	elif channels == 2:
@@ -36,12 +38,20 @@ def spectra_to_channels(x: torch.Tensor, channels: int) -> torch.Tensor:
 		raise ValueError("only 1 or 2 input channels are supported, got " + str(channels))
 
 
-def spectra_length(input_size: int, channels: int) -> int:
+def spectra_length(input_size: int, channels: int, extra_count: int = 0) -> int:
+	spectral = input_size - extra_count
 	if channels == 2:
-		if input_size % 2 != 0:
+		if spectral % 2 != 0:
 			raise ValueError("input size " + str(input_size) + " can not be split into a real and a imaginary channel")
-		return input_size // 2
-	return input_size
+		return spectral // 2
+	return spectral
+
+
+def extra_inputs_slice(x: torch.Tensor, extra_count: int) -> torch.Tensor:
+	"""The trailing extra_count scalars of the flat input vector, as (batch, extra_count)."""
+	if x.dim() == 1:
+		x = x.reshape(1, -1)
+	return x[:, x.size(1) - extra_count:]
 
 
 class SamePadConv1d(torch.nn.Module):
