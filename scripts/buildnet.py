@@ -165,8 +165,8 @@ def build_transformer(input_size: int, output_size: int, channels: int):
 	save(script, input_size, output_size, "transformer")
 
 
-def build_seresnet(input_size: int, output_size: int, channels: int):
-	module = SEResNet1D(input_size, output_size, channels)
+def build_seresnet(input_size: int, output_size: int, channels: int, extra_count: int = 0):
+	module = SEResNet1D(input_size, output_size, channels, extra_count=extra_count)
 
 	data = torch.randn((16, input_size))
 	data = module.forward(data)
@@ -210,13 +210,22 @@ if __name__ == "__main__":
 	parser.add_argument('--channels', '-c', type=int, default=1,
 		help="Input channels for the nets that support it (inception, tcn, gru, transformer, seresnet, resnetv2): "
 			"1 keeps the whole spectra vector as a single channel like the older nets, "
-			"2 splits it into an aligned real and imaginary channel (requires an input size of 2N with no extra inputs)")
+			"2 splits it into an aligned real and imaginary channel (with --extra-inputs the extras are "
+			"split off first, so 2 works for seresnet even on datasets with extra scalar inputs)")
+	parser.add_argument('--extra-inputs', '-e', type=int, default=0,
+		help="Number of trailing scalar extra inputs (temperature, ocv, ...) the loader appends behind the "
+			"spectra; input_size must already include them. Only seresnet uses this: it builds a second "
+			"branch (a small MLP) for those scalars that is fused with the conv trunk before the head. "
+			"Ignored by the other network types")
 	parser.add_argument('--base_filters', '-b', type=int, default=None,
 		help="Base filter count of the resnet, 100 if omitted. The parameter count grows with the "
 			"square of it and does not depend on the input size: at 8 outputs 24 filters are ~150k "
 			"parameters and 34 are ~300k. When given, the count becomes part of the file name "
 			"(resnet_f24ANY-8.pt) so several widths can be built into one directory")
 	args = parser.parse_args()
+
+	if args.extra_inputs > 0 and args.type != "seresnet":
+		print(f"warning: --extra-inputs is only implemented for seresnet, ignoring it for {args.type}")
 
 	if args.type == "simple":
 		build_simplenet(args.input_size, args.output_size)
@@ -235,7 +244,7 @@ if __name__ == "__main__":
 	elif args.type == "transformer":
 		build_transformer(args.input_size, args.output_size, args.channels)
 	elif args.type == "seresnet":
-		build_seresnet(args.input_size, args.output_size, args.channels)
+		build_seresnet(args.input_size, args.output_size, args.channels, args.extra_inputs)
 	elif args.type == "resnetv2":
 		build_resnetv2(args.input_size, args.output_size, args.channels)
 	elif args.type == "decoder":
