@@ -32,6 +32,7 @@
 #include <algorithm>
 
 #include "globals.h"
+#include "tensoroptions.h"
 
 ann::ScriptNet::ScriptNet(const Json::Value& node, bool noload):
 Net(node)
@@ -87,6 +88,9 @@ void ann::ScriptNet::loadModule(const std::filesystem::path& scriptPath)
 			if(scriptOutputSize != outputSize && outputSize > 0)
 				throw load_errror("The given torch script has a output size incompatable with the given size, script has " +
 					std::to_string(scriptOutputSize) + " but " + std::to_string(outputSize) + " was requested");
+			outputSize = scriptOutputSize;
+			outputScalars = torch::ones({outputSize}, tensorOptCpu<float>(false));
+			outputBiases = torch::zeros({outputSize}, tensorOptCpu<float>(false));
 		}
 	}
 
