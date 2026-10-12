@@ -404,6 +404,22 @@ bool check_options(const Config& config)
 			return false;
 		}
 
+	for(double spectralWeight : config.spectralWeights)
+		if(!(spectralWeight >= 0))
+		{
+			Log(Log::ERROR)<<"--spectral-weight and --spectral-weights values must not be negative";
+			return false;
+		}
+	bool spectralRequested = false;
+	for(double spectralWeight : config.spectralWeights)
+		spectralRequested |= (spectralWeight > 0);
+	if(spectralRequested && !modeIsAutoEncoder(config.mode))
+	{
+		Log(Log::ERROR)<<"--spectral-weight can only be tuned in the autoencoder and vae modes: it is an auxiliary "
+			<<"reconstruction loss on the frequency axis, which the classification and regression objectives do not use.";
+		return false;
+	}
+
 	for(size_t downsampleSteps : config.downsampleSteps)
 		if(downsampleSteps < 1)
 		{
@@ -502,6 +518,8 @@ static void applyDefaults(Config& config)
 		config.spectraNorms = {"none"};
 	if(config.latentSizes.empty())
 		config.latentSizes = {config.latentSize};
+	if(config.spectralWeights.empty())
+		config.spectralWeights = {0};
 
 	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
 }

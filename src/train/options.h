@@ -45,7 +45,8 @@ enum
 	OPT_SPECTRA_NORM,
 	OPT_SIMPLICITY_THRESHOLD,
 	OPT_SIMPLICITY_PREFERENCE,
-	OPT_AUGMENTATION_MODEL
+	OPT_AUGMENTATION_MODEL,
+	OPT_SPECTRAL_WEIGHT
 };
 
 static struct argp_option options[] =
@@ -67,6 +68,7 @@ static struct argp_option options[] =
   {"no-weights",	'g', 0,				0, 	"Don't use class weights"},
   {"latent-size",	'a', "[NUMBER]",	0, 	"Size of the latent vector for the autoencoder"},
   {"kl-beta",		'k', "[NUMBER]",	0, 	"Weight of the KL divergence term in the vae loss, default: 1"},
+  {"spectral-weight",	OPT_SPECTRAL_WEIGHT, "[NUMBER]", 0, "Autoencoder and vae only: mix in a spectral prediction auxiliary loss with this weight (default 0 = off). A random subset of frequency points is masked from the input, the partial spectra is encoded and decoded, and the error on the held-out points is added to the loss, forcing the latent to encode the impedance curve rather than only cluster identity"},
   {"canonical-fmin",		OPT_CANONICAL_FMIN, "[NUMBER]", 0, "Lower edge of the canonical grid (rad/s, same unit as the data's omega column); enables canonical resampling together with --canonical-fmax"},
   {"canonical-fmax",		OPT_CANONICAL_FMAX, "[NUMBER]", 0, "Upper frequency bound (Hz) of the canonical grid"},
   {"canonical-points",		OPT_CANONICAL_POINTS, "[NUMBER]", 0, "Number of points on the canonical grid (default: taken from the first spectra)"},
@@ -95,6 +97,7 @@ struct Config
 	size_t extraLayers = 3;
 	size_t latentSize = 10;
 	double klBeta = 1.0;
+	double spectralWeight = 0;
 	LossType loss = LOSS_DEFAULT;
 	bool noGpu = false;
 	bool noWeights = false;
@@ -195,6 +198,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'k':
 			config->klBeta = std::stod(std::string(arg));
+			break;
+		case OPT_SPECTRAL_WEIGHT:
+			config->spectralWeight = std::stod(std::string(arg));
 			break;
 		case OPT_CANONICAL_FMIN:
 			config->canonicalFMin = std::stod(std::string(arg));

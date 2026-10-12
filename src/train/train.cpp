@@ -81,9 +81,6 @@ static ann::regression::regression_loss_type_t regressionLossFromConfig(const Lo
 	}
 }
 
-// Configure canonical grid resampling on a dataset if the mode supports it. The training dataset
-// gets shift augmentation (classification only), the test dataset never does. Must run before any
-// call to inputSize() so the network is sized for the grid, not the raw spectra.
 template <typename DataSetType>
 static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* dataset, bool training)
 {
@@ -99,23 +96,15 @@ static void applyCanonicalGrid(const Config& config, EisDataset<DataSetType>* da
 	grid.fMax = config.canonicalFMax;
 	grid.points = config.canonicalPoints;
 	grid.log = config.canonicalLog;
-	// Shifting scales every time constant by the same factor, which preserves the circuit class but
-	// invalidates regression parameter labels, so it is restricted to classification training.
 	bool regression = (config.mode == MODE_REGRESSION || config.mode == MODE_REGRESSION_SCRIPT);
 	grid.augmentShift = (config.canonicalAugmentMaxShift > 0) && training && !regression;
 	grid.augmentMaxShift = config.canonicalAugmentMaxShift;
-	// Windowing only crops the measurement, features keep their absolute position, so it is safe for
-	// regression as well as classification.
 	grid.augmentWindow = (config.canonicalAugmentWindowMin < 1.0) && training;
 	grid.augmentWindowMin = config.canonicalAugmentWindowMin;
 	spectra->setCanonicalGrid(grid);
 	spectra->setCanonicalTraining(training);
 }
 
-// Configure the per spectra |Z| scaling on a dataset. Unlike the shift augmentation this is
-// deterministic, so the training and the test dataset have to be configured identically or the
-// network would be measured against a differently scaled input. Must run before any call to
-// inputSize() and before the dataset is copied into a data loader.
 template <typename DataSetType>
 static void applySpectraNorm(const Config& config, EisDataset<DataSetType>* dataset)
 {
@@ -130,11 +119,6 @@ static void applySpectraNorm(const Config& config, EisDataset<DataSetType>* data
 	spectra->setSpectraNorm(mode);
 }
 
-// Configure the eisgenerator artifact augmentation on a dataset. Training only, like the shift
-// augmentation: the test dataset must see clean spectra so it measures real performance, while the
-// widened training range (the augmentation runs through getNormalization too) is what stops a
-// measured artifact from blowing up the input normalization at inference. Must run before any call to
-// inputSize() and before the dataset is copied into a data loader.
 template <typename DataSetType>
 static bool applyAugmentationModel(const Config& config, EisDataset<DataSetType>* dataset)
 {
@@ -146,10 +130,6 @@ static bool applyAugmentationModel(const Config& config, EisDataset<DataSetType>
 	return spectra->setAugmentationModel(config.augmentationModel);
 }
 
-// Build the set valued labels of -s simplicity on a dataset and report whether it produced them.
-// Must run after the canonical grid is configured: the band over which an element has to stay out of
-// the impedance is the band the network is shown, not the one the file happens to carry. Training and
-// test dataset are given the same arguments so both score the same kind of label.
 template <typename DataSetType>
 static bool applySimplicityLabels(const Config& config, EisDataset<DataSetType>* dataset)
 {
@@ -196,13 +176,6 @@ int train(const Config& config)
 			delete testDataset;
 			return 2;
 		}
-
-		// Loaders intern classes in the order they happen to encounter them, so a training set read
-		// from a tar and a test set read from a directory number the same classes differently, and a
-		// test set that is a subset of the training set interns into a prefix unrelated to the
-		// original numbering. The network's label space is the training dataset's order, so remap the
-		// test targets onto it instead of scoring on a permuted label space. Only single label
-		// classification can do this: multiclass and regression targets are vectors, not indices.
 		if(!dataset.isMulticlass())
 		{
 			std::vector<std::string> trainLabels;
@@ -392,7 +365,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				std::shared_ptr<ann::Net> encoder(new ann::ScriptNet(tokens[0], false, trainDataset->inputSize(), config.latentSize));
 				std::shared_ptr<ann::Net> decoder(new ann::ScriptNet(tokens[1], false, config.latentSize, trainDataset->inputSize()));
 				std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder));
-				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate);
+				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
 			}
 			catch(const std::invalid_argument& err)
 			{
@@ -410,7 +383,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			std::shared_ptr<ann::Net> encoder(new ann::SimpleNet(trainDataset->inputSize(), config.latentSize, 4, 3, false));
 			std::shared_ptr<ann::Net> decoder(new ann::SimpleNet(config.latentSize, trainDataset->inputSize(), 4, 3, false));
 			std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder));
-			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate);
+			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
 			break;
 		}
 		case MODE_VAE_SCRIPT:
@@ -427,7 +400,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				std::shared_ptr<ann::Net> encoder(new ann::ScriptNet(tokens[0], false, trainDataset->inputSize(), 2 * config.latentSize));
 				std::shared_ptr<ann::Net> decoder(new ann::ScriptNet(tokens[1], false, config.latentSize, trainDataset->inputSize()));
 				std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
-				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta);
+				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
 			}
 			catch(const std::invalid_argument& err)
 			{
@@ -445,7 +418,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			std::shared_ptr<ann::Net> encoder(new ann::SimpleNet(trainDataset->inputSize(), 2 * config.latentSize, 4, 3, false));
 			std::shared_ptr<ann::Net> decoder(new ann::SimpleNet(config.latentSize, trainDataset->inputSize(), 4, 3, false));
 			std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
-			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta);
+			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
 			break;
 		}
 		case MODE_GAN:
@@ -610,12 +583,18 @@ bool check_options(const Config& config)
 		Log(Log::ERROR)<<"--spectra-norm must be one of none, zmean, zgeom or zmax, not "<<config.spectraNorm;
 		return false;
 	}
-	if(spectraNormMode != SpectraNorm::None && !classificationMode)
+	// The autoencoder and vae modes are allowed on purpose: reconstructing the level normalised
+	// spectra is the point there, the latent should describe the shape of the Nyquist plot instead
+	// of the impedance magnitude. Regression brings its own affine normalisation and the gan is
+	// trained to judge raw spectra, so both still reject it.
+	bool spectraNormSupportedMode = classificationMode
+		|| config.mode == MODE_AUTO || config.mode == MODE_AUTO_SCRIPT
+		|| config.mode == MODE_VAE || config.mode == MODE_VAE_SCRIPT;
+	if(spectraNormMode != SpectraNorm::None && !spectraNormSupportedMode)
 	{
-		Log(Log::ERROR)<<"--spectra-norm can only be used in the classification modes "<<trainModeToStr(MODE_ANN)<<", "
-			<<trainModeToStr(MODE_ANN_CONV)<<" and "<<trainModeToStr(MODE_ANN_SCRIPT)<<": dividing every spectra by its "
-			<<"own impedance level removes exactly what the regression targets, the autoencoder reconstruction and the "
-			<<"gan discriminator depend on.";
+		Log(Log::ERROR)<<"--spectra-norm can only be used in the classification, autoencoder and vae modes, not in "
+			<<trainModeToStr(config.mode)<<": dividing every spectra by its own impedance level removes exactly what "
+			<<"the regression targets and the gan discriminator depend on.";
 		return false;
 	}
 	if(canonicalRequested && config.canonicalAugmentShiftRequested && config.canonicalAugmentMaxShift > 0 &&

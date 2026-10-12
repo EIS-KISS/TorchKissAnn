@@ -51,9 +51,30 @@ inline torch::Tensor klDivergence(const torch::Tensor& mu, const torch::Tensor& 
 	return torch::mean(-0.5 * torch::sum(1 + logvar - mu.pow(2) - logvar.exp(), 1));
 }
 
+inline constexpr double SPECTRAL_MASK_RATIO = 0.2;
+
+// MAE style loss
+inline torch::Tensor spectralPredictionLoss(std::shared_ptr<AutoEncoder> network, const torch::Tensor& data,
+	int64_t freqCount, int64_t extraCount)
+{
+	int64_t batch = data.size(0);
+	torch::Tensor draw = torch::rand({batch, freqCount}, data.options());
+	torch::Tensor holdoutFreq = draw < SPECTRAL_MASK_RATIO;
+	torch::Tensor holdoutSpectral = torch::cat({holdoutFreq, holdoutFreq}, 1);
+	torch::Tensor holdout = holdoutSpectral;
+	if(extraCount > 0)
+		holdout = torch::cat({holdoutSpectral, torch::zeros({batch, extraCount}, holdoutSpectral.options())}, 1);
+	torch::Tensor holdoutFloat = holdout.to(data.dtype());
+
+	torch::Tensor masked = data * (1.0 - holdoutFloat);
+	torch::Tensor prediction = network->forward(masked);
+	torch::Tensor squared = (prediction - data).pow(2) * holdoutFloat;
+	return squared.sum() / holdoutFloat.sum().clamp(1.0);
+}
+
 template <typename DataLoader, typename LossFn>
 int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, double beta, size_t epoch,
-			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -65,9 +86,6 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 
 	for(auto& batch : loader)
 	{
-		// Same signed-log compression the classification path applies: the spectra span many
-		// decades of impedance, so the network sees the compressed shape and reconstructs that
-		// compressed representation (input and target are the same tensor here).
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor latent;
@@ -77,6 +95,8 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 		torch::Tensor recon = lossFn(prediction, data);
 		torch::Tensor kld = klDivergence(mu, logvar);
 		torch::Tensor loss = recon + beta * kld;
+		if(spectralWeight > 0)
+			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -107,7 +127,7 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 
 template <typename DataLoader, typename LossFn>
 int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -125,12 +145,12 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 
 	for(auto& batch : loader)
 	{
-		// Signed-log compression of the input, matching the classification path; the network
-		// reconstructs the compressed spectra (input and target are the same tensor here).
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor prediction = network->forward(data);
 		torch::Tensor loss = lossFn(prediction, data);
+		if(spectralWeight > 0)
+			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -197,8 +217,6 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 	for(const auto& batch : loader)
 	{
 		bar.tick();
-		// Compress the input exactly as in training so the reconstruction is compared in the
-		// same space and the exported latents match what the encoder was trained on.
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
 		torch::Tensor latent;
@@ -237,7 +255,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0,
-	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr)
+	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr, double spectralWeight = 0, SpectraNorm spectraNorm = SpectraNorm::None)
 {
 	assert(net->getInputSize() == dataset->get(0).data.size(0));
 	if(testDataset)
@@ -251,8 +269,6 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 		net->setPurpose("Autoencoder");
 	net->setExtraInputs(dataset->extraInputs());
 
-	// Record the canonical frequency grid (if any) so the checkpoint carries everything a client
-	// needs to resample a raw spectra onto the fixed graph before encoding it.
 	if(auto* es = dynamic_cast<EisSpectraDataset*>(dataset))
 	{
 		CanonicalGrid cg;
@@ -260,8 +276,8 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 			net->setCanonicalGrid(cg.fMin, cg.fMax, (int64_t)cg.points, cg.log);
 	}
 
-	// Compress every spectral feature with a signed log, exactly like the classification path, so
-	// the encoder sees a bounded representation instead of raw impedances spanning many decades.
+	net->setSpectraNorm(spectraNorm == SpectraNorm::None ? std::string() : spectraNormToString(spectraNorm));
+
 	net->setInputLogCompression(dataset->inputSize());
 	Log(Log::INFO)<<"Compressing the leading "<<dataset->inputSize()<<" input features with a signed log around "<<Net::DEFAULT_INPUT_LOG_FLOOR;
 
@@ -291,6 +307,19 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 	// ramp the KL weight in linearly over the first epochs so the divergence term can not dominate the reconstruction gradient while encoder is still random
 	size_t klWarmup = std::min<size_t>(epochs, 10);
 
+	int64_t extraCount = 0;
+	for(const auto& extra : dataset->extraInputs())
+		extraCount += extra.second;
+	int64_t spectralFeatures = net->getInputSize() - extraCount;
+	int64_t freqCount = spectralFeatures / 2;
+	if(spectralWeight > 0 && (spectralFeatures < 4 || spectralFeatures % 2 != 0))
+	{
+		Log(Log::WARN)<<"spectral prediction loss disabled: the "<<net->getInputSize()<<" wide input is not a real/imaginary spectra";
+		spectralWeight = 0;
+	}
+	if(spectralWeight > 0)
+		Log(Log::INFO)<<"Spectral prediction auxiliary loss active: weight "<<spectralWeight<<", holding out "<<(SPECTRAL_MASK_RATIO*100)<<"% of "<<freqCount<<" frequency points per sample";
+
 	for (size_t i = 0; i < epochs; ++i)
 	{
 		int epochRet;
@@ -300,10 +329,10 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 			double epochBeta = beta;
 			if(klWarmup > 0)
 				epochBeta = beta * std::min(1.0, double(i + 1) / double(klWarmup));
-			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), trainLog, &meanTrainLoss);
+			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), spectralWeight, freqCount, extraCount, trainLog, &meanTrainLoss);
 		}
 		else
-			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), trainLog, &meanTrainLoss);
+			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), spectralWeight, freqCount, extraCount, trainLog, &meanTrainLoss);
 
 		if(epochRet != 0)
 			break;
