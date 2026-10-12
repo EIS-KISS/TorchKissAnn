@@ -32,13 +32,53 @@
 #include "ann/autoencoder.h"
 #include "ann/autoencode.h"
 #include "commonoptions.h"
+#include "data/canonicalgrid.h"
 #include "data/loaders/tarloader.h"
 #include "log.h"
 #include "data/loaders/dirloader.h"
+#include "data/loaders/eisspectradataset.h"
 #include "options.h"
 #include "globals.h"
 #include "save.h"
 #include "tensoroperators.h"
+
+template <typename T>
+static void applyNetInputPreparation(const ann::Net* net, T& dataset)
+{
+	EisSpectraDataset* spectra = dynamic_cast<EisSpectraDataset*>(&dataset);
+	if(net->hasCanonicalGrid())
+	{
+		if(spectra == nullptr)
+		{
+			Log(Log::WARN)<<"The network expects a canonical frequency grid, but this dataset can not resample";
+		}
+		else
+		{
+			CanonicalGrid grid;
+			grid.enabled = true;
+			grid.fMin = net->getCanonicalFMin();
+			grid.fMax = net->getCanonicalFMax();
+			grid.points = net->getCanonicalPoints();
+			grid.log = net->getCanonicalLog();
+			spectra->setCanonicalGrid(grid);
+			spectra->setCanonicalTraining(false);
+			Log(Log::INFO)<<"Resampling onto the canonical grid of the network: "<<grid.fMin<<" .. "<<grid.fMax
+				<<" rad/s, "<<grid.points<<" points";
+		}
+	}
+	if(!net->getSpectraNorm().empty())
+	{
+		if(spectra == nullptr)
+		{
+			Log(Log::WARN)<<"The network was trained with the "<<net->getSpectraNorm()<<" spectra norm, but this dataset can not apply it";
+		}
+		else
+		{
+			spectra->setSpectraNorm(spectraNormFromString(net->getSpectraNorm()));
+			Log(Log::INFO)<<"Applying the spectra norm of the network: "<<net->getSpectraNorm();
+		}
+	}
+}
 
 template <typename T>
 int exportLatentSpace(std::shared_ptr<ann::AutoEncoder> net, T& dataset, const std::filesystem::path& out)
@@ -59,8 +99,8 @@ int exportLatentSpace(std::shared_ptr<ann::AutoEncoder> net, T& dataset, const s
 	}
 
 	latentFile<<std::scientific;
-	latentFile<<"LATF, 1.0.0\n";
-	latentFile<<net->getLatentSize()<<", "<<dataset.outputSize()<<", "<<dataset.size().value()<<'\n';
+	latentFile<<"LATF, 1.1.0\n";
+	latentFile<<net->getLatentSize()<<", "<<dataset.outputSize()<<", "<<dataset.size().value()<<", 0\n";
 
 	for(int64_t i = 0; i < net->getLatentSize(); ++i)
 		latentFile<<"dim"<<i<<", ";
@@ -141,12 +181,14 @@ int main(int argc, char** argv)
 		case DATASET_DIR:
 		{
 			EisDirDataset dataset(config.fileName);
+			applyNetInputPreparation(net.get(), dataset);
 			ret = exportLatentSpace(autoencoder, dataset, config.outputFilename);
 			break;
 		}
 		case DATASET_TAR:
 		{
 			EisTarDataset dataset(config.fileName);
+			applyNetInputPreparation(net.get(), dataset);
 			ret = exportLatentSpace(autoencoder, dataset, config.outputFilename);
 			break;
 		}
