@@ -420,6 +420,22 @@ bool check_options(const Config& config)
 		return false;
 	}
 
+	for(double contractiveWeight : config.contractiveWeights)
+		if(!(contractiveWeight >= 0))
+		{
+			Log(Log::ERROR)<<"--contractive-weight and --contractive-weights values must not be negative";
+			return false;
+		}
+	bool contractiveRequested = false;
+	for(double contractiveWeight : config.contractiveWeights)
+		contractiveRequested |= (contractiveWeight > 0);
+	if(contractiveRequested && !modeIsAutoEncoder(config.mode))
+	{
+		Log(Log::ERROR)<<"--contractive-weight can only be tuned in the autoencoder and vae modes: it regularises "
+			<<"the latent space of a reconstruction objective, which the classification and regression objectives do not have.";
+		return false;
+	}
+
 	for(size_t downsampleSteps : config.downsampleSteps)
 		if(downsampleSteps < 1)
 		{
@@ -520,6 +536,8 @@ static void applyDefaults(Config& config)
 		config.latentSizes = {config.latentSize};
 	if(config.spectralWeights.empty())
 		config.spectralWeights = {0};
+	if(config.contractiveWeights.empty())
+		config.contractiveWeights = {0};
 
 	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
 }

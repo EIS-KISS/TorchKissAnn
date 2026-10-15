@@ -72,9 +72,35 @@ inline torch::Tensor spectralPredictionLoss(std::shared_ptr<AutoEncoder> network
 	return squared.sum() / holdoutFloat.sum().clamp(1.0);
 }
 
+inline constexpr int64_t CONTRACTIVE_NEIGHBORS = 8;
+
+// DEN style locality preserving loss: contract the latent space only along input space
+// neighbourhoods, so similar spectra stay close without creating attractor points
+inline torch::Tensor localityLoss(const torch::Tensor& latent, const torch::Tensor& data)
+{
+	int64_t batch = data.size(0);
+	int64_t neighbors = std::min<int64_t>(CONTRACTIVE_NEIGHBORS, batch - 1);
+	if(neighbors < 1)
+		return torch::zeros({}, latent.options());
+
+	torch::Tensor dataSquared = data.pow(2).sum(1);
+	torch::Tensor dataDistance = (dataSquared.unsqueeze(1) + dataSquared.unsqueeze(0) - 2.0 * data.matmul(data.t())).clamp_min(0);
+	// one extra neighbour because a point is always its own nearest
+	auto nearest = dataDistance.topk(neighbors + 1, 1, false);
+	torch::Tensor distance = std::get<0>(nearest).slice(1, 1);
+	torch::Tensor index = std::get<1>(nearest).slice(1, 1);
+	// the affinity is a constant of the input batch, the temperature is its own neighbour scale
+	torch::Tensor affinity = torch::zeros({batch, batch}, data.options());
+	affinity.scatter_(1, index, torch::exp(-distance / distance.mean().clamp_min(1e-8)));
+
+	torch::Tensor latentSquared = latent.pow(2).sum(1);
+	torch::Tensor latentDistance = (latentSquared.unsqueeze(1) + latentSquared.unsqueeze(0) - 2.0 * latent.matmul(latent.t())).clamp_min(0);
+	return (latentDistance * affinity).sum() / affinity.sum().clamp_min(1e-8);
+}
+
 template <typename DataLoader, typename LossFn>
 int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, double beta, size_t epoch,
-			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -97,6 +123,8 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 		torch::Tensor loss = recon + beta * kld;
 		if(spectralWeight > 0)
 			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
+		if(contractiveWeight > 0)
+			loss = loss + contractiveWeight * localityLoss(latent, data);
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -127,7 +155,7 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 
 template <typename DataLoader, typename LossFn>
 int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -147,10 +175,13 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 	{
 		torch::Tensor data = network->normalizeInput(batch.data.to(*offload_device));
 
-		torch::Tensor prediction = network->forward(data);
+		torch::Tensor latent;
+		torch::Tensor prediction = network->forward(data, latent);
 		torch::Tensor loss = lossFn(prediction, data);
 		if(spectralWeight > 0)
 			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
+		if(contractiveWeight > 0)
+			loss = loss + contractiveWeight * localityLoss(latent, data);
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -255,7 +286,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0,
-	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr, double spectralWeight = 0, SpectraNorm spectraNorm = SpectraNorm::None)
+	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr, double spectralWeight = 0, SpectraNorm spectraNorm = SpectraNorm::None, double contractiveWeight = 0)
 {
 	assert(net->getInputSize() == dataset->get(0).data.size(0));
 	if(testDataset)
@@ -319,6 +350,8 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 	}
 	if(spectralWeight > 0)
 		Log(Log::INFO)<<"Spectral prediction auxiliary loss active: weight "<<spectralWeight<<", holding out "<<(SPECTRAL_MASK_RATIO*100)<<"% of "<<freqCount<<" frequency points per sample";
+	if(contractiveWeight > 0)
+		Log(Log::INFO)<<"Locality preserving auxiliary loss active: weight "<<contractiveWeight<<", contracting the latent along the "<<CONTRACTIVE_NEIGHBORS<<" nearest neighbours of each spectra in input space";
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
@@ -329,10 +362,10 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 			double epochBeta = beta;
 			if(klWarmup > 0)
 				epochBeta = beta * std::min(1.0, double(i + 1) / double(klWarmup));
-			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), spectralWeight, freqCount, extraCount, trainLog, &meanTrainLoss);
+			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, trainLog, &meanTrainLoss);
 		}
 		else
-			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), spectralWeight, freqCount, extraCount, trainLog, &meanTrainLoss);
+			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, trainLog, &meanTrainLoss);
 
 		if(epochRet != 0)
 			break;

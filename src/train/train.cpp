@@ -365,7 +365,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				std::shared_ptr<ann::Net> encoder(new ann::ScriptNet(tokens[0], false, trainDataset->inputSize(), config.latentSize));
 				std::shared_ptr<ann::Net> decoder(new ann::ScriptNet(tokens[1], false, config.latentSize, trainDataset->inputSize()));
 				std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder));
-				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
+				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm), config.contractiveWeight);
 			}
 			catch(const std::invalid_argument& err)
 			{
@@ -383,7 +383,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			std::shared_ptr<ann::Net> encoder(new ann::SimpleNet(trainDataset->inputSize(), config.latentSize, 4, 3, false));
 			std::shared_ptr<ann::Net> decoder(new ann::SimpleNet(config.latentSize, trainDataset->inputSize(), 4, 3, false));
 			std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder));
-			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
+			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, 1.0, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm), config.contractiveWeight);
 			break;
 		}
 		case MODE_VAE_SCRIPT:
@@ -400,7 +400,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 				std::shared_ptr<ann::Net> encoder(new ann::ScriptNet(tokens[0], false, trainDataset->inputSize(), 2 * config.latentSize));
 				std::shared_ptr<ann::Net> decoder(new ann::ScriptNet(tokens[1], false, config.latentSize, trainDataset->inputSize()));
 				std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
-				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
+				ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm), config.contractiveWeight);
 			}
 			catch(const std::invalid_argument& err)
 			{
@@ -418,7 +418,7 @@ void trainSwitch(const Config& config, EisDataset<DataSetType>* trainDataset, Ei
 			std::shared_ptr<ann::Net> encoder(new ann::SimpleNet(trainDataset->inputSize(), 2 * config.latentSize, 4, 3, false));
 			std::shared_ptr<ann::Net> decoder(new ann::SimpleNet(config.latentSize, trainDataset->inputSize(), 4, 3, false));
 			std::shared_ptr<ann::AutoEncoder> autoencoder(new ann::AutoEncoder(encoder, decoder, true));
-			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm));
+			ann::autoencode::train<DataSetType, TestDataSetType>(trainLog.get(), autoencoder, trainDataset, testDataset, config.epochs, config.learingRate, config.klBeta, 0, nullptr, nullptr, config.spectralWeight, spectraNormFromString(config.spectraNorm), config.contractiveWeight);
 			break;
 		}
 		case MODE_GAN:

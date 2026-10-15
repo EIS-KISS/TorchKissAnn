@@ -59,6 +59,8 @@ enum TuneArgpKey
 	OPT_AUGMENTATION_MODEL,
 	OPT_SPECTRAL_WEIGHT,
 	OPT_SPECTRAL_WEIGHTS,
+	OPT_CONTRACTIVE_WEIGHT,
+	OPT_CONTRACTIVE_WEIGHTS,
 };
 
 static struct argp_option options[] =
@@ -90,6 +92,8 @@ static struct argp_option options[] =
   {"kl-beta",		'k',			"[NUMBER]", 0,	"Weight of the KL divergence term in the vae modes, default: 1"},
   {"spectral-weight",	OPT_SPECTRAL_WEIGHT,	"[NUMBER]", 0,	"Autoencoder and vae modes: weight of the spectral prediction auxiliary loss, a single value for the whole search, default 0 (off). Sets one point of the --spectral-weights sweep"},
   {"spectral-weights",	OPT_SPECTRAL_WEIGHTS,	"[NUMBER,NUMBER,...]", 0,	"Autoencoder and vae modes: comma separated list of spectral prediction auxiliary loss weights to try, overrides --spectral-weight. Each weight masks a random subset of frequency points, encodes the partial spectra and scores the held-out points, forcing the latent to encode the impedance curve rather than only cluster identity. Default: 0 (off)"},
+  {"contractive-weight",	OPT_CONTRACTIVE_WEIGHT,	"[NUMBER]", 0,	"Autoencoder and vae modes: weight of the locality preserving auxiliary loss, a single value for the whole search, default 0 (off). Sets one point of the --contractive-weights sweep"},
+  {"contractive-weights",	OPT_CONTRACTIVE_WEIGHTS,	"[NUMBER,NUMBER,...]", 0,	"Autoencoder and vae modes: comma separated list of locality preserving auxiliary loss weights to try, overrides --contractive-weight. Each weight finds the 8 nearest neighbours of every spectra in input space and minimises the latent distances of those pairs, sharpening the neighbourhood structure of the latent space without attractor points. Default: 0 (off)"},
   {"spectra-norm",	OPT_SPECTRA_NORM,	"[STRING,STRING,...]", 0,	"Classification only: comma separated list of per spectra |Z| scalings to try, each dividing every spectra by a reference impedance so only the shape of the Nyquist plot reaches the network: none, zmean (mean |Z|), zgeom (geometric mean |Z|), zmax (largest |Z|). Default none. Applied identically to the training and the test dataset of a trial, recorded in the best model"},
   {"canonical-fmin",	OPT_CANONICAL_FMIN,	"[NUMBER]", 0,	"Lower edge of the canonical frequency grid in rad/s. Enable together with --canonical-fmax and --canonical-points; required for the two augmentation sweeps below"},
   {"canonical-fmax",	OPT_CANONICAL_FMAX,	"[NUMBER]", 0,	"Upper edge of the canonical frequency grid in rad/s"},
@@ -196,6 +200,7 @@ struct Config
 	std::vector<size_t> latentSizes; // swept latent widths, defaults to the single latentSize above
 	double klBeta = 1.0;     // weight of the KL term in the vae modes
 	std::vector<double> spectralWeights; // swept spectral prediction auxiliary loss weights (autoencoder and vae modes), defaults to {0}
+	std::vector<double> contractiveWeights; // swept locality preserving auxiliary loss weights (autoencoder and vae modes), defaults to {0}
 	LossType loss = LOSS_DEFAULT;
 	// -s simplicity: fixed for the whole search, see the two option help texts below. The best model
 	// has to be retested with the same threshold, it is not stored in the checkpoint.
@@ -372,6 +377,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_SPECTRAL_WEIGHTS:
 			config->spectralWeights = parseDoubleList(arg);
+			break;
+		case OPT_CONTRACTIVE_WEIGHT:
+			config->contractiveWeights = {std::stod(std::string(arg))};
+			break;
+		case OPT_CONTRACTIVE_WEIGHTS:
+			config->contractiveWeights = parseDoubleList(arg);
 			break;
 		case OPT_NETWORK:
 			config->netType = parseNetType(arg);
