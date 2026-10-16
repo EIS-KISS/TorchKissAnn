@@ -47,7 +47,9 @@ enum
 	OPT_SIMPLICITY_PREFERENCE,
 	OPT_AUGMENTATION_MODEL,
 	OPT_SPECTRAL_WEIGHT,
-	OPT_CONTRACTIVE_WEIGHT
+	OPT_CONTRACTIVE_WEIGHT,
+	OPT_ATTRACTOR_WEIGHT,
+	OPT_ATTRACTOR_COUNT
 };
 
 static struct argp_option options[] =
@@ -71,6 +73,8 @@ static struct argp_option options[] =
   {"kl-beta",		'k', "[NUMBER]",	0, 	"Weight of the KL divergence term in the vae loss, default: 1"},
   {"spectral-weight",	OPT_SPECTRAL_WEIGHT, "[NUMBER]", 0, "Autoencoder and vae only: mix in a spectral prediction auxiliary loss with this weight (default 0 = off). A random subset of frequency points is masked from the input, the partial spectra is encoded and decoded, and the error on the held-out points is added to the loss, forcing the latent to encode the impedance curve rather than only cluster identity"},
   {"contractive-weight",	OPT_CONTRACTIVE_WEIGHT, "[NUMBER]", 0, "Autoencoder and vae only: mix in a locality preserving auxiliary loss with this weight (default 0 = off). For every spectra the 8 nearest neighbours in input space are found and the latent distances of those pairs are minimised, so similar spectra stay close in the latent space. Unlike a cluster compactness term it has no attractor points and no cluster count, so it sharpens neighbourhood structure without absorbing novel topologies into known clusters"},
+  {"attractor-weight",	OPT_ATTRACTOR_WEIGHT, "[NUMBER]", 0, "Autoencoder and vae only: mix in an attractor compactness auxiliary loss with this weight (default 0 = off). Following Song et al. every latent is pulled toward its nearest of K attractor centres, which are updated k-means style as the mean of the latents assigned to them. This produces tight, well separated clusters but contracts the latent toward a fixed number of attractors, so a novel topology is absorbed into the nearest known cluster"},
+  {"attractor-count",	OPT_ATTRACTOR_COUNT, "[NUMBER]", 0, "With --attractor-weight: number K of attractor centres in the latent space (default 16). This is the cluster count of the compactness term; it is not stored in the checkpoint and only shapes training"},
   {"canonical-fmin",		OPT_CANONICAL_FMIN, "[NUMBER]", 0, "Lower edge of the canonical grid (rad/s, same unit as the data's omega column); enables canonical resampling together with --canonical-fmax"},
   {"canonical-fmax",		OPT_CANONICAL_FMAX, "[NUMBER]", 0, "Upper frequency bound (Hz) of the canonical grid"},
   {"canonical-points",		OPT_CANONICAL_POINTS, "[NUMBER]", 0, "Number of points on the canonical grid (default: taken from the first spectra)"},
@@ -101,6 +105,8 @@ struct Config
 	double klBeta = 1.0;
 	double spectralWeight = 0;
 	double contractiveWeight = 0;
+	double attractorWeight = 0;
+	size_t attractorCount = 16;
 	LossType loss = LOSS_DEFAULT;
 	bool noGpu = false;
 	bool noWeights = false;
@@ -207,6 +213,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_CONTRACTIVE_WEIGHT:
 			config->contractiveWeight = std::stod(std::string(arg));
+			break;
+		case OPT_ATTRACTOR_WEIGHT:
+			config->attractorWeight = std::stod(std::string(arg));
+			break;
+		case OPT_ATTRACTOR_COUNT:
+			config->attractorCount = std::stoul(std::string(arg));
 			break;
 		case OPT_CANONICAL_FMIN:
 			config->canonicalFMin = std::stod(std::string(arg));

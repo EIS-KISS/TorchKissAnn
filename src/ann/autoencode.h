@@ -74,8 +74,6 @@ inline torch::Tensor spectralPredictionLoss(std::shared_ptr<AutoEncoder> network
 
 inline constexpr int64_t CONTRACTIVE_NEIGHBORS = 8;
 
-// DEN style locality preserving loss: contract the latent space only along input space
-// neighbourhoods, so similar spectra stay close without creating attractor points
 inline torch::Tensor localityLoss(const torch::Tensor& latent, const torch::Tensor& data)
 {
 	int64_t batch = data.size(0);
@@ -98,9 +96,60 @@ inline torch::Tensor localityLoss(const torch::Tensor& latent, const torch::Tens
 	return (latentDistance * affinity).sum() / affinity.sum().clamp_min(1e-8);
 }
 
+inline constexpr int64_t ATTRACTOR_INIT_ITERATIONS = 10;
+
+inline torch::Tensor attractorLoss(const torch::Tensor& latent, torch::Tensor& centers)
+{
+	torch::Tensor latentSquared = latent.pow(2).sum(1, true);
+	torch::Tensor centerSquared = centers.pow(2).sum(1).unsqueeze(0);
+	torch::Tensor distance = (latentSquared + centerSquared - 2.0 * latent.matmul(centers.t())).clamp_min(0);
+	torch::Tensor assignment = distance.argmin(1);
+
+	// compactness: mean squared distance of each latent to the centre it was assigned to
+	torch::Tensor assigned = centers.index_select(0, assignment);
+	torch::Tensor compact = (latent - assigned).pow(2).sum(1).mean();
+
+	// move each centre to the mean of the latents assigned to it, detached from the graph; a centre
+	// that nothing was assigned to this batch keeps its previous position
+	torch::Tensor detached = latent.detach();
+	torch::Tensor counts = torch::zeros({centers.size(0)}, latent.options());
+	counts.index_add_(0, assignment, torch::ones({latent.size(0)}, latent.options()));
+	torch::Tensor sums = torch::zeros_like(centers);
+	sums.index_add_(0, assignment, detached);
+	torch::Tensor updated = sums / counts.clamp_min(1).unsqueeze(1);
+	torch::Tensor occupied = (counts > 0).unsqueeze(1);
+	centers = torch::where(occupied, updated, centers);
+
+	return compact;
+}
+
+inline torch::Tensor initAttractors(const torch::Tensor& latent, int64_t count)
+{
+	torch::Tensor points = latent.detach();
+	int64_t available = points.size(0);
+	int64_t k = std::min(count, available);
+	torch::Tensor perm = torch::randperm(available, points.options().dtype(torch::kLong));
+	torch::Tensor centers = points.index_select(0, perm.slice(0, 0, k));
+	for(int64_t iter = 0; iter < ATTRACTOR_INIT_ITERATIONS; iter++)
+	{
+		torch::Tensor pointsSquared = points.pow(2).sum(1, true);
+		torch::Tensor centerSquared = centers.pow(2).sum(1).unsqueeze(0);
+		torch::Tensor distance = (pointsSquared + centerSquared - 2.0 * points.matmul(centers.t())).clamp_min(0);
+		torch::Tensor assignment = distance.argmin(1);
+		torch::Tensor counts = torch::zeros({k}, points.options());
+		counts.index_add_(0, assignment, torch::ones({available}, points.options()));
+		torch::Tensor sums = torch::zeros_like(centers);
+		sums.index_add_(0, assignment, points);
+		torch::Tensor updated = sums / counts.clamp_min(1).unsqueeze(1);
+		torch::Tensor occupied = (counts > 0).unsqueeze(1);
+		centers = torch::where(occupied, updated, centers);
+	}
+	return centers;
+}
+
 template <typename DataLoader, typename LossFn>
 int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, double beta, size_t epoch,
-			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, double attractorWeight, int64_t attractorCount, torch::Tensor& attractorCenters, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -125,6 +174,12 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
 		if(contractiveWeight > 0)
 			loss = loss + contractiveWeight * localityLoss(latent, data);
+		if(attractorWeight > 0)
+		{
+			if(attractorCenters.numel() == 0)
+				attractorCenters = initAttractors(latent, attractorCount);
+			loss = loss + attractorWeight * attractorLoss(latent, attractorCenters);
+		}
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -155,7 +210,7 @@ int trainEpochVae(std::shared_ptr<AutoEncoder> network, DataLoader& loader, Loss
 
 template <typename DataLoader, typename LossFn>
 int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn& lossFn, torch::optim::Optimizer& optimizer, size_t epoch,
-			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
+			size_t data_size, double spectralWeight, int64_t freqCount, int64_t extraCount, double contractiveWeight, double attractorWeight, int64_t attractorCount, torch::Tensor& attractorCenters, TrainLog* log = nullptr, double* meanTrainLoss = nullptr)
 {
 	size_t index = 0;
 	LossAccumulator lossAcc;
@@ -182,6 +237,12 @@ int trainEpoch(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn&
 			loss = loss + spectralWeight * spectralPredictionLoss(network, data, freqCount, extraCount);
 		if(contractiveWeight > 0)
 			loss = loss + contractiveWeight * localityLoss(latent, data);
+		if(attractorWeight > 0)
+		{
+			if(attractorCenters.numel() == 0)
+				attractorCenters = initAttractors(latent, attractorCount);
+			loss = loss + attractorWeight * attractorLoss(latent, attractorCenters);
+		}
 
 		if(torch::isnan(torch::sum(loss)).item().to<bool>())
 		{
@@ -286,7 +347,7 @@ TestReturn test(std::shared_ptr<AutoEncoder> network, DataLoader& loader, LossFn
 
 template <typename DatasetType, typename TestDatasetType = DatasetType>
 void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<DatasetType>* dataset, EisDataset<TestDatasetType>* testDataset, size_t epochs, double learingRate, double beta = 1.0,
-	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr, double spectralWeight = 0, SpectraNorm spectraNorm = SpectraNorm::None, double contractiveWeight = 0)
+	double weightDecay = 0, double* finalTestLoss = nullptr, std::vector<EpochStats>* history = nullptr, double spectralWeight = 0, SpectraNorm spectraNorm = SpectraNorm::None, double contractiveWeight = 0, double attractorWeight = 0, int64_t attractorCount = 0)
 {
 	assert(net->getInputSize() == dataset->get(0).data.size(0));
 	if(testDataset)
@@ -352,6 +413,20 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 		Log(Log::INFO)<<"Spectral prediction auxiliary loss active: weight "<<spectralWeight<<", holding out "<<(SPECTRAL_MASK_RATIO*100)<<"% of "<<freqCount<<" frequency points per sample";
 	if(contractiveWeight > 0)
 		Log(Log::INFO)<<"Locality preserving auxiliary loss active: weight "<<contractiveWeight<<", contracting the latent along the "<<CONTRACTIVE_NEIGHBORS<<" nearest neighbours of each spectra in input space";
+	if(attractorWeight > 0 && attractorCount < 1)
+	{
+		Log(Log::WARN)<<"attractor compactness loss disabled: --attractor-count must be at least 1";
+		attractorWeight = 0;
+	}
+	if(attractorWeight > 0)
+	{
+		if(attractorCount > int64_t(batch_size))
+			Log(Log::WARN)<<"attractor count "<<attractorCount<<" exceeds the batch size "<<batch_size<<", the centres are seeded from at most one batch worth of latents";
+		Log(Log::INFO)<<"Attractor compactness auxiliary loss active: weight "<<attractorWeight<<", contracting the latent toward "<<attractorCount<<" attractor centres updated k-means style";
+	}
+
+	// attractor centres live across batches and epochs, seeded from the first batch inside the epoch loop
+	torch::Tensor attractorCenters;
 
 	for (size_t i = 0; i < epochs; ++i)
 	{
@@ -362,10 +437,10 @@ void train(TrainLog* trainLog, std::shared_ptr<AutoEncoder> net, EisDataset<Data
 			double epochBeta = beta;
 			if(klWarmup > 0)
 				epochBeta = beta * std::min(1.0, double(i + 1) / double(klWarmup));
-			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, trainLog, &meanTrainLoss);
+			epochRet = trainEpochVae(net, *trainDataLoader, mseloss, optimizer, epochBeta, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, attractorWeight, attractorCount, attractorCenters, trainLog, &meanTrainLoss);
 		}
 		else
-			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, trainLog, &meanTrainLoss);
+			epochRet = trainEpoch(net, *trainDataLoader, mseloss, optimizer, i, dataset->size().value(), spectralWeight, freqCount, extraCount, contractiveWeight, attractorWeight, attractorCount, attractorCenters, trainLog, &meanTrainLoss);
 
 		if(epochRet != 0)
 			break;

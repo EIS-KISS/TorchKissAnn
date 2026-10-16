@@ -436,6 +436,28 @@ bool check_options(const Config& config)
 		return false;
 	}
 
+	for(double attractorWeight : config.attractorWeights)
+		if(!(attractorWeight >= 0))
+		{
+			Log(Log::ERROR)<<"--attractor-weight and --attractor-weights values must not be negative";
+			return false;
+		}
+	bool attractorRequested = false;
+	for(double attractorWeight : config.attractorWeights)
+		attractorRequested |= (attractorWeight > 0);
+	if(attractorRequested && !modeIsAutoEncoder(config.mode))
+	{
+		Log(Log::ERROR)<<"--attractor-weight can only be tuned in the autoencoder and vae modes: it contracts "
+			<<"the latent space of a reconstruction objective toward attractor centres, which the classification and regression objectives do not have.";
+		return false;
+	}
+	for(size_t attractorCount : config.attractorCounts)
+		if(attractorCount < 1)
+		{
+			Log(Log::ERROR)<<"--attractor-count and --attractor-counts values must be at least 1";
+			return false;
+		}
+
 	for(size_t downsampleSteps : config.downsampleSteps)
 		if(downsampleSteps < 1)
 		{
@@ -538,6 +560,10 @@ static void applyDefaults(Config& config)
 		config.spectralWeights = {0};
 	if(config.contractiveWeights.empty())
 		config.contractiveWeights = {0};
+	if(config.attractorWeights.empty())
+		config.attractorWeights = {0};
+	if(config.attractorCounts.empty())
+		config.attractorCounts = {16};
 
 	config.canonical = (config.canonicalFMin > 0 && config.canonicalFMax > config.canonicalFMin);
 }

@@ -71,6 +71,8 @@ struct TrialConfig
 	size_t latentSize = 10;
 	double spectralWeight = 0;
 	double contractiveWeight = 0;
+	double attractorWeight = 0;
+	size_t attractorCount = 16;
 	double canonicalAugmentShift = 0;
 	double canonicalAugmentWindow = 1;
 	std::string spectraNorm = "none";
@@ -103,6 +105,8 @@ struct TrialConfig
 				ss<<",spectralWeight="<<spectralWeight;
 			if(contractiveWeight > 0)
 				ss<<",contractiveWeight="<<contractiveWeight;
+			if(attractorWeight > 0)
+				ss<<",attractorWeight="<<attractorWeight<<",attractorCount="<<attractorCount;
 			if(!decoderPath.empty())
 				ss<<",decoder="<<decoderPath.filename().string();
 			if(variational)
@@ -369,21 +373,29 @@ inline std::vector<TrialConfig> buildTrials(const Config& config, NetKind netKin
 				{
 					for(double contractiveWeight : config.contractiveWeights)
 					{
-						for(double augmentShift : config.canonicalAugmentShifts)
+						for(double attractorWeight : config.attractorWeights)
 						{
-							for(double augmentWindow : config.canonicalAugmentWindows)
+							for(size_t attractorCount : config.attractorCounts)
 							{
-								for(const std::string& spectraNorm : config.spectraNorms)
+								for(double augmentShift : config.canonicalAugmentShifts)
 								{
-									TrialConfig trial = network;
-									trial.learningRate = learningRate;
-									trial.weightDecay = weightDecay;
-									trial.spectralWeight = spectralWeight;
-									trial.contractiveWeight = contractiveWeight;
-									trial.canonicalAugmentShift = augmentShift;
-									trial.canonicalAugmentWindow = augmentWindow;
-									trial.spectraNorm = spectraNorm;
-									trials.push_back(trial);
+									for(double augmentWindow : config.canonicalAugmentWindows)
+									{
+										for(const std::string& spectraNorm : config.spectraNorms)
+										{
+											TrialConfig trial = network;
+											trial.learningRate = learningRate;
+											trial.weightDecay = weightDecay;
+											trial.spectralWeight = spectralWeight;
+											trial.contractiveWeight = contractiveWeight;
+											trial.attractorWeight = attractorWeight;
+											trial.attractorCount = attractorCount;
+											trial.canonicalAugmentShift = augmentShift;
+											trial.canonicalAugmentWindow = augmentWindow;
+											trial.spectraNorm = spectraNorm;
+											trials.push_back(trial);
+										}
+									}
 								}
 							}
 						}
@@ -468,7 +480,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	}
 	csv<<"rank,trial,loss,bestEpoch,bestLoss,bestAccuracy,finalAccuracy,bestR2,finalR2,"
 		<<"parameters,seconds,metric,network,script,downsampleSteps,extraSteps,learningRate,weightDecay,"
-		<<"augmentShift,augmentWindow,spectraNorm,task,decoder,latentSize,spectralWeight,contractiveWeight,bestReconMse,finalReconMse,"
+		<<"augmentShift,augmentWindow,spectraNorm,task,decoder,latentSize,spectralWeight,contractiveWeight,attractorWeight,attractorCount,bestReconMse,finalReconMse,"
 		<<"status,error\n";
 	rank = 0;
 	for(size_t i = 0; i < results.size(); ++i)
@@ -495,6 +507,8 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 			<<','<<result.config.latentSize
 			<<','<<result.config.spectralWeight
 			<<','<<result.config.contractiveWeight
+			<<','<<result.config.attractorWeight
+			<<','<<result.config.attractorCount
 			<<','<<onlyTask(autoEncoder, result.bestQuality())
 			<<','<<onlyTask(autoEncoder, result.finalQuality())
 			<<','<<(result.ok ? "ok" : "failed")<<",\""<<result.error<<"\"\n";
@@ -504,7 +518,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 	std::ofstream curves(config.outputDir/"curves.csv");
 	if(curves.is_open())
 	{
-		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,reconMse,network,script,decoder,downsampleSteps,extraSteps,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm,latentSize,spectralWeight,contractiveWeight\n";
+		curves<<"trial,epoch,trainLoss,testLoss,testAccuracy,r2Mean,reconMse,network,script,decoder,downsampleSteps,extraSteps,learningRate,weightDecay,augmentShift,augmentWindow,spectraNorm,latentSize,spectralWeight,contractiveWeight,attractorWeight,attractorCount\n";
 		for(size_t i = 0; i < results.size(); ++i)
 		{
 			const TrialResult& result = results[i];
@@ -520,7 +534,7 @@ inline void reportResults(std::vector<TrialResult>& results, const Config& confi
 					<<','<<result.config.downsampleSteps<<','<<result.config.extraSteps
 					<<','<<result.config.learningRate<<','<<result.config.weightDecay
 					<<','<<result.config.canonicalAugmentShift<<','<<result.config.canonicalAugmentWindow
-					<<','<<result.config.spectraNorm<<','<<result.config.latentSize<<','<<result.config.spectralWeight<<','<<result.config.contractiveWeight<<'\n';
+					<<','<<result.config.spectraNorm<<','<<result.config.latentSize<<','<<result.config.spectralWeight<<','<<result.config.contractiveWeight<<','<<result.config.attractorWeight<<','<<result.config.attractorCount<<'\n';
 		}
 		curves.close();
 	}
@@ -804,7 +818,7 @@ int searchAutoEncoder(const Config& config, EisDataset<DatasetType>* trainDatase
 		{
 			std::shared_ptr<ann::AutoEncoder> autoencoder = std::dynamic_pointer_cast<ann::AutoEncoder>(net);
 			ann::autoencode::train(nullptr, autoencoder, trainDataset, testDataset, config.epochs,
-				trial.learningRate, config.klBeta, trial.weightDecay, testLoss, &result->autoEncoderHistory, trial.spectralWeight, SpectraNorm::None, trial.contractiveWeight);
+				trial.learningRate, config.klBeta, trial.weightDecay, testLoss, &result->autoEncoderHistory, trial.spectralWeight, SpectraNorm::None, trial.contractiveWeight, trial.attractorWeight, int64_t(trial.attractorCount));
 			return 0;
 		},
 		[&](const TrialConfig& trial)
