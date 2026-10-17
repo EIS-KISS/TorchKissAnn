@@ -197,6 +197,88 @@ struct TestReturn
 	double simplicityAccOverall = 0;
 };
 
+struct ClassMetrics
+{
+	torch::Tensor precision;  // [C]
+	torch::Tensor recall;     // [C]
+	torch::Tensor f1;         // [C]
+	torch::Tensor support;    // [C] samples the class is actually present in
+	double macroPrecision = 0;
+	double macroRecall = 0;
+	double macroF1 = 0;
+	double weightedPrecision = 0;
+	double weightedRecall = 0;
+	double weightedF1 = 0;
+};
+
+inline ClassMetrics classMetrics(const torch::Tensor& predictions, const torch::Tensor& targets,
+		bool isMulticlass, double threshold = 0.5)
+{
+	const int64_t C = predictions.size(1);
+	const int64_t N = predictions.size(0);
+	auto opts = tensorOptCpu<double>(false);
+	torch::Tensor tp = torch::zeros({C}, opts);
+	torch::Tensor fp = torch::zeros({C}, opts);
+	torch::Tensor fn = torch::zeros({C}, opts);
+
+	if(!isMulticlass)
+	{
+		torch::Tensor predicted = predictions.to(torch::kCPU).argmax(1).to(torch::kInt64).reshape({-1});
+		torch::Tensor actual = targets.to(torch::kCPU).to(torch::kInt64).reshape({-1});
+		const int64_t n = std::min(predicted.numel(), actual.numel());
+		for(int64_t i = 0; i < n; ++i)
+		{
+			const int64_t p = predicted[i].item<int64_t>();
+			const int64_t a = actual[i].item<int64_t>();
+			if(p < 0 || p >= C || a < 0 || a >= C)
+				continue;
+			if(p == a)
+				tp[a] += 1;
+			else
+			{
+				fp[p] += 1;
+				fn[a] += 1;
+			}
+		}
+	}
+	else
+	{
+		if(targets.numel() != N * C)
+		{
+			Log(Log::WARN)<<"classMetrics: the multiclass targets carry "<<targets.numel()<<" entries but the predictions describe "<<N<<" samples of "<<C<<" classes, can not compute the per class metrics";
+			return ClassMetrics{};
+		}
+		torch::Tensor predicted = torch::sigmoid(predictions.to(torch::kCPU)).gt(threshold).to(torch::kDouble);
+		torch::Tensor actual = targets.to(torch::kCPU).to(torch::kDouble).reshape({N, C});
+		tp = (predicted * actual).sum(0);
+		fp = (predicted * (1 - actual)).sum(0);
+		fn = ((1 - predicted) * actual).sum(0);
+	}
+
+	auto safeDiv = [](const torch::Tensor& num, const torch::Tensor& den)
+	{
+		return torch::where(den > 0, num / den.clamp_min(1e-12), torch::zeros_like(num));
+	};
+	torch::Tensor precision = safeDiv(tp, tp + fp);
+	torch::Tensor recall = safeDiv(tp, tp + fn);
+	torch::Tensor f1 = safeDiv(2 * precision * recall, precision + recall);
+	torch::Tensor support = tp + fn;
+
+	ClassMetrics m;
+	m.precision = precision;
+	m.recall = recall;
+	m.f1 = f1;
+	m.support = support;
+	m.macroPrecision = precision.mean().item<double>();
+	m.macroRecall = recall.mean().item<double>();
+	m.macroF1 = f1.mean().item<double>();
+	const double totalSupport = support.sum().item<double>();
+	m.weightedPrecision = totalSupport > 0 ? (precision * support).sum().item<double>() / totalSupport : 0;
+	m.weightedRecall = totalSupport > 0 ? (recall * support).sum().item<double>() / totalSupport : 0;
+	m.weightedF1 = totalSupport > 0 ? (f1 * support).sum().item<double>() / totalSupport : 0;
+	return m;
+}
+
 struct EpochStats
 {
 	size_t epoch;

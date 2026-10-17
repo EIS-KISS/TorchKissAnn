@@ -455,6 +455,11 @@ void ann::Net::setInputFrequencies(const torch::Tensor& tensor)
 	inputFrequencies = tensor;
 }
 
+const torch::Tensor& ann::Net::getInputFrequencies() const
+{
+	return inputFrequencies;
+}
+
 const std::vector<std::string>& ann::Net::getOutputLabels() const
 {
 	return outputLabels;

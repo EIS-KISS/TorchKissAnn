@@ -33,9 +33,6 @@ namespace ann
 class Net : public torch::nn::Module
 {
 public:
-	 // Smallest magnitude the signed log input compression still resolves. Impedance magnitudes
-	 // below this are mapped to zero, which keeps the noise floor of a measurement from being
-	 // amplified into the same range as the signal.
 	static constexpr double DEFAULT_INPUT_LOG_FLOOR = 1e-9;
 
 	static constexpr double INPUT_FEATURE_CLAMP = 2.0;
@@ -50,13 +47,13 @@ protected:
 	std::vector<std::pair<std::string, int64_t>> extraInputs;
 	torch::Tensor outputScalars;
 	torch::Tensor outputBiases;
-	torch::Tensor outputLogMask; //Entries with a set flag are interpreted as the exponent of a base ten power instead of as the value itself.
-	torch::Tensor inputScalars; // Affine transform applied to the raw dataset input before it reaches the network. Empty means the input is passed through unchanged.
+	torch::Tensor outputLogMask;
+	torch::Tensor inputScalars;
 	torch::Tensor inputBiases;
 	int64_t inputLogCount = 0;
 	double inputLogFloor = DEFAULT_INPUT_LOG_FLOOR;
-	std::string spectraNorm; // Name of the per spectra |Z| scaling the loader applied to every training input, empty when the inputs are raw impedances. A client feeding the network has to reproduce it.
-	bool canonicalGrid = false; // The network expects inputs resampled onto a fixed log frequency grid.
+	std::string spectraNorm;
+	bool canonicalGrid = false;
 	double canonicalFMin = 0;
 	double canonicalFMax = 0;
 	int64_t canonicalPoints = 0;
@@ -81,32 +78,17 @@ public:
 	void setOutputBiases(const torch::Tensor& tensor);
 	void setOutputLogMask(const torch::Tensor& tensor);
 	void setInputFrequencies(const torch::Tensor& tensor);
-	// Record that the network was trained on inputs resampled onto a fixed canonical frequency grid.
-	// libkissinference needs fMin, fMax, points and log to reproduce the resampling (linear
-	// interpolation with constant extrapolation, matching eis::fitToFrequencies) before feeding the
-	// fixed size graph.
+	const torch::Tensor& getInputFrequencies() const;
 	void setCanonicalGrid(double fMin, double fMax, int64_t points, bool log);
 	bool hasCanonicalGrid() const;
 	double getCanonicalFMin() const;
 	double getCanonicalFMax() const;
 	int64_t getCanonicalPoints() const;
 	bool getCanonicalLog() const;
-	// Configure how a raw dataset input is turned into what the network sees. Empty scalars disable
-	// the transform. logCount features at the front of the input vector are compressed with a
-	// signed log first, which is what the spectral parts of an EIS input need.
 	void setInputNormalization(const torch::Tensor& scalars, const torch::Tensor& biases,
 			int64_t logCount = 0, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
-	// Compress the leading logCount input features with a signed log but apply no affine rescaling.
-	// Classification uses this: the per spectra |Z| normalization already puts every input on a common
-	//scale, so an affine transform derived from the dataset range would carry no information.
 	void setInputLogCompression(int64_t logCount, double logFloor = DEFAULT_INPUT_LOG_FLOOR);
-	// Record that the training loader scaled every spectra to a common impedance level. mode is one of
-	// the names understood by SpectraNorm (zmean, zgeom, zmax); an empty string means the network was
-	// trained on raw impedances. Anything feeding this network has to apply the same scaling, after
-	// the canonical grid resampling and before normalizeInput.
 	void setSpectraNorm(const std::string& mode);
-
-	// Name of the per spectra |Z| scaling this network expects, empty when there is none.
 	const std::string& getSpectraNorm() const;
 	torch::Tensor getOutputScalars();
 	torch::Tensor getOutputBiases();

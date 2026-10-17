@@ -554,6 +554,32 @@ int test(std::shared_ptr<ann::Net> net, const Config& config)
 		Log(Log::INFO, false)<<labelName(netOutputs, dataset, i)<<", ";
 	Log(Log::INFO)<<'\n'<<tensorToString(testRet.acc, false);
 
+	ann::classification::ClassMetrics metrics = ann::classification::classMetrics(
+			testRet.predictions, testRet.targets, dataset.isMulticlass());
+	if(metrics.precision.numel() == evalOutputSize)
+	{
+		Log(Log::INFO)<<"\nPer class precision, recall and F1:";
+		Log(Log::INFO)<<std::left<<std::setw(24)<<"Class"
+			<<std::right<<std::setw(12)<<"Precision"
+			<<std::setw(12)<<"Recall"
+			<<std::setw(12)<<"F1"
+			<<std::setw(10)<<"Support";
+		for(int64_t i = 0; i < evalOutputSize; ++i)
+			Log(Log::INFO)<<std::left<<std::setw(24)<<labelName(netOutputs, dataset, i)
+				<<std::right<<std::setw(12)<<metrics.precision[i].item<double>()
+				<<std::setw(12)<<metrics.recall[i].item<double>()
+				<<std::setw(12)<<metrics.f1[i].item<double>()
+				<<std::setw(10)<<static_cast<int64_t>(metrics.support[i].item<double>());
+		Log(Log::INFO)<<std::left<<std::setw(24)<<"Macro"
+			<<std::right<<std::setw(12)<<metrics.macroPrecision
+			<<std::setw(12)<<metrics.macroRecall
+			<<std::setw(12)<<metrics.macroF1;
+		Log(Log::INFO)<<std::left<<std::setw(24)<<"Weighted"
+			<<std::right<<std::setw(12)<<metrics.weightedPrecision
+			<<std::setw(12)<<metrics.weightedRecall
+			<<std::setw(12)<<metrics.weightedF1;
+	}
+
 	if(config.confustionMatrix)
 	{
 		torch::Tensor acceptableHits;
