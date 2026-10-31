@@ -18,40 +18,12 @@
 # You should have received a copy of the GNU General Public License
 # along with TorchKissAnn.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
-Transformer encoder over frequency "tokens".
-
-Each frequency point (or a small patch of consecutive points) is projected to a
-d_model dimensional vector, a learned positional embedding is added because
-self attention is otherwise blind to the order of the points, and the sequence
-goes through a pre-norm transformer encoder. The representation is pooled over
-the frequency axis and read out by one linear layer.
-
-Attention connects any two frequency points in a single step, so relations like
-"the high frequency intercept is large while the mid frequency arc is flat"
-cost nothing, unlike in a convolution stack where they need many layers. The
-price is quadratic cost in the number of points and a strong tendency to
-overfit small datasets, so this is a candidate for the larger generated
-datasets, not the small ones.
-
-References:
- - A. Vaswani et al., "Attention is All you Need", NeurIPS 30, 2017,
-   arXiv:1706.03762 - the transformer encoder.
-"""
-
 import torch
 
 from .common import spectra_length, spectra_to_channels
 
 
 class Transformer1D(torch.nn.Module):
-	"""
-	input_size is the length of the flat input vector (2N for a spectra with N
-	frequency points), output_size the number of classes or regression targets.
-	channels=2 splits the vector into an aligned Re(Z) and Im(Z) channel pair,
-	so every token carries both components of its frequency point.
-	"""
-
 	def __init__(self, input_size: int, output_size: int, channels: int = 1,
 				 d_model: int = 64, n_heads: int = 4, n_layers: int = 2,
 				 dim_feedforward: int = 128, dropout: float = 0.1, patch_size: int = 1):
